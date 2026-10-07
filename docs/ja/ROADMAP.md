@@ -15,7 +15,7 @@
 | **Phase 2** | トレース収集エンジン & コールグラフ構築器 (DAG in Go) | 完了 | PR #3 |
 | **Phase 3** | 異常・暗黙フォールバック検知エンジン | 完了 | PR #4 |
 | **Phase 4** | CLI 可視化 (`agentlens graph`, `inspect`, `watch`) | 完了 | PR #5 |
-| **Phase 5** | Web UI ダッシュボード (バイナリ内蔵 & 無料GitHub Pagesビューアー) | 計画中 | PR #6 |
+| **Phase 5** | Web UI ダッシュボード (バイナリ内蔵 & 無料GitHub Pagesビューアー) | 完了 | PR #6 |
 | **Phase 6** | 各種生成AI向けプロバイダ定義 (Antigravity, Claude Code, Cursor 等) | 計画中 | PR #7 |
 | **Phase 7** | 多言語化 (i18n: 英語・日本語) CLI/UIローカライズ | 計画中 | PR #8 |
 
@@ -60,11 +60,10 @@
 - [x] デフォルトの Antigravity / Gemini プロバイダ設定のバイナリ内蔵化
 
 ### Phase 5: Web UI ダッシュボード (PR #6)
-- [ ] Go内蔵ローカルHTTPサーバー (`agentlens ui`) とWebアセットの組み込み (`go:embed`) 実装
-- [ ] インタラクティブ DAG グラフ可視化 (`web/`) 実装
-- [ ] 並列ツール実行を把握するタイムライン/ウォーターフォール表示 実装
-- [ ] 異常警告バナーおよびインスペクタードロワーの実装
-- [ ] GitHub Pages 上での完全クライアントサイド（ドラッグ＆ドロップ）可視化の有効化
+- [x] Go内蔵ローカルHTTPサーバー (`agentlens ui`) とWebアセットの組み込み (`go:embed`) 実装
+- [x] `web/index.html` におけるインタラクティブ DAG グラフ可視化と統計表示の実装
+- [x] 異常警告バナーおよびインスペクタードロワーの実装
+- [x] GitHub Pages 上での完全クライアントサイド（ドラッグ＆ドロップ）可視化の有効化
 
 ### Phase 6: マルチプロバイダ対応 (PR #7)
 - [ ] Antigravity transcript パーサーおよびライブログ監視
