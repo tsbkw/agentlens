@@ -1,16 +1,20 @@
 package cli
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/tsbkw/agentlens/internal/collector"
 	"github.com/tsbkw/agentlens/internal/detector"
 	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/providers"
 	"github.com/tsbkw/agentlens/internal/server"
+	"github.com/tsbkw/agentlens/internal/watcher"
 )
 
 //go:embed default_antigravity.yaml
@@ -64,6 +68,12 @@ func (a *App) Run(args []string) error {
 			return fmt.Errorf("missing session ID. Usage: agentlens trace <session-id>")
 		}
 		return a.CmdTrace(args[2])
+	case "watch":
+		targetID := ""
+		if len(args) >= 3 {
+			targetID = args[2]
+		}
+		return a.CmdWatch(targetID)
 	case "inspect":
 		if len(args) < 3 {
 			return fmt.Errorf("missing call ID. Usage: agentlens inspect <call-id>")
@@ -193,6 +203,42 @@ func (a *App) CmdInspect(callID string) error {
 	return fmt.Errorf("call node %q not found in any discovered sessions", callID)
 }
 
+// CmdWatch tails an active session's trace file in real time.
+func (a *App) CmdWatch(targetID string) error {
+	col := collector.NewCollector(a.ActiveProvider)
+	sessions, err := col.DiscoverSessions()
+	if err != nil {
+		return err
+	}
+
+	if len(sessions) == 0 {
+		return fmt.Errorf("no agent sessions found to watch")
+	}
+
+	var matchedSession *collector.SessionInfo
+	if targetID == "" {
+		// Default to most recently modified session
+		matchedSession = &sessions[0]
+	} else {
+		for _, s := range sessions {
+			if s.SessionID == targetID || strings.HasPrefix(s.SessionID, targetID) {
+				matchedSession = &s
+				break
+			}
+		}
+	}
+
+	if matchedSession == nil {
+		return fmt.Errorf("session %q not found. Run `agentlens list` to view available sessions", targetID)
+	}
+
+	w := watcher.NewWatcher(a.ActiveProvider, matchedSession.FilePath)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	return w.Watch(ctx, os.Stdout)
+}
+
 func (a *App) PrintHelp() {
 	fmt.Print(`AgentLens 🔍 — Generative AI Call Graph Visualizer (v0.1.0)
 
@@ -203,6 +249,7 @@ Available Commands:
   list                 List recorded AI interaction sessions (Antigravity/Gemini default)
   graph <session-id>   Render Caller ➔ Callee call graph tracing where Skills/MCPs were called
   trace <session-id>   Render turn-by-turn chronological execution trace tree
+  watch [session-id]   Live stream tool calls, results & anomaly alerts from active session
   inspect <call-id>    Display detailed input, output, and anomaly diagnostics for a node
   ui                   Launch local Web UI dashboard
   version              Print version of agentlens
