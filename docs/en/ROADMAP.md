@@ -12,7 +12,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 | :--- | :--- | :--- | :--- |
 | **Phase 0** | Project Foundation, Specs, Go Architecture, AI Agent Guidance & PR Setup | Completed | PR #1 |
 | **Phase 1** | Core Data Models, Provider Definition Schema & YAML Loader | Completed | PR #2 |
-| **Phase 2** | Trace Collector Engine & Call Graph Assembler (DAG in Go) | Planned | PR #3 |
+| **Phase 2** | Trace Collector Engine & Call Graph Assembler (DAG in Go) | Completed | PR #3 |
 | **Phase 3** | Anomaly & Silent Fallback Detection Engine | Planned | PR #4 |
 | **Phase 4** | CLI Visualization (`agentlens graph`, `inspect`, `watch`) | Planned | PR #5 |
 | **Phase 5** | Web UI Dashboard (Embedded UI & Free GitHub Pages Live Viewer) | Planned | PR #6 |
@@ -42,10 +42,10 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Add unit tests for YAML schema validation and provider parsing
 
 ### Phase 2: Collector Engine & Call Graph Assembler (PR #3)
-- [ ] Implement `BaseCollector` and file-based JSONL log stream reader (`internal/collector/`)
-- [ ] Implement `GraphBuilder` reconstructing DAG in Go (`internal/graph/`)
-- [ ] Implement subagent spawning and turn hierarchy stitching
-- [ ] Add unit tests with synthetic transcript traces
+- [x] Implement `BaseCollector` and file-based JSONL log stream reader (`internal/collector/`)
+- [x] Implement `GraphBuilder` reconstructing DAG in Go (`internal/graph/`)
+- [x] Implement subagent spawning and turn hierarchy stitching
+- [x] Add unit tests with synthetic transcript traces
 
 ### Phase 3: Anomaly & Fallback Detection Engine (PR #4)
 - [ ] Implement `AuthExpirationChecker` (regex pattern matching for token/401/403)

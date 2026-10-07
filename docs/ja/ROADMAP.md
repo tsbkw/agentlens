@@ -12,7 +12,7 @@
 | :--- | :--- | :--- | :--- |
 | **Phase 0** | プロジェクト基盤、仕様策定、Goアーキテクチャ、AI協調開発環境、PR運用確立 | 完了 | PR #1 |
 | **Phase 1** | コアデータモデル、プロバイダ定義スキーマ & YAMLローダー | 完了 | PR #2 |
-| **Phase 2** | トレース収集エンジン & コールグラフ構築器 (DAG in Go) | 計画中 | PR #3 |
+| **Phase 2** | トレース収集エンジン & コールグラフ構築器 (DAG in Go) | 完了 | PR #3 |
 | **Phase 3** | 異常・暗黙フォールバック検知エンジン | 計画中 | PR #4 |
 | **Phase 4** | CLI 可視化 (`agentlens graph`, `inspect`, `watch`) | 計画中 | PR #5 |
 | **Phase 5** | Web UI ダッシュボード (バイナリ内蔵 & 無料GitHub Pagesビューアー) | 計画中 | PR #6 |
@@ -42,10 +42,10 @@
 - [x] YAMLスキーマ検証およびプロバイダパースのユニットテスト作成
 
 ### Phase 2: 収集エンジン & コールグラフ構築器 (PR #3)
-- [ ] `BaseCollector` および JSONL ログストリームリーダーの実装 (`internal/collector/`)
-- [ ] Go言語による DAG 再構築 `GraphBuilder` の実装 (`internal/graph/`)
-- [ ] サブエージェント呼び出し・会話ターンの階層構造結合ロジックの実装
-- [ ] 模擬トレースを用いたユニットテスト作成
+- [x] `BaseCollector` および JSONL ログストリームリーダーの実装 (`internal/collector/`)
+- [x] Go言語による DAG 再構築 `GraphBuilder` の実装 (`internal/graph/`)
+- [x] サブエージェント呼び出し・会話ターンの階層構造結合ロジックの実装
+- [x] 模擬トレースを用いたユニットテスト作成
 
 ### Phase 3: 異常・フォールバック検知エンジン (PR #4)
 - [ ] `AuthExpirationChecker` (401/403/トークン失効パターンの検知) 実装
