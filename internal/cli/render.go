@@ -104,7 +104,7 @@ func RenderCallGraph(w io.Writer, g *graph.Graph) {
 	)
 }
 
-// RenderCallerDependencies groups and renders the caller -> callee relationships.
+// RenderCallerDependencies groups and renders the caller -> callee relationships as a transitive call tree.
 func RenderCallerDependencies(w io.Writer, g *graph.Graph) {
 	if len(g.Dependencies) == 0 {
 		return
@@ -140,40 +140,48 @@ func RenderCallerDependencies(w io.Writer, g *graph.Graph) {
 
 		for i, dep := range grp.deps {
 			isLast := i == len(grp.deps)-1
-			connector := "├── "
-			if isLast {
-				connector = "└── "
-			}
-
-			calleeBadge := formatCalleeBadge(dep.CalleeType, dep.MCPServer)
-			statusStr := fmt.Sprintf("%s%d calls%s", colorDim, dep.CallCount, colorReset)
-			if dep.FailCount > 0 {
-				statusStr = fmt.Sprintf("%d calls (%s✓ %d%s | %s✗ %d%s)",
-					dep.CallCount,
-					colorGreen, dep.SuccessCount, colorReset,
-					colorRed, dep.FailCount, colorReset,
-				)
-			} else {
-				statusStr = fmt.Sprintf("%d calls (%s✓ %d%s)",
-					dep.CallCount,
-					colorGreen, dep.SuccessCount, colorReset,
-				)
-			}
-
-			fmt.Fprintf(w, "  %s%s %s%s%s %s\n",
-				connector, calleeBadge, colorBold, dep.Callee, colorReset, statusStr,
-			)
-
-			if dep.IsFallback {
-				fallbackPrefix := "  │     "
-				if isLast {
-					fallbackPrefix = "        "
-				}
-				fmt.Fprintf(w, "%s%s⚠️  SILENT FALLBACK ➔ %s%s%s\n",
-					fallbackPrefix, colorYellow, colorBold, dep.FallbackTo, colorReset,
-				)
-			}
+			renderDependencyTree(w, dep, "  ", isLast)
 		}
+	}
+}
+
+func renderDependencyTree(w io.Writer, dep models.CallerDependency, prefix string, isLast bool) {
+	connector := "├── "
+	childPrefix := prefix + "│   "
+	if isLast {
+		connector = "└── "
+		childPrefix = prefix + "    "
+	}
+
+	calleeBadge := formatCalleeBadge(dep.CalleeType, dep.MCPServer)
+	var statusStr string
+	if dep.FailCount > 0 {
+		statusStr = fmt.Sprintf("%d calls (%s✓ %d%s | %s✗ %d%s)",
+			dep.CallCount,
+			colorGreen, dep.SuccessCount, colorReset,
+			colorRed, dep.FailCount, colorReset,
+		)
+	} else {
+		statusStr = fmt.Sprintf("%d calls (%s✓ %d%s)",
+			dep.CallCount,
+			colorGreen, dep.SuccessCount, colorReset,
+		)
+	}
+
+	fmt.Fprintf(w, "%s%s%s %s%s%s %s\n",
+		prefix, connector, calleeBadge, colorBold, dep.Callee, colorReset, statusStr,
+	)
+
+	if dep.IsFallback {
+		fallbackPrefix := childPrefix
+		fmt.Fprintf(w, "%s%s⚠️  SILENT FALLBACK ➔ %s%s%s\n",
+			fallbackPrefix, colorYellow, colorBold, dep.FallbackTo, colorReset,
+		)
+	}
+
+	for j, child := range dep.Children {
+		isChildLast := j == len(dep.Children)-1
+		renderDependencyTree(w, child, childPrefix, isChildLast)
 	}
 }
 

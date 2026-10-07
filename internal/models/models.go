@@ -95,8 +95,9 @@ type CallerDependency struct {
 	CallCount    int          `json:"call_count"`
 	SuccessCount int          `json:"success_count"`
 	FailCount    int          `json:"fail_count"`
-	IsFallback   bool         `json:"is_fallback"`
-	FallbackTo   string       `json:"fallback_to,omitempty"`
+	IsFallback   bool               `json:"is_fallback"`
+	FallbackTo   string             `json:"fallback_to,omitempty"`
+	Children     []CallerDependency `json:"children,omitempty"`
 }
 
 // CallEdgeType represents edge semantics in the DAG.

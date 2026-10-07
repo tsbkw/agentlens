@@ -730,11 +730,38 @@
 
     function computeDependencies(nodes) {
       const depMap = {};
-      nodes.forEach((node, i) => {
-        const caller = node.caller_scope || "Agent";
-        const callee = node.name;
-        const key = `${caller}::${callee}`;
+      const callerDeps = {};
+      const scopeParentMap = {};
 
+      nodes.forEach((node, i) => {
+        let caller = node.caller_scope || "Agent";
+        let callee = node.name;
+        let calleeType = node.type;
+
+        if (node.name === 'invoke_subagent') {
+          calleeType = 'subagent';
+          const args = node.arguments || {};
+          if (args.Role) callee = "Subagent: " + args.Role;
+          else if (args.TypeName) callee = "Subagent: " + args.TypeName;
+          scopeParentMap[callee] = caller;
+        } else if (node.name === 'view_file') {
+          const args = node.arguments || {};
+          const p = String(args.AbsolutePath || '');
+          if (p.includes('/skills/') && p.endsWith('/SKILL.md')) {
+            const parts = p.split('/skills/');
+            if (parts.length > 1) {
+              callee = "Skill: " + parts[1].split('/')[0];
+              calleeType = 'skill';
+              scopeParentMap[callee] = caller;
+            }
+          }
+        } else if (node.name.startsWith('skill_')) {
+          callee = "Skill: " + node.name.replace('skill_', '');
+          calleeType = 'skill';
+          scopeParentMap[callee] = caller;
+        }
+
+        const key = `${caller}::${callee}`;
         if (!depMap[key]) {
           let callerType = 'agent';
           if (caller.startsWith('Skill:')) callerType = 'skill';
@@ -744,14 +771,15 @@
             caller: caller,
             caller_type: callerType,
             callee: callee,
-            callee_type: node.type,
+            callee_type: calleeType,
             mcp_server: node.mcp_server,
             call_count: 0,
             success_count: 0,
             fail_count: 0,
             is_fallback: false,
             fallback_to: "",
-            example_node: node
+            example_node: node,
+            children: []
           };
         }
 
@@ -760,14 +788,86 @@
         if (node.status === 'success') dep.success_count++;
         else if (node.status === 'failed') dep.fail_count++;
 
-        // Detect if fallback happened from this node
         if (node.status === 'failed' && i + 1 < nodes.length) {
           dep.is_fallback = true;
           dep.fallback_to = nodes[i + 1].name;
         }
       });
 
-      currentDependencies = Object.values(depMap);
+      // Group by caller
+      Object.values(depMap).forEach(dep => {
+        if (!callerDeps[dep.caller]) callerDeps[dep.caller] = [];
+        callerDeps[dep.caller].push(dep);
+      });
+
+      // Sort dependencies under each caller
+      Object.keys(callerDeps).forEach(c => {
+        callerDeps[c].sort((a, b) => b.call_count - a.call_count);
+      });
+
+      // Recursively attach children
+      const visitedScopes = {};
+      function attachChildren(dep) {
+        const childScope = dep.callee;
+        if (visitedScopes[childScope]) return;
+        visitedScopes[childScope] = true;
+
+        if (callerDeps[childScope]) {
+          callerDeps[childScope].forEach(sub => {
+            const subCopy = { ...sub, children: [] };
+            attachChildren(subCopy);
+            dep.children.push(subCopy);
+          });
+        }
+      }
+
+      // Root callers
+      const allCallees = new Set(Object.values(depMap).map(d => d.callee));
+      const rootCallers = [];
+      Object.keys(callerDeps).forEach(c => {
+        if (c.startsWith('Agent')) rootCallers.push(c);
+      });
+      Object.keys(callerDeps).forEach(c => {
+        if (!c.startsWith('Agent') && !allCallees.has(c)) rootCallers.push(c);
+      });
+
+      const roots = [];
+      rootCallers.forEach(r => {
+        callerDeps[r].forEach(dep => {
+          const depCopy = { ...dep, children: [] };
+          attachChildren(depCopy);
+          roots.push(depCopy);
+        });
+      });
+
+      // Orphaned scopes (e.g. from tests)
+      Object.keys(callerDeps).forEach(caller => {
+        if (!visitedScopes[caller] && !rootCallers.includes(caller)) {
+          const targetRoot = rootCallers.find(r => r.startsWith('Agent')) || rootCallers[0] || 'Agent';
+          const syntheticDep = {
+            caller: targetRoot,
+            caller_type: 'agent',
+            callee: caller,
+            callee_type: caller.startsWith('Subagent') ? 'subagent' : 'skill',
+            call_count: 1,
+            success_count: 1,
+            fail_count: 0,
+            is_fallback: false,
+            fallback_to: '',
+            example_node: null,
+            children: []
+          };
+          callerDeps[caller].forEach(d => {
+            const dCopy = { ...d, children: [] };
+            attachChildren(dCopy);
+            syntheticDep.children.push(dCopy);
+          });
+          roots.push(syntheticDep);
+          visitedScopes[caller] = true;
+        }
+      });
+
+      currentDependencies = roots;
     }
 
     function displayGraph() {
@@ -805,6 +905,54 @@
     function refreshViews() {
       renderDependenciesView();
       renderTraceView();
+    }
+
+    function renderDepRowHTML(d, depth = 0) {
+      let calleeTypeBadge = 'badge-system';
+      if (d.callee_type === 'mcp_tool') calleeTypeBadge = 'badge-mcp';
+      else if (d.callee_type === 'skill') calleeTypeBadge = 'badge-skill';
+      else if (d.callee_type === 'subagent') calleeTypeBadge = 'badge-subagent';
+
+      const statusText = d.fail_count > 0 
+        ? `${d.call_count} calls (<span style="color:var(--success)">✓ ${d.success_count}</span> | <span style="color:var(--danger)">✗ ${d.fail_count}</span>)`
+        : `${d.call_count} calls (<span style="color:var(--success)">✓ ${d.success_count}</span>)`;
+
+      const hasChildren = d.children && d.children.length > 0;
+      const indentGuide = depth > 0 ? `<span style="color:var(--border); margin-right:6px; font-family:monospace;">${'│  '.repeat(depth - 1)}└──</span>` : '';
+
+      let fallbackAlert = '';
+      if (d.is_fallback) {
+        fallbackAlert = `
+          <tr>
+            <td colspan="3" class="fallback-alert-row" style="padding-left: ${3.5 + depth * 1.5}rem;">
+              ⚠️ <strong>Silent Fallback Detected:</strong> Primary tool failed, agent substituted execution with <code>${d.fallback_to}</code>.
+            </td>
+          </tr>
+        `;
+      }
+
+      let childrenHTML = '';
+      if (hasChildren) {
+        childrenHTML = d.children.map(child => renderDepRowHTML(child, depth + 1)).join('');
+      }
+
+      return `
+        <tr class="callee-row" onclick='openDrawerByExample("${d.example_node ? d.example_node.id : ''}")'>
+          <td class="callee-cell" style="width: 160px; padding-left: ${1.25 + depth * 1.25}rem;">
+            ${indentGuide}<span class="badge ${calleeTypeBadge}">${d.callee_type.replace('_', ' ')}</span>
+          </td>
+          <td class="callee-cell" style="font-weight:600; color:#fff;">
+            ${d.callee}
+            ${d.mcp_server ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem;">(server: ${d.mcp_server})</span>` : ''}
+            ${hasChildren ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem; margin-left:0.5rem;">[${d.children.length} nested call(s)]</span>` : ''}
+          </td>
+          <td class="callee-cell" style="text-align:right;">
+            ${statusText}
+          </td>
+        </tr>
+        ${fallbackAlert}
+        ${childrenHTML}
+      `;
     }
 
     function renderDependenciesView() {
@@ -860,44 +1008,7 @@
           </div>
           <table class="callee-table">
             <tbody>
-              ${deps.map(d => {
-                let calleeTypeBadge = 'badge-system';
-                if (d.callee_type === 'mcp_tool') calleeTypeBadge = 'badge-mcp';
-                else if (d.callee_type === 'skill') calleeTypeBadge = 'badge-skill';
-                else if (d.callee_type === 'subagent') calleeTypeBadge = 'badge-subagent';
-
-                const statusColor = d.fail_count > 0 ? 'var(--danger)' : 'var(--success)';
-                const statusText = d.fail_count > 0 
-                  ? `${d.call_count} calls (<span style="color:var(--success)">✓ ${d.success_count}</span> | <span style="color:var(--danger)">✗ ${d.fail_count}</span>)`
-                  : `${d.call_count} calls (<span style="color:var(--success)">✓ ${d.success_count}</span>)`;
-
-                let fallbackAlert = '';
-                if (d.is_fallback) {
-                  fallbackAlert = `
-                    <tr>
-                      <td colspan="4" class="fallback-alert-row">
-                        ⚠️ <strong>Silent Fallback Detected:</strong> Primary tool failed, agent substituted execution with <code>${d.fallback_to}</code>.
-                      </td>
-                    </tr>
-                  `;
-                }
-
-                return `
-                  <tr class="callee-row" onclick='openDrawerByExample("${d.example_node ? d.example_node.id : ''}")'>
-                    <td class="callee-cell" style="width: 140px;">
-                      <span class="badge ${calleeTypeBadge}">${d.callee_type.replace('_', ' ')}</span>
-                    </td>
-                    <td class="callee-cell" style="font-weight:600; color:#fff;">
-                      ${d.callee}
-                      ${d.mcp_server ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem;">(server: ${d.mcp_server})</span>` : ''}
-                    </td>
-                    <td class="callee-cell" style="text-align:right;">
-                      ${statusText}
-                    </td>
-                  </tr>
-                  ${fallbackAlert}
-                `;
-              }).join('')}
+              ${deps.map(d => renderDepRowHTML(d, 0)).join('')}
             </tbody>
           </table>
         `;
