@@ -16,8 +16,9 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 | **Phase 3** | Anomaly & Silent Fallback Detection Engine | Completed | PR #4 |
 | **Phase 4** | CLI Visualization (`agentlens graph`, `inspect`, `watch`) | Completed | PR #5 |
 | **Phase 5** | Web UI Dashboard (Embedded UI & Free GitHub Pages Live Viewer) | Completed | PR #6 |
-| **Phase 6** | Built-in Provider Adapters (Antigravity, Claude Code, Cursor, etc.) | Planned | PR #7 |
-| **Phase 7** | Internationalization (i18n: en & ja) CLI/UI Localization | Planned | PR #8 |
+| **Phase 6** | Call Graph Redesign: Caller ➔ Callee Graph & Turn Trace Engine | Completed | PR #7 |
+| **Phase 7** | Multi-Provider Adapters & Live Tail Watcher (`agentlens watch`) | Planned | PR #8 |
+| **Phase 8** | Internationalization (i18n: en & ja) CLI/UI Localization | Planned | PR #9 |
 
 ---
 
@@ -65,13 +66,20 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Implement anomaly alert banner and inspector drawer in Web UI
 - [x] Enable 100% private client-side drag-and-drop trace viewing on GitHub Pages
 
-### Phase 6: Multi-Provider Adapters (PR #7)
-- [ ] Antigravity transcript parser and live log watcher
+### Phase 6: Call Graph Redesign: Caller ➔ Callee Graph & Turn Trace Engine (PR #7)
+- [x] Redesign Call Graph from 160-level linear staircase to true **Caller ➔ Callee Dependency Graph**
+- [x] Detect Skill activations (`view_file` on `.../skills/<name>/SKILL.md`, `skill_*`) and Subagents
+- [x] Implement Turn-by-Turn execution trace engine with user prompt sanitization
+- [x] Add `agentlens trace <session-id>` CLI command alongside `agentlens graph <session-id>`
+- [x] Update Web UI with dual tabs: **Caller ➔ Callee Graph** and **Turn Execution Trace**
+
+### Phase 7: Multi-Provider Adapters & Live Log Watcher (PR #8)
+- [ ] Implement live log watcher (`agentlens watch`) with automatic file tailing
 - [ ] Claude Code session trace adapter
 - [ ] Cursor / Roo Code trace adapter
-- [ ] Documentation and user guide for creating custom provider definitions
+- [ ] Custom provider creation guide and schema documentation
 
-### Phase 7: Full i18n & Polishing (PR #8)
+### Phase 8: Full i18n & Polishing (PR #9)
 - [ ] Localization manager supporting English and Japanese
 - [ ] Localized CLI strings and UI strings
 - [ ] End-to-end integration tests and documentation finalization

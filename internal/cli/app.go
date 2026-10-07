@@ -49,9 +49,21 @@ func (a *App) Run(args []string) error {
 		return a.CmdList()
 	case "graph":
 		if len(args) < 3 {
-			return fmt.Errorf("missing session ID. Usage: agentlens graph <session-id>")
+			return fmt.Errorf("missing session ID. Usage: agentlens graph <session-id> [--trace]")
+		}
+		if len(args) >= 4 && (args[3] == "--trace" || args[2] == "--trace") {
+			targetID := args[2]
+			if targetID == "--trace" {
+				targetID = args[3]
+			}
+			return a.CmdTrace(targetID)
 		}
 		return a.CmdGraph(args[2])
+	case "trace":
+		if len(args) < 3 {
+			return fmt.Errorf("missing session ID. Usage: agentlens trace <session-id>")
+		}
+		return a.CmdTrace(args[2])
 	case "inspect":
 		if len(args) < 3 {
 			return fmt.Errorf("missing call ID. Usage: agentlens inspect <call-id>")
@@ -78,7 +90,7 @@ func (a *App) CmdList() error {
 	return nil
 }
 
-// CmdGraph visualizes the call graph for a session.
+// CmdGraph visualizes the caller -> callee call graph for a session.
 func (a *App) CmdGraph(targetID string) error {
 	col := collector.NewCollector(a.ActiveProvider)
 	sessions, err := col.DiscoverSessions()
@@ -98,19 +110,55 @@ func (a *App) CmdGraph(targetID string) error {
 		return fmt.Errorf("session %q not found. Run `agentlens list` to view available sessions", targetID)
 	}
 
-	nodes, err := col.IngestFile(matchedSession.FilePath)
+	data, err := col.IngestSessionFile(matchedSession.FilePath)
 	if err != nil {
 		return fmt.Errorf("failed to ingest session trace: %w", err)
 	}
 
 	builder := graph.NewGraphBuilder()
-	g := builder.Build(matchedSession.SessionID, a.ActiveProvider.Definition.Provider.ID, nodes)
+	g := builder.BuildWithTurns(matchedSession.SessionID, a.ActiveProvider.Definition.Provider.ID, data.Turns, data.Nodes)
 
 	// Run anomaly detection
 	det := detector.NewDetector(a.ActiveProvider)
 	det.Analyze(g)
 
 	RenderCallGraph(os.Stdout, g)
+	return nil
+}
+
+// CmdTrace visualizes the chronological turn-by-turn execution trace.
+func (a *App) CmdTrace(targetID string) error {
+	col := collector.NewCollector(a.ActiveProvider)
+	sessions, err := col.DiscoverSessions()
+	if err != nil {
+		return err
+	}
+
+	var matchedSession *collector.SessionInfo
+	for _, s := range sessions {
+		if s.SessionID == targetID || strings.HasPrefix(s.SessionID, targetID) {
+			matchedSession = &s
+			break
+		}
+	}
+
+	if matchedSession == nil {
+		return fmt.Errorf("session %q not found. Run `agentlens list` to view available sessions", targetID)
+	}
+
+	data, err := col.IngestSessionFile(matchedSession.FilePath)
+	if err != nil {
+		return fmt.Errorf("failed to ingest session trace: %w", err)
+	}
+
+	builder := graph.NewGraphBuilder()
+	g := builder.BuildWithTurns(matchedSession.SessionID, a.ActiveProvider.Definition.Provider.ID, data.Turns, data.Nodes)
+
+	// Run anomaly detection
+	det := detector.NewDetector(a.ActiveProvider)
+	det.Analyze(g)
+
+	RenderExecutionTrace(os.Stdout, g)
 	return nil
 }
 
@@ -123,13 +171,13 @@ func (a *App) CmdInspect(callID string) error {
 	}
 
 	for _, s := range sessions {
-		nodes, err := col.IngestFile(s.FilePath)
+		data, err := col.IngestSessionFile(s.FilePath)
 		if err != nil {
 			continue
 		}
 
 		builder := graph.NewGraphBuilder()
-		g := builder.Build(s.SessionID, a.ActiveProvider.Definition.Provider.ID, nodes)
+		g := builder.BuildWithTurns(s.SessionID, a.ActiveProvider.Definition.Provider.ID, data.Turns, data.Nodes)
 
 		det := detector.NewDetector(a.ActiveProvider)
 		det.Analyze(g)
@@ -153,7 +201,8 @@ Usage:
 
 Available Commands:
   list                 List recorded AI interaction sessions (Antigravity/Gemini default)
-  graph <session-id>   Render call graph tree in terminal with status & anomaly badges
+  graph <session-id>   Render Caller ➔ Callee call graph tracing where Skills/MCPs were called
+  trace <session-id>   Render turn-by-turn chronological execution trace tree
   inspect <call-id>    Display detailed input, output, and anomaly diagnostics for a node
   ui                   Launch local Web UI dashboard
   version              Print version of agentlens

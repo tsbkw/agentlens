@@ -1,49 +1,56 @@
 package graph
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/tsbkw/agentlens/internal/models"
 )
 
-// Graph represents a compiled Directed Acyclic Graph (DAG) of an execution session.
+// Graph represents the compiled hierarchical DAG and caller-to-callee dependencies.
 type Graph struct {
-	SessionID string                       `json:"session_id"`
-	Provider  string                       `json:"provider"`
-	Nodes     map[string]*models.CallNode  `json:"nodes"`
-	Edges     []models.CallEdge            `json:"edges"`
-	Roots     []string                     `json:"roots"` // Node IDs with no parents
-	Children  map[string][]string          `json:"children"`
-	Parents   map[string][]string          `json:"parents"`
+	SessionID    string                       `json:"session_id"`
+	Provider     string                       `json:"provider"`
+	Turns        []models.ExecutionTurn       `json:"turns,omitempty"`
+	Nodes        map[string]*models.CallNode  `json:"nodes"`
+	Edges        []models.CallEdge            `json:"edges"`
+	Roots        []string                     `json:"roots"`
+	Children     map[string][]string          `json:"children"`
+	Parents      map[string][]string          `json:"parents"`
+	Dependencies []models.CallerDependency   `json:"dependencies"`
 }
 
-// GraphBuilder constructs a Graph from an unordered list of CallNodes.
+// GraphBuilder constructs a clean hierarchical Graph from turns and call nodes.
 type GraphBuilder struct {
-	nodes    map[string]*models.CallNode
-	edges    []models.CallEdge
-	children map[string][]string
-	parents  map[string][]string
+	nodes        map[string]*models.CallNode
+	edges        []models.CallEdge
+	children     map[string][]string
+	parents      map[string][]string
+	roots        []string
+	dependencies []models.CallerDependency
 }
 
 // NewGraphBuilder creates an empty GraphBuilder.
 func NewGraphBuilder() *GraphBuilder {
 	return &GraphBuilder{
-		nodes:    make(map[string]*models.CallNode),
-		edges:    make([]models.CallEdge, 0),
-		children: make(map[string][]string),
-		parents:  make(map[string][]string),
+		nodes:        make(map[string]*models.CallNode),
+		edges:        make([]models.CallEdge, 0),
+		children:     make(map[string][]string),
+		parents:      make(map[string][]string),
+		roots:        make([]string, 0),
+		dependencies: make([]models.CallerDependency, 0),
 	}
 }
 
-// AddNode adds a CallNode to the graph.
+// AddNode registers a node in the graph.
 func (b *GraphBuilder) AddNode(node models.CallNode) {
 	b.nodes[node.ID] = &node
 }
 
 // AddEdge creates a directed relationship from source to target.
 func (b *GraphBuilder) AddEdge(sourceID, targetID string, edgeType models.CallEdgeType) {
-	// Avoid duplicate edges
 	for _, e := range b.edges {
 		if e.SourceID == sourceID && e.TargetID == targetID && e.Type == edgeType {
 			return
@@ -60,93 +67,263 @@ func (b *GraphBuilder) AddEdge(sourceID, targetID string, edgeType models.CallEd
 	b.parents[targetID] = append(b.parents[targetID], sourceID)
 }
 
-// Build constructs and returns the final Graph.
+// Build constructs the hierarchical DAG from turns and raw call nodes.
 func (b *GraphBuilder) Build(sessionID, providerID string, rawNodes []models.CallNode) *Graph {
+	return b.BuildWithTurns(sessionID, providerID, nil, rawNodes)
+}
+
+// BuildWithTurns constructs the hierarchical DAG organized by conversational turns.
+func (b *GraphBuilder) BuildWithTurns(
+	sessionID, providerID string,
+	turns []models.ExecutionTurn,
+	rawNodes []models.CallNode,
+) *Graph {
 	for _, n := range rawNodes {
 		b.AddNode(n)
 	}
 
-	// Sort nodes by timestamp to establish chronological order
-	sortedNodes := make([]*models.CallNode, 0, len(b.nodes))
+	// Group nodes by Turn
+	nodesByTurn := make(map[int][]*models.CallNode)
 	for _, n := range b.nodes {
-		sortedNodes = append(sortedNodes, n)
+		nodesByTurn[n.TurnIndex] = append(nodesByTurn[n.TurnIndex], n)
 	}
-	sort.Slice(sortedNodes, func(i, j int) bool {
-		return sortedNodes[i].Timestamp.Before(sortedNodes[j].Timestamp)
-	})
 
-	// 1. Explicit parent-child connections
-	for _, node := range sortedNodes {
-		if node.ParentID != "" && node.ParentID != node.ID {
-			if _, exists := b.nodes[node.ParentID]; exists {
-				edgeType := models.EdgeTypeCalls
-				if b.nodes[node.ParentID].Type == models.NodeTypeSubagent {
-					edgeType = models.EdgeTypeSpawns
+	for turnIdx := range nodesByTurn {
+		sort.Slice(nodesByTurn[turnIdx], func(i, j int) bool {
+			return nodesByTurn[turnIdx][i].Timestamp.Before(nodesByTurn[turnIdx][j].Timestamp)
+		})
+	}
+
+	// If turns are provided, organize hierarchically by turn and scope
+	if len(turns) > 0 {
+		nodesByTurn := make(map[int][]*models.CallNode)
+		for _, n := range b.nodes {
+			nodesByTurn[n.TurnIndex] = append(nodesByTurn[n.TurnIndex], n)
+		}
+
+		for turnIdx := range nodesByTurn {
+			sort.Slice(nodesByTurn[turnIdx], func(i, j int) bool {
+				return nodesByTurn[turnIdx][i].Timestamp.Before(nodesByTurn[turnIdx][j].Timestamp)
+			})
+		}
+
+		for _, turn := range turns {
+			turnNodeID := fmt.Sprintf("turn-%d", turn.Index)
+			turnLabel := turn.Prompt
+			if len(turnLabel) > 60 {
+				turnLabel = turnLabel[:60] + "..."
+			}
+			if turnLabel == "" {
+				turnLabel = fmt.Sprintf("Turn %d", turn.Index)
+			}
+
+			turnNode := models.CallNode{
+				ID:        turnNodeID,
+				SessionID: sessionID,
+				TurnIndex: turn.Index,
+				Type:      models.NodeTypeUserTurn,
+				Name:      fmt.Sprintf("Turn %d: %s", turn.Index, turnLabel),
+				Timestamp: turn.Timestamp,
+				Status:    models.StatusSuccess,
+			}
+			b.AddNode(turnNode)
+			b.roots = append(b.roots, turnNodeID)
+
+			scopeNodeMap := make(map[string]string)
+			turnCalls := nodesByTurn[turn.Index]
+			var lastFailedNode *models.CallNode
+
+			for _, callNode := range turnCalls {
+				if callNode.ParentID != "" && b.nodes[callNode.ParentID] != nil {
+					b.AddEdge(callNode.ParentID, callNode.ID, models.EdgeTypeSpawns)
+				} else {
+					parentTarget := turnNodeID
+					callerScope := callNode.CallerScope
+					if callerScope != "" && callerScope != "Agent" {
+						scopeID, exists := scopeNodeMap[callerScope]
+						if !exists {
+							scopeID = fmt.Sprintf("scope-%d-%s", turn.Index, sanitizeID(callerScope))
+							scopeType := models.NodeTypeSkill
+							if strings.HasPrefix(callerScope, "Subagent") {
+								scopeType = models.NodeTypeSubagent
+							}
+
+							scopeNode := models.CallNode{
+								ID:        scopeID,
+								SessionID: sessionID,
+								TurnIndex: turn.Index,
+								Type:      scopeType,
+								Name:      callerScope,
+								Timestamp: callNode.Timestamp,
+								Status:    models.StatusSuccess,
+							}
+							b.AddNode(scopeNode)
+							b.AddEdge(turnNodeID, scopeID, models.EdgeTypeCalls)
+							scopeNodeMap[callerScope] = scopeID
+						}
+						parentTarget = scopeID
+					}
+					b.AddEdge(parentTarget, callNode.ID, models.EdgeTypeCalls)
 				}
-				b.AddEdge(node.ParentID, node.ID, edgeType)
+
+				if lastFailedNode != nil {
+					b.AddEdge(lastFailedNode.ID, callNode.ID, models.EdgeTypeFallbackTo)
+					lastFailedNode = nil
+				}
+
+				if callNode.Status == models.StatusFailed {
+					lastFailedNode = callNode
+				}
+			}
+		}
+	} else {
+		// When no turns are provided (e.g. synthetic test cases or raw streams)
+		sortedNodes := make([]*models.CallNode, 0, len(rawNodes))
+		for _, n := range rawNodes {
+			sortedNodes = append(sortedNodes, b.nodes[n.ID])
+		}
+		sort.Slice(sortedNodes, func(i, j int) bool {
+			return sortedNodes[i].Timestamp.Before(sortedNodes[j].Timestamp)
+		})
+
+		// 1. Explicit parent-child hierarchy
+		for _, node := range sortedNodes {
+			if node.ParentID != "" && b.nodes[node.ParentID] != nil {
+				b.AddEdge(node.ParentID, node.ID, models.EdgeTypeSpawns)
+			}
+		}
+
+		// 2. Sequential fallback transition linking
+		var prevNode *models.CallNode
+		for _, node := range sortedNodes {
+			if prevNode != nil {
+				if prevNode.Status == models.StatusFailed {
+					b.AddEdge(prevNode.ID, node.ID, models.EdgeTypeFallbackTo)
+				}
+			}
+			prevNode = node
+		}
+
+		// Roots are nodes without parents
+		for _, node := range sortedNodes {
+			if len(b.parents[node.ID]) == 0 {
+				b.roots = append(b.roots, node.ID)
 			}
 		}
 	}
 
-	// 2. Subagent spawning detection
-	for i, node := range sortedNodes {
-		if node.Type == models.NodeTypeSubagent {
-			// Look ahead for tool calls executed within this subagent
-			for j := i + 1; j < len(sortedNodes); j++ {
-				next := sortedNodes[j]
-				if next.ParentID == node.ID || next.ParentID == "" {
-					b.AddEdge(node.ID, next.ID, models.EdgeTypeSpawns)
-					break
-				}
-			}
-		}
-	}
-
-	// 3. Sequential flow linking between consecutive root-level nodes
-	var prevRoot *models.CallNode
-	for _, node := range sortedNodes {
-		if len(b.parents[node.ID]) == 0 {
-			if prevRoot != nil {
-				// Link previous call to next call
-				edgeType := models.EdgeTypeCalls
-				if prevRoot.Status == models.StatusFailed {
-					edgeType = models.EdgeTypeFallbackTo
-				}
-				b.AddEdge(prevRoot.ID, node.ID, edgeType)
-			}
-			prevRoot = node
-		}
-	}
-
-	// 4. Determine root nodes
-	var roots []string
-	for _, node := range sortedNodes {
-		if len(b.parents[node.ID]) == 0 {
-			roots = append(roots, node.ID)
-		}
-	}
+	// 2. Compute Caller -> Callee Dependencies
+	b.dependencies = b.computeDependencies(rawNodes)
 
 	return &Graph{
-		SessionID: sessionID,
-		Provider:  providerID,
-		Nodes:     b.nodes,
-		Edges:     b.edges,
-		Roots:     roots,
-		Children:  b.children,
-		Parents:   b.parents,
+		SessionID:    sessionID,
+		Provider:     providerID,
+		Turns:        turns,
+		Nodes:        b.nodes,
+		Edges:        b.edges,
+		Roots:        b.roots,
+		Children:     b.children,
+		Parents:      b.parents,
+		Dependencies: b.dependencies,
 	}
+}
+
+func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.CallerDependency {
+	type depKey struct {
+		Caller string
+		Callee string
+	}
+
+	depMap := make(map[depKey]*models.CallerDependency)
+
+	for _, node := range nodes {
+		caller := node.CallerScope
+		if caller == "" {
+			caller = "Agent (Main Planner)"
+		}
+
+		callee := node.Name
+		key := depKey{Caller: caller, Callee: callee}
+
+		dep, exists := depMap[key]
+		if !exists {
+			callerType := models.NodeTypeAgent
+			if strings.HasPrefix(caller, "Skill:") {
+				callerType = models.NodeTypeSkill
+			} else if strings.HasPrefix(caller, "Subagent:") {
+				callerType = models.NodeTypeSubagent
+			}
+
+			dep = &models.CallerDependency{
+				Caller:     caller,
+				CallerType: callerType,
+				Callee:     callee,
+				CalleeType: node.Type,
+				MCPServer:  node.MCPServer,
+			}
+			depMap[key] = dep
+		}
+
+		dep.CallCount++
+		if node.Status == models.StatusSuccess {
+			dep.SuccessCount++
+		} else if node.Status == models.StatusFailed {
+			dep.FailCount++
+		}
+	}
+
+	// Detect fallback edges for dependencies
+	for _, edge := range b.edges {
+		if edge.Type == models.EdgeTypeFallbackTo {
+			srcNode := b.nodes[edge.SourceID]
+			tgtNode := b.nodes[edge.TargetID]
+			if srcNode != nil && tgtNode != nil {
+				caller := srcNode.CallerScope
+				if caller == "" {
+					caller = "Agent (Main Planner)"
+				}
+				key := depKey{Caller: caller, Callee: srcNode.Name}
+				if dep, exists := depMap[key]; exists {
+					dep.IsFallback = true
+					dep.FallbackTo = tgtNode.Name
+				}
+			}
+		}
+	}
+
+	result := make([]models.CallerDependency, 0, len(depMap))
+	for _, dep := range depMap {
+		result = append(result, *dep)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Caller != result[j].Caller {
+			return result[i].Caller < result[j].Caller
+		}
+		return result[i].CallCount > result[j].CallCount
+	})
+
+	return result
+}
+
+func sanitizeID(name string) string {
+	s := strings.ToLower(name)
+	s = strings.ReplaceAll(s, " ", "_")
+	s = strings.ReplaceAll(s, ":", "_")
+	s = strings.ReplaceAll(s, "/", "_")
+	return s
 }
 
 // GraphMetrics provides statistical summaries of a Graph.
 type GraphMetrics struct {
-	TotalNodes     int           `json:"total_nodes"`
-	TotalEdges     int           `json:"total_edges"`
-	SkillCalls     int           `json:"skill_calls"`
-	MCPToolCalls   int           `json:"mcp_tool_calls"`
-	SystemCalls    int           `json:"system_calls"`
-	FailedCalls    int           `json:"failed_calls"`
-	MaxDepth       int           `json:"max_depth"`
-	TotalDuration  time.Duration `json:"total_duration"`
+	TotalNodes    int           `json:"total_nodes"`
+	TotalEdges    int           `json:"total_edges"`
+	SkillCalls    int           `json:"skill_calls"`
+	MCPToolCalls  int           `json:"mcp_tool_calls"`
+	SystemCalls   int           `json:"system_calls"`
+	FailedCalls   int           `json:"failed_calls"`
+	MaxDepth      int           `json:"max_depth"`
+	TotalDuration time.Duration `json:"total_duration"`
 }
 
 // ComputeMetrics calculates execution summary metrics for the Graph.
@@ -170,31 +347,5 @@ func (g *Graph) ComputeMetrics() GraphMetrics {
 		}
 	}
 
-	m.MaxDepth = g.calculateMaxDepth()
 	return m
-}
-
-func (g *Graph) calculateMaxDepth() int {
-	maxDepth := 0
-	visited := make(map[string]bool)
-
-	var dfs func(id string, depth int)
-	dfs = func(id string, depth int) {
-		if depth > maxDepth {
-			maxDepth = depth
-		}
-		if visited[id] {
-			return
-		}
-		visited[id] = true
-		for _, childID := range g.Children[id] {
-			dfs(childID, depth+1)
-		}
-	}
-
-	for _, rootID := range g.Roots {
-		dfs(rootID, 1)
-	}
-
-	return maxDepth
 }
