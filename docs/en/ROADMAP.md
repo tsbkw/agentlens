@@ -10,8 +10,8 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 
 | Phase | Description | Status | Target / PR |
 | :--- | :--- | :--- | :--- |
-| **Phase 0** | Project Foundation, Specs, Go Architecture, AI Agent Guidance & PR Setup | In Progress | PR #1 |
-| **Phase 1** | Core Data Models, Provider Definition Schema & YAML Loader | Planned | PR #2 |
+| **Phase 0** | Project Foundation, Specs, Go Architecture, AI Agent Guidance & PR Setup | Completed | PR #1 |
+| **Phase 1** | Core Data Models, Provider Definition Schema & YAML Loader | Completed | PR #2 |
 | **Phase 2** | Trace Collector Engine & Call Graph Assembler (DAG in Go) | Planned | PR #3 |
 | **Phase 3** | Anomaly & Silent Fallback Detection Engine | Planned | PR #4 |
 | **Phase 4** | CLI Visualization (`agentlens graph`, `inspect`, `watch`) | Planned | PR #5 |
@@ -37,9 +37,9 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Establish PR-based development workflow and merge initial PR
 
 ### Phase 1: Core Models & Provider Loader (PR #2)
-- [ ] Implement Provider Definition Loader (`internal/providers/loader.go`, YAML validator)
-- [ ] Implement Session & Trace Data Parsers (`internal/providers/parser.go`)
-- [ ] Add unit tests for YAML schema validation and provider parsing
+- [x] Implement Provider Definition Loader (`internal/providers/loader.go`, YAML validator)
+- [x] Implement Session & Trace Data Parsers (`internal/providers/parser.go`)
+- [x] Add unit tests for YAML schema validation and provider parsing
 
 ### Phase 2: Collector Engine & Call Graph Assembler (PR #3)
 - [ ] Implement `BaseCollector` and file-based JSONL log stream reader (`internal/collector/`)

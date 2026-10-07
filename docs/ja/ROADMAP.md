@@ -10,8 +10,8 @@
 
 | フェーズ | 概要 | 状態 | 対象 / PR |
 | :--- | :--- | :--- | :--- |
-| **Phase 0** | プロジェクト基盤、仕様策定、Goアーキテクチャ、AI協調開発環境、PR運用確立 | 進行中 | PR #1 |
-| **Phase 1** | コアデータモデル、プロバイダ定義スキーマ & YAMLローダー | 計画中 | PR #2 |
+| **Phase 0** | プロジェクト基盤、仕様策定、Goアーキテクチャ、AI協調開発環境、PR運用確立 | 完了 | PR #1 |
+| **Phase 1** | コアデータモデル、プロバイダ定義スキーマ & YAMLローダー | 完了 | PR #2 |
 | **Phase 2** | トレース収集エンジン & コールグラフ構築器 (DAG in Go) | 計画中 | PR #3 |
 | **Phase 3** | 異常・暗黙フォールバック検知エンジン | 計画中 | PR #4 |
 | **Phase 4** | CLI 可視化 (`agentlens graph`, `inspect`, `watch`) | 計画中 | PR #5 |
@@ -37,9 +37,9 @@
 - [x] PRベースの開発ワークフローの確立と初期PRのマージ
 
 ### Phase 1: コアデータモデル & プロバイダローダー (PR #2)
-- [ ] プロバイダ定義ローダーの実装 (`internal/providers/loader.go`, YAMLバリデーション)
-- [ ] セッションおよびトレースデータパーサーの実装 (`internal/providers/parser.go`)
-- [ ] YAMLスキーマ検証およびプロバイダパースのユニットテスト作成
+- [x] プロバイダ定義ローダーの実装 (`internal/providers/loader.go`, YAMLバリデーション)
+- [x] セッションおよびトレースデータパーサーの実装 (`internal/providers/parser.go`)
+- [x] YAMLスキーマ検証およびプロバイダパースのユニットテスト作成
 
 ### Phase 2: 収集エンジン & コールグラフ構築器 (PR #3)
 - [ ] `BaseCollector` および JSONL ログストリームリーダーの実装 (`internal/collector/`)
