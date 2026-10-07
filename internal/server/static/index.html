@@ -661,7 +661,7 @@
       currentAnomalies = [];
       nodes.forEach((node, i) => {
         const outStr = String(node.output || '') + ' ' + String(node.errorMessage || '');
-        if (/unauthorized|401|403|token expired|authentication failed/i.test(outStr)) {
+        if (/unauthorized|\b401\b|\b403\b|token expired|authentication failed/i.test(outStr)) {
           node.status = 'failed';
           const anom = {
             id: `auth-${node.id}`,
@@ -693,6 +693,37 @@
             next.anomalies.push(anom);
             currentAnomalies.push(anom);
           }
+        }
+      });
+
+      // Retry loop detection
+      let consecutiveFails = 0;
+      let lastFailedName = "";
+      nodes.forEach((node) => {
+        if (node.status === 'failed') {
+          if (node.name === lastFailedName || !lastFailedName) {
+            consecutiveFails++;
+            lastFailedName = node.name;
+            if (consecutiveFails >= 3) {
+              const anom = {
+                id: `loop-${node.id}-${consecutiveFails}`,
+                type: 'retry_loop',
+                severity: 'warning',
+                nodeId: node.id,
+                title: `Retry Loop: ${node.name} failed ${consecutiveFails} times consecutively`,
+                description: `Tool ${node.name} failed repeatedly without backoff. Agent appears stuck in an error loop.`,
+                recommendation: `Inspect tool parameters or database state causing repeated execution failure.`
+              };
+              node.anomalies.push(anom);
+              currentAnomalies.push(anom);
+            }
+          } else {
+            consecutiveFails = 1;
+            lastFailedName = node.name;
+          }
+        } else {
+          consecutiveFails = 0;
+          lastFailedName = "";
         }
       });
     }
@@ -988,13 +1019,43 @@
 
     function loadSampleTrace() {
       const sample = [
-        {"step_index":0,"type":"USER_INPUT","created_at":"2026-10-07T14:00:00Z","content":"<USER_REQUEST>File an urgent bug issue on github and inform slack team</USER_REQUEST>"},
-        {"step_index":1,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:01Z","tool_calls":[{"id":"c1","name":"mcp_github_create_issue","args":{"title":"Deploy Failure"}}]},
-        {"step_index":2,"type":"GENERIC","status":"ERROR","content":"401 Unauthorized: token expired"},
-        {"step_index":3,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:05Z","tool_calls":[{"id":"c2","name":"run_command","args":{"CommandLine":"gh issue create --title 'Deploy Failure'"}}]},
-        {"step_index":4,"type":"GENERIC","status":"DONE","content":"Created issue #42"},
-        {"step_index":5,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:10Z","tool_calls":[{"id":"c3","name":"mcp_slack_send_message","args":{"channel":"#alerts","message":"Issue opened"}}]},
-        {"step_index":6,"type":"GENERIC","status":"DONE","content":"ok: true"}
+        {"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","created_at":"2026-10-07T14:00:00Z","content":"<USER_REQUEST>Investigate database latency spike on production and analyze slow queries</USER_REQUEST>"},
+        {"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:02Z","tool_calls":[{"id":"call-view-skill","name":"view_file","args":{"AbsolutePath":"/home/tsbkw0/.gemini/antigravity-cli/skills/quota-aware-task-runner/SKILL.md"}}]},
+        {"step_index":2,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:00:03Z","content":"Loaded skill instructions for quota-aware-task-runner."},
+        {"step_index":3,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:05Z","tool_calls":[{"id":"call-uptime","name":"run_command","args":{"CommandLine":"uptime && top -b -n 1 | head -15"}}]},
+        {"step_index":4,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:00:06Z","content":"load average: 8.42, 6.11, 3.25; cpu usage 94%"},
+        {"step_index":5,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:08Z","tool_calls":[{"id":"call-free-mem","name":"run_command","args":{"CommandLine":"free -m"}}]},
+        {"step_index":6,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:00:09Z","content":"Mem: total 16384, used 15820, free 564"},
+        {"step_index":7,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:12Z","tool_calls":[{"id":"call-subagent-db","name":"invoke_subagent","args":{"Role":"Database Debugger","Prompt":"Inspect PostgreSQL slow query logs and lock contention"}}]},
+        {"step_index":8,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:00:13Z","content":"Subagent Database Debugger launched in conversation sub-9102."},
+        {"step_index":9,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:15Z","tool_calls":[{"id":"call-pg-slow","name":"mcp_postgres_query","args":{"sql":"SELECT query, calls, total_exec_time FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 3;"}}]},
+        {"step_index":10,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:00:16Z","content":"[{\"query\":\"SELECT * FROM user_sessions WHERE token = $1\",\"calls\":894210,\"total_exec_time\":145290.4}]"},
+        {"step_index":11,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:18Z","tool_calls":[{"id":"call-pg-locks","name":"mcp_postgres_list_locks","args":{"filter":"granted=false"}}]},
+        {"step_index":12,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:00:19Z","content":"[{\"pid\":4012,\"locktype\":\"transactionid\",\"mode\":\"ExclusiveLock\",\"granted\":false}]"},
+        {"step_index":13,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:22Z","tool_calls":[{"id":"call-sentry-err","name":"mcp_sentry_get_issues","args":{"project":"backend-api","query":"is:unresolved level:error"}}]},
+        {"step_index":14,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:00:23Z","content":"Found 1 issue: ConnectionPoolExhaustedError: timeout after 30s"},
+        {"step_index":15,"source":"USER_EXPLICIT","type":"USER_INPUT","created_at":"2026-10-07T14:01:00Z","content":"<USER_REQUEST>File a critical GitHub incident issue and notify the engineering team on Slack</USER_REQUEST>"},
+        {"step_index":16,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:01:02Z","tool_calls":[{"id":"call-gh-issue","name":"mcp_github_create_issue","args":{"repo":"company/backend-api","title":"[P0 Incident] Database Connection Pool Exhaustion on Prod","labels":["incident","p0"]}}]},
+        {"step_index":17,"source":"SYSTEM","type":"GENERIC","status":"ERROR","created_at":"2026-10-07T14:01:04Z","content":"401 Unauthorized: GitHub OAuth personal access token has expired. Request rejected by api.github.com."},
+        {"step_index":18,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:01:06Z","tool_calls":[{"id":"call-gh-fallback","name":"run_command","args":{"CommandLine":"gh issue create --title '[P0 Incident] Database Connection Pool Exhaustion on Prod' --label incident,p0 --body 'Incident report: DB pool exhaustion'"}}]},
+        {"step_index":19,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:01:08Z","content":"https://github.com/company/backend-api/issues/104"},
+        {"step_index":20,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:01:10Z","tool_calls":[{"id":"call-slack-msg","name":"mcp_slack_send_message","args":{"channel":"#incident-war-room","message":"🚨 [P0 Alert] Connection pool exhaustion detected. Incident #104 opened."}}]},
+        {"step_index":21,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:01:11Z","content":"{\"ok\":true,\"ts\":\"1728309670.001\"}"},
+        {"step_index":22,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:01:13Z","tool_calls":[{"id":"call-slack-react","name":"mcp_slack_add_reaction","args":{"channel":"#incident-war-room","timestamp":"1728309670.001","name":"fire"}}]},
+        {"step_index":23,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:01:14Z","content":"{\"ok\":true}"},
+        {"step_index":24,"source":"USER_EXPLICIT","type":"USER_INPUT","created_at":"2026-10-07T14:02:00Z","content":"<USER_REQUEST>Deploy connection pool hotfix max_connections=200 and verify database status</USER_REQUEST>"},
+        {"step_index":25,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:02:02Z","tool_calls":[{"id":"call-pg-retry-1","name":"mcp_postgres_query","args":{"sql":"SELECT count(*) FROM pg_stat_activity WHERE state = 'active';"}}]},
+        {"step_index":26,"source":"SYSTEM","type":"GENERIC","status":"ERROR","created_at":"2026-10-07T14:02:05Z","content":"Connection timeout after 30000ms: database server not responding"},
+        {"step_index":27,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:02:07Z","tool_calls":[{"id":"call-pg-retry-2","name":"mcp_postgres_query","args":{"sql":"SELECT count(*) FROM pg_stat_activity WHERE state = 'active';"}}]},
+        {"step_index":28,"source":"SYSTEM","type":"GENERIC","status":"ERROR","created_at":"2026-10-07T14:02:10Z","content":"Connection timeout after 30000ms: database server not responding"},
+        {"step_index":29,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:02:12Z","tool_calls":[{"id":"call-pg-retry-3","name":"mcp_postgres_query","args":{"sql":"SELECT count(*) FROM pg_stat_activity WHERE state = 'active';"}}]},
+        {"step_index":30,"source":"SYSTEM","type":"GENERIC","status":"ERROR","created_at":"2026-10-07T14:02:15Z","content":"Connection timeout after 30000ms: database server not responding"},
+        {"step_index":31,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:02:18Z","tool_calls":[{"id":"call-pg-restart","name":"run_command","args":{"CommandLine":"systemctl status postgresql.service && sudo systemctl restart postgresql"}}]},
+        {"step_index":32,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:02:22Z","content":"Restarted postgresql.service successfully. Active: active (running)."},
+        {"step_index":33,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:02:24Z","tool_calls":[{"id":"call-slack-recovered","name":"mcp_slack_send_message","args":{"channel":"#incident-war-room","message":"✅ PostgreSQL restarted. Connection pool cleared and latency normalized."}}]},
+        {"step_index":34,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:02:25Z","content":"{\"ok\":true,\"ts\":\"1728309745.002\"}"},
+        {"step_index":35,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:02:28Z","tool_calls":[{"id":"call-schedule","name":"schedule","args":{"DurationSeconds":1800,"Prompt":"Perform 30-minute post-incident latency health check"}}]},
+        {"step_index":36,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:02:29Z","content":"Scheduled task task-992 for 1800s."}
       ].map(JSON.stringify).join('\n');
       processTraceText(sample);
     }

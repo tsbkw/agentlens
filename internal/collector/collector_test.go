@@ -55,3 +55,42 @@ func TestIngestReaderAntigravity(t *testing.T) {
 		t.Errorf("Expected node[1] output '401 Unauthorized...', got %v", nodes[1].Output)
 	}
 }
+
+func TestIngestComplexIncidentResponseSample(t *testing.T) {
+	providerPath := filepath.Join("..", "..", "examples", "providers", "antigravity.yaml")
+	loaded, err := providers.LoadProviderFromFile(providerPath)
+	if err != nil {
+		t.Fatalf("Failed to load Antigravity provider: %v", err)
+	}
+
+	col := NewCollector(loaded)
+	samplePath := filepath.Join("..", "..", "examples", "traces", "sample_incident_response.jsonl")
+
+	data, err := col.IngestSessionFile(samplePath)
+	if err != nil {
+		t.Fatalf("Failed to ingest sample incident response file: %v", err)
+	}
+
+	if len(data.Turns) != 3 {
+		t.Errorf("Expected 3 turns, got %d", len(data.Turns))
+	}
+	if len(data.Nodes) != 17 {
+		t.Errorf("Expected 17 tool call nodes, got %d", len(data.Nodes))
+	}
+
+	// Verify scopes detected
+	scopesFound := make(map[string]bool)
+	for _, n := range data.Nodes {
+		scopesFound[n.CallerScope] = true
+	}
+
+	if !scopesFound["Skill: quota-aware-task-runner"] {
+		t.Errorf("Expected Skill: quota-aware-task-runner scope to be detected")
+	}
+	if !scopesFound["Subagent: Database Debugger"] {
+		t.Errorf("Expected Subagent: Database Debugger scope to be detected")
+	}
+	if !scopesFound["Agent"] {
+		t.Errorf("Expected Agent scope to be detected")
+	}
+}
