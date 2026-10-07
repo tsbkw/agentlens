@@ -15,7 +15,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 | **Phase 2** | Trace Collector Engine & Call Graph Assembler (DAG in Go) | Completed | PR #3 |
 | **Phase 3** | Anomaly & Silent Fallback Detection Engine | Completed | PR #4 |
 | **Phase 4** | CLI Visualization (`agentlens graph`, `inspect`, `watch`) | Completed | PR #5 |
-| **Phase 5** | Web UI Dashboard (Embedded UI & Free GitHub Pages Live Viewer) | Planned | PR #6 |
+| **Phase 5** | Web UI Dashboard (Embedded UI & Free GitHub Pages Live Viewer) | Completed | PR #6 |
 | **Phase 6** | Built-in Provider Adapters (Antigravity, Claude Code, Cursor, etc.) | Planned | PR #7 |
 | **Phase 7** | Internationalization (i18n: en & ja) CLI/UI Localization | Planned | PR #8 |
 
@@ -60,11 +60,10 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Embed default Antigravity / Gemini provider configuration into CLI binary
 
 ### Phase 5: Web UI Dashboard (PR #6)
-- [ ] Implement local HTTP server in Go (`agentlens ui`) with embedded web assets
-- [ ] Implement interactive DAG graph visualization in `web/`
-- [ ] Implement timeline / waterfall view for parallel tool execution
-- [ ] Implement anomaly alert banner and inspector drawer
-- [ ] Enable client-side drag-and-drop trace viewing on GitHub Pages
+- [x] Implement local HTTP server in Go (`agentlens ui`) with embedded web assets
+- [x] Implement interactive DAG graph visualization and statistics in `web/index.html`
+- [x] Implement anomaly alert banner and inspector drawer in Web UI
+- [x] Enable 100% private client-side drag-and-drop trace viewing on GitHub Pages
 
 ### Phase 6: Multi-Provider Adapters (PR #7)
 - [ ] Antigravity transcript parser and live log watcher

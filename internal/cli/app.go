@@ -10,6 +10,7 @@ import (
 	"github.com/tsbkw/agentlens/internal/detector"
 	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/providers"
+	"github.com/tsbkw/agentlens/internal/server"
 )
 
 //go:embed default_antigravity.yaml
@@ -57,9 +58,9 @@ func (a *App) Run(args []string) error {
 		}
 		return a.CmdInspect(args[2])
 	case "ui":
-		fmt.Println("Starting AgentLens Web UI...")
-		fmt.Println("Alternatively, access the free client-side viewer at: https://tsbkw.github.io/agentlens")
-		return nil
+		port := 8000
+		srv := server.NewServer(port, a.ActiveProvider)
+		return srv.Start()
 	default:
 		return fmt.Errorf("unknown command: %s", command)
 	}
