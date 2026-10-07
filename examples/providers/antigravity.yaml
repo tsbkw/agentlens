@@ -8,6 +8,7 @@ provider:
 source:
   type: "file"
   path_patterns:
+    - "~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript.jsonl"
     - "~/.gemini/antigravity-cli/brain/*/system_generated/logs/transcript.jsonl"
   format: "jsonl"
 
@@ -28,7 +29,7 @@ extraction:
     call_type: "tool_call.type"
     tool_name: "tool_call.name"
     mcp_server: "tool_call.mcp_server || null"
-    arguments: "tool_call.arguments"
+    arguments: "tool_call.args || tool_call.arguments"
     status: "status"
     output: "tool_call.output"
     error_message: "tool_call.error"
