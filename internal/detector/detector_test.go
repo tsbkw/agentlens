@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tsbkw/agentlens/internal/collector"
 	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/models"
 	"github.com/tsbkw/agentlens/internal/providers"
@@ -133,5 +134,57 @@ func TestRetryLoopDetection(t *testing.T) {
 
 	if result.Anomalies[0].Type != models.AnomalyRetryLoop {
 		t.Errorf("Expected AnomalyRetryLoop, got %v", result.Anomalies[0].Type)
+	}
+}
+
+func TestComplexIncidentResponseAnomalyDetection(t *testing.T) {
+	providerPath := filepath.Join("..", "..", "examples", "providers", "antigravity.yaml")
+	provider, err := providers.LoadProviderFromFile(providerPath)
+	if err != nil {
+		t.Fatalf("Failed to load Antigravity provider: %v", err)
+	}
+
+	samplePath := filepath.Join("..", "..", "examples", "traces", "sample_incident_response.jsonl")
+	col := collector.NewCollector(provider)
+	data, err := col.IngestSessionFile(samplePath)
+	if err != nil {
+		t.Fatalf("Failed to ingest sample: %v", err)
+	}
+
+	builder := graph.NewGraphBuilder()
+	g := builder.BuildWithTurns("sample-incident", "antigravity", data.Turns, data.Nodes)
+
+	det := NewDetector(provider)
+	result := det.Analyze(g)
+
+	if len(result.Anomalies) == 0 {
+		t.Fatalf("Expected anomalies in sample incident response trace, got 0")
+	}
+
+	var hasAuth, hasFallback, hasLoop bool
+	for _, a := range result.Anomalies {
+		switch a.Type {
+		case models.AnomalyAuthExpired:
+			hasAuth = true
+		case models.AnomalySilentFallback:
+			hasFallback = true
+		case models.AnomalyRetryLoop:
+			hasLoop = true
+		}
+	}
+
+	if !hasAuth {
+		t.Errorf("Expected AnomalyAuthExpired in sample trace")
+	}
+	if !hasFallback {
+		t.Errorf("Expected AnomalySilentFallback in sample trace")
+	}
+	if !hasLoop {
+		t.Errorf("Expected AnomalyRetryLoop in sample trace")
+	}
+
+	// Verify dependencies
+	if len(g.Dependencies) == 0 {
+		t.Errorf("Expected dependencies to be computed, got 0")
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -100,26 +101,47 @@ func (a *App) CmdList() error {
 	return nil
 }
 
-// CmdGraph visualizes the caller -> callee call graph for a session.
-func (a *App) CmdGraph(targetID string) error {
+func (a *App) resolveSessionOrFile(target string) (*collector.SessionInfo, error) {
+	if fi, err := os.Stat(target); err == nil && !fi.IsDir() {
+		return &collector.SessionInfo{
+			SessionID:  filepath.Base(target),
+			FilePath:   target,
+			ProviderID: a.ActiveProvider.Definition.Provider.ID,
+			ModTime:    fi.ModTime(),
+			SizeBytes:  fi.Size(),
+		}, nil
+	}
+
 	col := collector.NewCollector(a.ActiveProvider)
 	sessions, err := col.DiscoverSessions()
+	if err != nil {
+		return nil, err
+	}
+
+	if target == "" {
+		if len(sessions) == 0 {
+			return nil, fmt.Errorf("no agent sessions found. Run `agentlens list` to view available sessions")
+		}
+		return &sessions[0], nil
+	}
+
+	for _, s := range sessions {
+		if s.SessionID == target || strings.HasPrefix(s.SessionID, target) {
+			return &s, nil
+		}
+	}
+
+	return nil, fmt.Errorf("session or file %q not found. Run `agentlens list` to view available sessions", target)
+}
+
+// CmdGraph visualizes the caller -> callee call graph for a session.
+func (a *App) CmdGraph(targetID string) error {
+	matchedSession, err := a.resolveSessionOrFile(targetID)
 	if err != nil {
 		return err
 	}
 
-	var matchedSession *collector.SessionInfo
-	for _, s := range sessions {
-		if s.SessionID == targetID || strings.HasPrefix(s.SessionID, targetID) {
-			matchedSession = &s
-			break
-		}
-	}
-
-	if matchedSession == nil {
-		return fmt.Errorf("session %q not found. Run `agentlens list` to view available sessions", targetID)
-	}
-
+	col := collector.NewCollector(a.ActiveProvider)
 	data, err := col.IngestSessionFile(matchedSession.FilePath)
 	if err != nil {
 		return fmt.Errorf("failed to ingest session trace: %w", err)
@@ -138,24 +160,12 @@ func (a *App) CmdGraph(targetID string) error {
 
 // CmdTrace visualizes the chronological turn-by-turn execution trace.
 func (a *App) CmdTrace(targetID string) error {
-	col := collector.NewCollector(a.ActiveProvider)
-	sessions, err := col.DiscoverSessions()
+	matchedSession, err := a.resolveSessionOrFile(targetID)
 	if err != nil {
 		return err
 	}
 
-	var matchedSession *collector.SessionInfo
-	for _, s := range sessions {
-		if s.SessionID == targetID || strings.HasPrefix(s.SessionID, targetID) {
-			matchedSession = &s
-			break
-		}
-	}
-
-	if matchedSession == nil {
-		return fmt.Errorf("session %q not found. Run `agentlens list` to view available sessions", targetID)
-	}
-
+	col := collector.NewCollector(a.ActiveProvider)
 	data, err := col.IngestSessionFile(matchedSession.FilePath)
 	if err != nil {
 		return fmt.Errorf("failed to ingest session trace: %w", err)
@@ -205,31 +215,9 @@ func (a *App) CmdInspect(callID string) error {
 
 // CmdWatch tails an active session's trace file in real time.
 func (a *App) CmdWatch(targetID string) error {
-	col := collector.NewCollector(a.ActiveProvider)
-	sessions, err := col.DiscoverSessions()
+	matchedSession, err := a.resolveSessionOrFile(targetID)
 	if err != nil {
 		return err
-	}
-
-	if len(sessions) == 0 {
-		return fmt.Errorf("no agent sessions found to watch")
-	}
-
-	var matchedSession *collector.SessionInfo
-	if targetID == "" {
-		// Default to most recently modified session
-		matchedSession = &sessions[0]
-	} else {
-		for _, s := range sessions {
-			if s.SessionID == targetID || strings.HasPrefix(s.SessionID, targetID) {
-				matchedSession = &s
-				break
-			}
-		}
-	}
-
-	if matchedSession == nil {
-		return fmt.Errorf("session %q not found. Run `agentlens list` to view available sessions", targetID)
 	}
 
 	w := watcher.NewWatcher(a.ActiveProvider, matchedSession.FilePath)

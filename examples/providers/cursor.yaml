@@ -36,7 +36,7 @@ extraction:
 
 anomaly_rules:
   auth_failure_regex:
-    - "(?i)unauthorized|401|403|token\\s+expired|authentication\\s+failed"
+    - "(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"
   known_fallbacks:
     - original_tool: "mcp_*"
       fallback_tool: "terminal_cmd"
