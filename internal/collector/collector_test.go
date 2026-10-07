@@ -74,8 +74,8 @@ func TestIngestComplexIncidentResponseSample(t *testing.T) {
 	if len(data.Turns) != 3 {
 		t.Errorf("Expected 3 turns, got %d", len(data.Turns))
 	}
-	if len(data.Nodes) != 17 {
-		t.Errorf("Expected 17 tool call nodes, got %d", len(data.Nodes))
+	if len(data.Nodes) != 19 {
+		t.Errorf("Expected 19 tool call nodes, got %d", len(data.Nodes))
 	}
 
 	// Verify scopes detected
@@ -89,6 +89,9 @@ func TestIngestComplexIncidentResponseSample(t *testing.T) {
 	}
 	if !scopesFound["Subagent: Database Debugger"] {
 		t.Errorf("Expected Subagent: Database Debugger scope to be detected")
+	}
+	if !scopesFound["Skill: query-optimizer"] {
+		t.Errorf("Expected Skill: query-optimizer scope to be detected")
 	}
 	if !scopesFound["Agent"] {
 		t.Errorf("Expected Agent scope to be detected")

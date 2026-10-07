@@ -158,7 +158,16 @@ func (b *GraphBuilder) BuildWithTurns(
 								Status:    models.StatusSuccess,
 							}
 							b.AddNode(scopeNode)
-							b.AddEdge(turnNodeID, scopeID, models.EdgeTypeCalls)
+							scopeParentID := turnNodeID
+							if strings.HasPrefix(callerScope, "Skill:") {
+								for prevScope, prevID := range scopeNodeMap {
+									if strings.HasPrefix(prevScope, "Subagent") {
+										scopeParentID = prevID
+										break
+									}
+								}
+							}
+							b.AddEdge(scopeParentID, scopeID, models.EdgeTypeCalls)
 							scopeNodeMap[callerScope] = scopeID
 						}
 						parentTarget = scopeID
@@ -212,7 +221,7 @@ func (b *GraphBuilder) BuildWithTurns(
 		}
 	}
 
-	// 2. Compute Caller -> Callee Dependencies
+	// 2. Compute Caller -> Callee Dependencies (Transitive Call Tree)
 	b.dependencies = b.computeDependencies(rawNodes)
 
 	return &Graph{
@@ -235,6 +244,7 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 	}
 
 	depMap := make(map[depKey]*models.CallerDependency)
+	scopeParentMap := make(map[string]string)
 
 	for _, node := range nodes {
 		caller := node.CallerScope
@@ -243,8 +253,35 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 		}
 
 		callee := node.Name
-		key := depKey{Caller: caller, Callee: callee}
+		calleeType := node.Type
 
+		if node.Name == "invoke_subagent" {
+			calleeType = models.NodeTypeSubagent
+			if role, ok := node.Arguments["Role"].(string); ok && role != "" {
+				callee = "Subagent: " + role
+			} else if typeName, ok := node.Arguments["TypeName"].(string); ok && typeName != "" {
+				callee = "Subagent: " + typeName
+			}
+			scopeParentMap[callee] = caller
+		} else if node.Name == "view_file" {
+			if absPath, ok := node.Arguments["AbsolutePath"].(string); ok {
+				if strings.Contains(absPath, "/skills/") && strings.HasSuffix(absPath, "/SKILL.md") {
+					parts := strings.Split(absPath, "/skills/")
+					if len(parts) > 1 {
+						skillName := strings.Split(parts[1], "/")[0]
+						callee = "Skill: " + skillName
+						calleeType = models.NodeTypeSkill
+						scopeParentMap[callee] = caller
+					}
+				}
+			}
+		} else if strings.HasPrefix(node.Name, "skill_") {
+			callee = "Skill: " + strings.TrimPrefix(node.Name, "skill_")
+			calleeType = models.NodeTypeSkill
+			scopeParentMap[callee] = caller
+		}
+
+		key := depKey{Caller: caller, Callee: callee}
 		dep, exists := depMap[key]
 		if !exists {
 			callerType := models.NodeTypeAgent
@@ -258,7 +295,7 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 				Caller:     caller,
 				CallerType: callerType,
 				Callee:     callee,
-				CalleeType: node.Type,
+				CalleeType: calleeType,
 				MCPServer:  node.MCPServer,
 			}
 			depMap[key] = dep
@@ -291,17 +328,127 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 		}
 	}
 
-	result := make([]models.CallerDependency, 0, len(depMap))
-	for _, dep := range depMap {
-		result = append(result, *dep)
+	// Group dependencies by Caller
+	callerDeps := make(map[string][]*models.CallerDependency)
+	for key, dep := range depMap {
+		callerDeps[key.Caller] = append(callerDeps[key.Caller], dep)
 	}
 
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].Caller != result[j].Caller {
-			return result[i].Caller < result[j].Caller
+	for c := range callerDeps {
+		sort.Slice(callerDeps[c], func(i, j int) bool {
+			if callerDeps[c][i].CallCount != callerDeps[c][j].CallCount {
+				return callerDeps[c][i].CallCount > callerDeps[c][j].CallCount
+			}
+			return callerDeps[c][i].Callee < callerDeps[c][j].Callee
+		})
+	}
+
+	// Attach children transitively to callees that are themselves callers
+	visitedScopes := make(map[string]bool)
+
+	var attachChildren func(dep *models.CallerDependency)
+	attachChildren = func(dep *models.CallerDependency) {
+		childScope := dep.Callee
+		if visitedScopes[childScope] {
+			return
 		}
-		return result[i].CallCount > result[j].CallCount
+		visitedScopes[childScope] = true
+
+		if subCalls, exists := callerDeps[childScope]; exists {
+			for _, sub := range subCalls {
+				subCopy := *sub
+				attachChildren(&subCopy)
+				dep.Children = append(dep.Children, subCopy)
+			}
+		}
+	}
+
+	allCallees := make(map[string]bool)
+	for key := range depMap {
+		allCallees[key.Callee] = true
+	}
+
+	var rootCallers []string
+	seenRoot := make(map[string]bool)
+
+	// Primary root: Agent (Main Planner) or Agent
+	for c := range callerDeps {
+		if strings.HasPrefix(c, "Agent") {
+			if !seenRoot[c] {
+				rootCallers = append(rootCallers, c)
+				seenRoot[c] = true
+			}
+		}
+	}
+
+	// Other callers that are not callees of anyone
+	for c := range callerDeps {
+		if !seenRoot[c] && !allCallees[c] {
+			rootCallers = append(rootCallers, c)
+			seenRoot[c] = true
+		}
+	}
+
+	sort.Slice(rootCallers, func(i, j int) bool {
+		if strings.HasPrefix(rootCallers[i], "Agent") {
+			return true
+		}
+		if strings.HasPrefix(rootCallers[j], "Agent") {
+			return false
+		}
+		return rootCallers[i] < rootCallers[j]
 	})
+
+	var result []models.CallerDependency
+	for _, rootCaller := range rootCallers {
+		for _, dep := range callerDeps[rootCaller] {
+			depCopy := *dep
+			attachChildren(&depCopy)
+			result = append(result, depCopy)
+		}
+	}
+
+	// If there are orphaned caller scopes that were not attached (e.g. synthetic test nodes)
+	for caller, deps := range callerDeps {
+		if !visitedScopes[caller] && !seenRoot[caller] {
+			var targetRoot string
+			for _, r := range rootCallers {
+				if strings.HasPrefix(r, "Agent") {
+					targetRoot = r
+					break
+				}
+			}
+
+			callerType := models.NodeTypeSkill
+			if strings.HasPrefix(caller, "Subagent") {
+				callerType = models.NodeTypeSubagent
+			}
+
+			if targetRoot != "" {
+				syntheticDep := models.CallerDependency{
+					Caller:       targetRoot,
+					CallerType:   models.NodeTypeAgent,
+					Callee:       caller,
+					CalleeType:   callerType,
+					CallCount:    1,
+					SuccessCount: 1,
+				}
+				for _, d := range deps {
+					dCopy := *d
+					attachChildren(&dCopy)
+					syntheticDep.Children = append(syntheticDep.Children, dCopy)
+				}
+				result = append(result, syntheticDep)
+			} else {
+				for _, d := range deps {
+					dCopy := *d
+					attachChildren(&dCopy)
+					result = append(result, dCopy)
+				}
+			}
+			visitedScopes[caller] = true
+		}
+	}
 
 	return result
 }
