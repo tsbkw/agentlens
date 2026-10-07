@@ -14,7 +14,7 @@
 | **Phase 1** | コアデータモデル、プロバイダ定義スキーマ & YAMLローダー | 完了 | PR #2 |
 | **Phase 2** | トレース収集エンジン & コールグラフ構築器 (DAG in Go) | 完了 | PR #3 |
 | **Phase 3** | 異常・暗黙フォールバック検知エンジン | 完了 | PR #4 |
-| **Phase 4** | CLI 可視化 (`agentlens graph`, `inspect`, `watch`) | 計画中 | PR #5 |
+| **Phase 4** | CLI 可視化 (`agentlens graph`, `inspect`, `watch`) | 完了 | PR #5 |
 | **Phase 5** | Web UI ダッシュボード (バイナリ内蔵 & 無料GitHub Pagesビューアー) | 計画中 | PR #6 |
 | **Phase 6** | 各種生成AI向けプロバイダ定義 (Antigravity, Claude Code, Cursor 等) | 計画中 | PR #7 |
 | **Phase 7** | 多言語化 (i18n: 英語・日本語) CLI/UIローカライズ | 計画中 | PR #8 |
@@ -54,10 +54,10 @@
 - [x] 異常検知ルールとエッジ付与 (`FALLBACK_TO`) のユニットテスト作成
 
 ### Phase 4: CLI 可視化 (PR #5)
-- [ ] `agentlens list` (セッションおよびトレース一覧表示) 実装
-- [ ] `agentlens graph <session_id>` (ターミナルツリー型コールグラフ描画) 実装
-- [ ] `agentlens inspect <call-id>` (ノード詳細、引数、出力、異常レポート表示) 実装
-- [ ] `agentlens watch` (実行中セッションのリアルタイム監視) 実装
+- [x] `agentlens list` (セッションおよびトレース一覧表示) 実装
+- [x] `agentlens graph <session_id>` (ターミナルツリー型コールグラフ描画) 実装
+- [x] `agentlens inspect <call-id>` (ノード詳細、引数、出力、異常レポート表示) 実装
+- [x] デフォルトの Antigravity / Gemini プロバイダ設定のバイナリ内蔵化
 
 ### Phase 5: Web UI ダッシュボード (PR #6)
 - [ ] Go内蔵ローカルHTTPサーバー (`agentlens ui`) とWebアセットの組み込み (`go:embed`) 実装
