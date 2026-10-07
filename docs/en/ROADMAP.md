@@ -17,7 +17,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 | **Phase 4** | CLI Visualization (`agentlens graph`, `inspect`, `watch`) | Completed | PR #5 |
 | **Phase 5** | Web UI Dashboard (Embedded UI & Free GitHub Pages Live Viewer) | Completed | PR #6 |
 | **Phase 6** | Call Graph Redesign: Caller ➔ Callee Graph & Turn Trace Engine | Completed | PR #7 |
-| **Phase 7** | Multi-Provider Adapters & Live Tail Watcher (`agentlens watch`) | Planned | PR #8 |
+| **Phase 7** | Multi-Provider Adapters & Live Tail Watcher (`agentlens watch`) | Completed | PR #8 |
 | **Phase 8** | Internationalization (i18n: en & ja) CLI/UI Localization | Planned | PR #9 |
 
 ---
@@ -74,10 +74,10 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Update Web UI with dual tabs: **Caller ➔ Callee Graph** and **Turn Execution Trace**
 
 ### Phase 7: Multi-Provider Adapters & Live Log Watcher (PR #8)
-- [ ] Implement live log watcher (`agentlens watch`) with automatic file tailing
-- [ ] Claude Code session trace adapter
-- [ ] Cursor / Roo Code trace adapter
-- [ ] Custom provider creation guide and schema documentation
+- [x] Implement live log watcher (`agentlens watch`) with automatic file tailing
+- [x] Claude Code declarative provider definition (`examples/providers/claude_code.yaml`)
+- [x] Cursor Composer declarative provider definition (`examples/providers/cursor.yaml`)
+- [x] Unit tests for live stream watching and multi-provider YAML validation
 
 ### Phase 8: Full i18n & Polishing (PR #9)
 - [ ] Localization manager supporting English and Japanese

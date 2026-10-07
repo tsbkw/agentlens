@@ -44,6 +44,38 @@ func TestLoadGenericJSONLProvider(t *testing.T) {
 	}
 }
 
+func TestLoadClaudeCodeProvider(t *testing.T) {
+	path := filepath.Join("..", "..", "examples", "providers", "claude_code.yaml")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skip("Claude Code example YAML not found at relative path")
+	}
+
+	loaded, err := LoadProviderFromFile(path)
+	if err != nil {
+		t.Fatalf("Failed to load Claude Code provider: %v", err)
+	}
+
+	if loaded.Definition.Provider.ID != "claude-code" {
+		t.Errorf("Expected provider id 'claude-code', got %q", loaded.Definition.Provider.ID)
+	}
+}
+
+func TestLoadCursorProvider(t *testing.T) {
+	path := filepath.Join("..", "..", "examples", "providers", "cursor.yaml")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skip("Cursor example YAML not found at relative path")
+	}
+
+	loaded, err := LoadProviderFromFile(path)
+	if err != nil {
+		t.Fatalf("Failed to load Cursor provider: %v", err)
+	}
+
+	if loaded.Definition.Provider.ID != "cursor" {
+		t.Errorf("Expected provider id 'cursor', got %q", loaded.Definition.Provider.ID)
+	}
+}
+
 func TestValidationErrors(t *testing.T) {
 	invalidYAML := []byte(`
 schema_version: "1.0"

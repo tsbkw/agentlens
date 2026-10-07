@@ -17,7 +17,7 @@
 | **Phase 4** | CLI 可視化 (`agentlens graph`, `inspect`, `watch`) | 完了 | PR #5 |
 | **Phase 5** | Web UI ダッシュボード (バイナリ内蔵 & 無料GitHub Pagesビューアー) | 完了 | PR #6 |
 | **Phase 6** | コールグラフ再設計: 呼出元➔呼出先トレース & ターン別階層エンジン | 完了 | PR #7 |
-| **Phase 7** | 各種生成AI向けプロバイダ定義 & リアルタイム監視 (`agentlens watch`) | 計画中 | PR #8 |
+| **Phase 7** | 各種生成AI向けプロバイダ定義 & リアルタイム監視 (`agentlens watch`) | 完了 | PR #8 |
 | **Phase 8** | 多言語化 (i18n: 英語・日本語) CLI/UIローカライズ | 計画中 | PR #9 |
 
 ---
@@ -74,10 +74,10 @@
 - [x] Web UIに「Caller ➔ Callee Graph」と「Turn Execution Trace」の2系統タブ切り替えを実装
 
 ### Phase 7: 各種生成AI向けプロバイダ定義 & リアルタイム監視 (PR #8)
-- [ ] リアルタイムログ監視 (`agentlens watch`) と自動 tailing 実装
-- [ ] Claude Code セッショントレースアダプター
-- [ ] Cursor / Roo Code トレースアダプター
-- [ ] カスタムプロバイダ作成ガイドドキュメントの整備
+- [x] リアルタイムログ監視 (`agentlens watch`) と自動 tailing 実装
+- [x] Claude Code 向けプロバイダ定義策定 (`examples/providers/claude_code.yaml`)
+- [x] Cursor Composer 向けプロバイダ定義策定 (`examples/providers/cursor.yaml`)
+- [x] リアルタイムストリーミング監視およびマルチプロバイダYAML検証のユニットテスト作成
 
 ### Phase 8: 完全多言語化 & 仕上げ (PR #9)
 - [ ] 多言語管理モジュール実装 (英語・日本語)
