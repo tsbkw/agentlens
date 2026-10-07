@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentLens — Generative AI Call Graph Visualizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --primary: #58a6ff;
+      --success: #3fb950;
+      --warning: #d29922;
+      --danger: #f85149;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: var(--card-bg);
+    }
+    .logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .nav-links a {
+      color: var(--primary);
+      text-decoration: none;
+      margin-left: 1.5rem;
+      font-size: 0.9rem;
+    }
+    main {
+      flex: 1;
+      max-width: 1000px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+      width: 100%;
+    }
+    .hero {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    .hero h1 {
+      font-size: 2.5rem;
+      color: #fff;
+      margin-bottom: 0.75rem;
+    }
+    .hero p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      max-width: 650px;
+      margin: 0 auto;
+    }
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      background-color: var(--card-bg);
+      padding: 3.5rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--primary);
+      background-color: #1f242c;
+    }
+    .dropzone-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+    .dropzone h2 {
+      color: #fff;
+      font-size: 1.3rem;
+      margin-bottom: 0.5rem;
+    }
+    .dropzone p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+    .security-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-top: 1rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 20px;
+      background-color: rgba(63, 185, 80, 0.1);
+      color: var(--success);
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+    .feature-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+    }
+    .feature-card h3 {
+      color: #fff;
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .feature-card p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+    footer {
+      border-top: 1px solid var(--border);
+      text-align: center;
+      padding: 1.5rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">🔍 AgentLens</div>
+    <div class="nav-links">
+      <a href="https://github.com/tsbkw/agentlens" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/tsbkw/agentlens/blob/main/docs/en/SPECIFICATION.md" target="_blank" rel="noopener">Docs</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="hero">
+      <h1>Call Graph Observability for AI Agents</h1>
+      <p>Visualize SKILLs, MCP servers, and subagent execution flows. Detect silent fallbacks and expired credentials effortlessly.</p>
+    </div>
+
+    <div class="dropzone" id="dropzone">
+      <div class="dropzone-icon">📂</div>
+      <h2>Drop Generative AI trace log here</h2>
+      <p>Drop a <code>transcript.jsonl</code>, JSON trace, or session log file to visualize its call graph</p>
+      <div class="security-badge">
+        🔒 100% Client-Side Privacy: No data leaves your browser
+      </div>
+      <input type="file" id="fileInput" style="display:none" accept=".jsonl,.json,.txt">
+    </div>
+
+    <div class="features">
+      <div class="feature-card">
+        <h3>⚡ Call Graph Reconstruction</h3>
+        <p>Reassembles high-level SKILLs, MCP tool calls, and subagent hierarchies into an interactive Directed Acyclic Graph (DAG).</p>
+      </div>
+      <div class="feature-card">
+        <h3>🚨 Silent Fallback Detection</h3>
+        <p>Flags when authentication expires or a primary MCP tool fails and the agent silently resorts to suboptimal shell commands.</p>
+      </div>
+      <div class="feature-card">
+        <h3>🔌 Provider-Agnostic</h3>
+        <p>Seamlessly inspects traces from Google Antigravity, Claude Code, Cursor, and custom agent frameworks via declarative schemas.</p>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    AgentLens — Open-Source AI Observability &bull; <a href="https://github.com/tsbkw/agentlens" style="color:var(--text-muted)">GitHub Repository</a>
+  </footer>
+
+  <script>
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) {
+        handleFile(e.dataTransfer.files[0]);
+      }
+    });
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        handleFile(e.target.files[0]);
+      }
+    });
+
+    function handleFile(file) {
+      alert(`Loaded "${file.name}" (${(file.size / 1024).toFixed(1)} KB). Interactive DAG viewer integration is coming in Phase 5!`);
+    }
+  </script>
+</body>
+</html>
