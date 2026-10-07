@@ -82,14 +82,14 @@ func (s *Server) Start() error {
 			return
 		}
 
-		nodes, err := s.Collector.IngestFile(matched.FilePath)
+		data, err := s.Collector.IngestSessionFile(matched.FilePath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		builder := graph.NewGraphBuilder()
-		g := builder.Build(matched.SessionID, s.Provider.Definition.Provider.ID, nodes)
+		g := builder.BuildWithTurns(matched.SessionID, s.Provider.Definition.Provider.ID, data.Turns, data.Nodes)
 
 		det := detector.NewDetector(s.Provider)
 		det.Analyze(g)

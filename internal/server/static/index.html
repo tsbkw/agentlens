@@ -10,6 +10,7 @@
     :root {
       --bg: #0d1117;
       --card-bg: #161b22;
+      --card-alt: #1c2128;
       --border: #30363d;
       --text: #c9d1d9;
       --text-muted: #8b949e;
@@ -20,6 +21,7 @@
       --danger: #f85149;
       --mcp: #a371f7;
       --skill: #3fb950;
+      --subagent: #d2a8ff;
       --system: #58a6ff;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -83,6 +85,9 @@
     .badge-danger { background: rgba(248, 81, 73, 0.15); color: var(--danger); }
     .badge-warning { background: rgba(210, 153, 34, 0.15); color: var(--warning); }
     .badge-mcp { background: rgba(163, 113, 247, 0.15); color: var(--mcp); }
+    .badge-skill { background: rgba(63, 185, 80, 0.15); color: var(--skill); }
+    .badge-subagent { background: rgba(210, 168, 255, 0.15); color: var(--subagent); }
+    .badge-system { background: rgba(88, 166, 255, 0.15); color: var(--system); }
     
     /* Layout */
     .app-container {
@@ -154,7 +159,7 @@
     .alert-desc { font-size: 0.85rem; color: var(--text); }
     .alert-rec { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; }
 
-    /* Controls Bar */
+    /* Controls Bar & View Tabs */
     .controls-bar {
       display: flex;
       gap: 1rem;
@@ -163,9 +168,34 @@
       padding: 0.75rem 1rem;
       border: 1px solid var(--border);
       border-radius: 8px;
+      flex-wrap: wrap;
+    }
+    .view-tabs {
+      display: flex;
+      background-color: #0d1117;
+      border-radius: 6px;
+      padding: 2px;
+      border: 1px solid var(--border);
+    }
+    .tab-btn {
+      padding: 0.4rem 1rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      background-color: #21262d;
+      color: #fff;
+      font-weight: 600;
     }
     .search-input {
       flex: 1;
+      min-width: 200px;
       background-color: #0d1117;
       border: 1px solid var(--border);
       color: #fff;
@@ -182,14 +212,115 @@
       font-size: 0.85rem;
     }
 
-    /* Tree Call Graph View */
-    .graph-view {
+    /* Caller ➔ Callee Dependency Cards */
+    .deps-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .caller-card {
       background-color: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 1.5rem;
+      overflow: hidden;
+    }
+    .caller-header {
+      background-color: var(--card-alt);
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .caller-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .caller-stats {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .callee-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .callee-row {
+      border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+      transition: background 0.15s;
+      cursor: pointer;
+    }
+    .callee-row:last-child { border-bottom: none; }
+    .callee-row:hover { background-color: rgba(33, 38, 45, 0.7); }
+    .callee-cell {
+      padding: 0.65rem 1.25rem;
+    }
+    .fallback-alert-row {
+      background-color: rgba(210, 153, 34, 0.08);
+      color: var(--warning);
+      font-size: 0.8rem;
+      padding: 0.35rem 1.25rem 0.5rem 3.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Turn-by-Turn Trace View */
+    .trace-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .turn-card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .turn-header {
+      background-color: var(--card-alt);
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+    }
+    .turn-prompt {
+      font-weight: 600;
+      color: #fff;
+      font-size: 0.95rem;
+      max-width: 80%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .turn-meta {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .turn-body {
+      padding: 0.75rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.85rem;
+    }
+    .scope-section {
+      margin-bottom: 0.5rem;
+    }
+    .scope-title {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
     }
     .node-row {
       display: flex;
@@ -208,7 +339,7 @@
 
     /* Inspector Drawer */
     .drawer {
-      width: 450px;
+      width: 480px;
       background-color: var(--card-bg);
       border-left: 1px solid var(--border);
       padding: 1.5rem;
@@ -256,7 +387,7 @@
       <div id="dropzoneSection">
         <div class="hero">
           <h1>Generative AI Call Graph Visualizer</h1>
-          <p>Observe SKILLs, MCP servers, and subagents in action. Identify silent fallbacks, broken authentications, and performance degradations.</p>
+          <p>Trace which SKILLs, Subagents, and MCP servers called what. Identify silent fallbacks, broken authentications, and performance bottlenecks.</p>
         </div>
         <div class="dropzone" id="dropzone">
           <div class="dropzone-icon">📂</div>
@@ -299,20 +430,28 @@
         <!-- Alert Banner -->
         <div class="alerts-container" id="alertsContainer"></div>
 
-        <!-- Controls Bar -->
+        <!-- Controls Bar with View Tabs -->
         <div class="controls-bar">
+          <div class="view-tabs">
+            <button class="tab-btn active" id="tabDepsBtn">Caller ➔ Callee Graph</button>
+            <button class="tab-btn" id="tabTraceBtn">Turn Execution Trace</button>
+          </div>
           <input type="text" id="searchInput" class="search-input" placeholder="Search tool name, MCP server, arguments...">
           <select id="filterSelect" class="filter-select">
             <option value="all">All Tools</option>
             <option value="mcp">MCP Only</option>
+            <option value="skill">Skills Only</option>
             <option value="failed">Failures Only</option>
             <option value="anomalies">Anomalies Only</option>
           </select>
           <button class="btn" id="resetBtn">Upload Another File</button>
         </div>
 
-        <!-- Call Graph Tree View -->
-        <div class="graph-view" id="graphTreeContainer"></div>
+        <!-- Caller ➔ Callee Dependency View -->
+        <div class="deps-container" id="depsViewContainer"></div>
+
+        <!-- Turn-by-Turn Trace View -->
+        <div class="trace-container" id="traceViewContainer" style="display:none;"></div>
       </div>
     </div>
 
@@ -324,7 +463,7 @@
       </div>
       <div>
         <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">TYPE & STATUS</div>
-        <div id="drawerBadges" style="display:flex; gap:0.5rem;"></div>
+        <div id="drawerBadges" style="display:flex; gap:0.5rem; flex-wrap:wrap;"></div>
       </div>
       <div>
         <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">CALL ID & TIMESTAMP</div>
@@ -347,8 +486,11 @@
 
   <script>
     let currentNodes = [];
+    let currentTurns = [];
+    let currentDependencies = [];
     let currentAnomalies = [];
     let selectedNodeId = null;
+    let currentView = 'deps'; // 'deps' or 'trace'
 
     // Elements
     const dropzone = document.getElementById('dropzone');
@@ -359,6 +501,10 @@
     const resetBtn = document.getElementById('resetBtn');
     const searchInput = document.getElementById('searchInput');
     const filterSelect = document.getElementById('filterSelect');
+    const tabDepsBtn = document.getElementById('tabDepsBtn');
+    const tabTraceBtn = document.getElementById('tabTraceBtn');
+    const depsViewContainer = document.getElementById('depsViewContainer');
+    const traceViewContainer = document.getElementById('traceViewContainer');
     const drawer = document.getElementById('drawer');
     const closeDrawerBtn = document.getElementById('closeDrawerBtn');
 
@@ -382,8 +528,24 @@
       drawer.classList.remove('open');
     });
     closeDrawerBtn.addEventListener('click', () => drawer.classList.remove('open'));
-    searchInput.addEventListener('input', () => renderTree());
-    filterSelect.addEventListener('change', () => renderTree());
+    searchInput.addEventListener('input', () => refreshViews());
+    filterSelect.addEventListener('change', () => refreshViews());
+
+    tabDepsBtn.addEventListener('click', () => {
+      currentView = 'deps';
+      tabDepsBtn.classList.add('active');
+      tabTraceBtn.classList.remove('active');
+      depsViewContainer.style.display = 'flex';
+      traceViewContainer.style.display = 'none';
+    });
+
+    tabTraceBtn.addEventListener('click', () => {
+      currentView = 'trace';
+      tabTraceBtn.classList.add('active');
+      tabDepsBtn.classList.remove('active');
+      depsViewContainer.style.display = 'none';
+      traceViewContainer.style.display = 'flex';
+    });
 
     function parseFile(file) {
       const reader = new FileReader();
@@ -394,7 +556,13 @@
     function processTraceText(text) {
       const lines = text.split('\n');
       const nodes = [];
+      const turns = [];
       const stepNodeMap = {};
+
+      let currentTurnIndex = 0;
+      let currentPrompt = "";
+      let currentTurnTime = new Date().toISOString();
+      let activeScope = "Agent";
 
       lines.forEach((line) => {
         line = line.trim();
@@ -403,7 +571,18 @@
           const item = JSON.parse(line);
           const stepIdx = item.step_index;
 
-          if (item.type === 'PLANNER_RESPONSE' && Array.isArray(item.tool_calls)) {
+          if (item.type === 'USER_INPUT') {
+            currentTurnIndex++;
+            currentPrompt = cleanPromptText(String(item.content || ''));
+            currentTurnTime = item.created_at || new Date().toISOString();
+            activeScope = "Agent";
+            turns.push({
+              index: currentTurnIndex,
+              prompt: currentPrompt,
+              timestamp: currentTurnTime,
+              nodes: []
+            });
+          } else if (item.type === 'PLANNER_RESPONSE' && Array.isArray(item.tool_calls)) {
             item.tool_calls.forEach((tc, idx) => {
               const name = tc.name || 'unknown_tool';
               let nodeType = 'system_tool';
@@ -415,8 +594,21 @@
                 if (parts.length > 1) mcpServer = parts[1];
               } else if (name.startsWith('skill_')) {
                 nodeType = 'skill';
+                activeScope = "Skill: " + name.replace('skill_', '');
               } else if (name.includes('subagent')) {
                 nodeType = 'subagent';
+                const args = tc.args || tc.arguments || {};
+                if (args.Role) activeScope = "Subagent: " + args.Role;
+                else if (args.TypeName) activeScope = "Subagent: " + args.TypeName;
+              } else if (name === 'view_file') {
+                const args = tc.args || tc.arguments || {};
+                const p = String(args.AbsolutePath || '');
+                if (p.includes('/skills/') && p.endsWith('/SKILL.md')) {
+                  const parts = p.split('/skills/');
+                  if (parts.length > 1) {
+                    activeScope = "Skill: " + parts[1].split('/')[0];
+                  }
+                }
               }
 
               const node = {
@@ -424,14 +616,20 @@
                 name: name,
                 type: nodeType,
                 mcp_server: mcpServer,
-                timestamp: item.created_at || new Date().toISOString(),
+                turn_index: currentTurnIndex,
+                caller_scope: activeScope,
+                timestamp: item.created_at || currentTurnTime,
                 status: 'success',
                 arguments: tc.args || tc.arguments || {},
                 output: null,
                 errorMessage: null,
                 anomalies: []
               };
+
               nodes.push(node);
+              if (turns.length > 0) {
+                turns[turns.length - 1].nodes.push(node);
+              }
               if (stepIdx !== undefined) stepNodeMap[stepIdx] = node;
             });
           } else if (stepIdx > 0 && stepNodeMap[stepIdx - 1]) {
@@ -443,7 +641,20 @@
       });
 
       analyzeAnomalies(nodes);
-      displayGraph(nodes);
+      computeDependencies(nodes);
+      currentNodes = nodes;
+      currentTurns = turns;
+
+      displayGraph();
+    }
+
+    function cleanPromptText(raw) {
+      if (raw.includes('<USER_REQUEST>') && raw.includes('</USER_REQUEST>')) {
+        const start = raw.indexOf('<USER_REQUEST>') + '<USER_REQUEST>'.length;
+        const end = raw.indexOf('</USER_REQUEST>');
+        if (end > start) return raw.substring(start, end).trim();
+      }
+      return raw.split('\n')[0].trim();
     }
 
     function analyzeAnomalies(nodes) {
@@ -468,7 +679,7 @@
         // Silent fallback detection
         if (node.status === 'failed' && i + 1 < nodes.length) {
           const next = nodes[i + 1];
-          if (node.type === 'mcp_tool' && next.type === 'system_tool') {
+          if ((node.type === 'mcp_tool' || node.type === 'skill') && next.type === 'system_tool') {
             const anom = {
               id: `fallback-${node.id}-${next.id}`,
               type: 'silent_fallback',
@@ -476,8 +687,8 @@
               nodeId: next.id,
               relatedNodeId: node.id,
               title: `Silent Fallback: ${node.name} → ${next.name}`,
-              description: `Primary MCP tool ${node.name} failed. Agent silently fell back to system tool ${next.name}.`,
-              recommendation: `Fix ${node.name} to avoid degraded results from fallback tool.`
+              description: `Primary tool ${node.name} failed. Agent silently fell back to substitute tool ${next.name} without warning.`,
+              recommendation: `Fix ${node.name} to avoid degraded or incomplete results from fallback tool.`
             };
             next.anomalies.push(anom);
             currentAnomalies.push(anom);
@@ -486,17 +697,58 @@
       });
     }
 
-    function displayGraph(nodes) {
-      currentNodes = nodes;
+    function computeDependencies(nodes) {
+      const depMap = {};
+      nodes.forEach((node, i) => {
+        const caller = node.caller_scope || "Agent";
+        const callee = node.name;
+        const key = `${caller}::${callee}`;
+
+        if (!depMap[key]) {
+          let callerType = 'agent';
+          if (caller.startsWith('Skill:')) callerType = 'skill';
+          else if (caller.startsWith('Subagent:')) callerType = 'subagent';
+
+          depMap[key] = {
+            caller: caller,
+            caller_type: callerType,
+            callee: callee,
+            callee_type: node.type,
+            mcp_server: node.mcp_server,
+            call_count: 0,
+            success_count: 0,
+            fail_count: 0,
+            is_fallback: false,
+            fallback_to: "",
+            example_node: node
+          };
+        }
+
+        const dep = depMap[key];
+        dep.call_count++;
+        if (node.status === 'success') dep.success_count++;
+        else if (node.status === 'failed') dep.fail_count++;
+
+        // Detect if fallback happened from this node
+        if (node.status === 'failed' && i + 1 < nodes.length) {
+          dep.is_fallback = true;
+          dep.fallback_to = nodes[i + 1].name;
+        }
+      });
+
+      currentDependencies = Object.values(depMap);
+    }
+
+    function displayGraph() {
       dropzoneSection.style.display = 'none';
       graphSection.style.display = 'flex';
 
       // Update stats
-      document.getElementById('statTotalNodes').textContent = nodes.length;
-      document.getElementById('statMcpCalls').textContent = nodes.filter(n => n.type === 'mcp_tool').length;
-      document.getElementById('statSkillCalls').textContent = nodes.filter(n => n.type === 'skill').length;
-      document.getElementById('statSystemCalls').textContent = nodes.filter(n => n.type === 'system_tool').length;
-      document.getElementById('statFailedCalls').textContent = nodes.filter(n => n.status === 'failed').length;
+      document.getElementById('statTotalNodes').textContent = currentNodes.length;
+      document.getElementById('statMcpCalls').textContent = currentNodes.filter(n => n.type === 'mcp_tool').length;
+      document.getElementById('statSkillCalls').textContent = currentNodes.filter(n => n.type === 'skill').length;
+      document.getElementById('statSystemCalls').textContent = currentNodes.filter(n => n.type === 'system_tool').length;
+      document.getElementById('statFailedCalls').textContent = currentNodes.filter(n => n.status === 'failed').length;
       document.getElementById('statAnomalies').textContent = currentAnomalies.length;
 
       // Render alert banner
@@ -516,50 +768,191 @@
         alertsContainer.appendChild(alertEl);
       });
 
-      renderTree();
+      refreshViews();
     }
 
-    function renderTree() {
-      const container = document.getElementById('graphTreeContainer');
-      container.innerHTML = '';
+    function refreshViews() {
+      renderDependenciesView();
+      renderTraceView();
+    }
 
+    function renderDependenciesView() {
+      depsViewContainer.innerHTML = '';
       const query = searchInput.value.toLowerCase();
       const filter = filterSelect.value;
 
-      const filtered = currentNodes.filter((n) => {
-        if (query && !n.name.toLowerCase().includes(query) && !JSON.stringify(n.arguments).toLowerCase().includes(query)) {
-          return false;
+      // Group dependencies by caller
+      const groups = {};
+      currentDependencies.forEach((dep) => {
+        if (query && !dep.callee.toLowerCase().includes(query) && !dep.caller.toLowerCase().includes(query)) {
+          return;
         }
-        if (filter === 'mcp' && n.type !== 'mcp_tool') return false;
-        if (filter === 'failed' && n.status !== 'failed') return false;
-        if (filter === 'anomalies' && n.anomalies.length === 0) return false;
-        return true;
+        if (filter === 'mcp' && dep.callee_type !== 'mcp_tool') return;
+        if (filter === 'skill' && dep.callee_type !== 'skill') return;
+        if (filter === 'failed' && dep.fail_count === 0) return;
+        if (filter === 'anomalies' && !dep.is_fallback && dep.fail_count === 0) return;
+
+        if (!groups[dep.caller]) groups[dep.caller] = [];
+        groups[dep.caller].push(dep);
       });
 
-      filtered.forEach((node, i) => {
-        const row = document.createElement('div');
-        row.className = `node-row ${node.id === selectedNodeId ? 'selected' : ''}`;
-        
-        let typeBadgeClass = 'badge-success';
-        if (node.type === 'mcp_tool') typeBadgeClass = 'badge-mcp';
+      const callers = Object.keys(groups);
+      if (callers.length === 0) {
+        depsViewContainer.innerHTML = `<div style="text-align:center; color:var(--text-muted); padding:2rem;">No matching caller dependencies found.</div>`;
+        return;
+      }
 
-        let anomBadges = '';
-        node.anomalies.forEach(a => {
-          anomBadges += `<span class="badge ${a.severity === 'critical' ? 'badge-danger' : 'badge-warning'}">${a.type.replace('_', ' ')}</span>`;
+      callers.forEach((caller) => {
+        const deps = groups[caller];
+        let callerIcon = '🎯';
+        let callerBadgeClass = 'badge-system';
+        if (caller.startsWith('Skill:')) {
+          callerIcon = '🧩';
+          callerBadgeClass = 'badge-skill';
+        } else if (caller.startsWith('Subagent:')) {
+          callerIcon = '🤖';
+          callerBadgeClass = 'badge-subagent';
+        }
+
+        const totalCalls = deps.reduce((sum, d) => sum + d.call_count, 0);
+
+        const card = document.createElement('div');
+        card.className = 'caller-card';
+        card.innerHTML = `
+          <div class="caller-header">
+            <div class="caller-title">
+              <span>${callerIcon}</span>
+              <span class="badge ${callerBadgeClass}">${caller.startsWith('Skill:') ? 'Skill Caller' : (caller.startsWith('Subagent:') ? 'Subagent Caller' : 'Agent Planner')}</span>
+              <span>${caller}</span>
+            </div>
+            <div class="caller-stats">${deps.length} target tool(s) · ${totalCalls} total invocation(s)</div>
+          </div>
+          <table class="callee-table">
+            <tbody>
+              ${deps.map(d => {
+                let calleeTypeBadge = 'badge-system';
+                if (d.callee_type === 'mcp_tool') calleeTypeBadge = 'badge-mcp';
+                else if (d.callee_type === 'skill') calleeTypeBadge = 'badge-skill';
+                else if (d.callee_type === 'subagent') calleeTypeBadge = 'badge-subagent';
+
+                const statusColor = d.fail_count > 0 ? 'var(--danger)' : 'var(--success)';
+                const statusText = d.fail_count > 0 
+                  ? `${d.call_count} calls (<span style="color:var(--success)">✓ ${d.success_count}</span> | <span style="color:var(--danger)">✗ ${d.fail_count}</span>)`
+                  : `${d.call_count} calls (<span style="color:var(--success)">✓ ${d.success_count}</span>)`;
+
+                let fallbackAlert = '';
+                if (d.is_fallback) {
+                  fallbackAlert = `
+                    <tr>
+                      <td colspan="4" class="fallback-alert-row">
+                        ⚠️ <strong>Silent Fallback Detected:</strong> Primary tool failed, agent substituted execution with <code>${d.fallback_to}</code>.
+                      </td>
+                    </tr>
+                  `;
+                }
+
+                return `
+                  <tr class="callee-row" onclick='openDrawerByExample("${d.example_node ? d.example_node.id : ''}")'>
+                    <td class="callee-cell" style="width: 140px;">
+                      <span class="badge ${calleeTypeBadge}">${d.callee_type.replace('_', ' ')}</span>
+                    </td>
+                    <td class="callee-cell" style="font-weight:600; color:#fff;">
+                      ${d.callee}
+                      ${d.mcp_server ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem;">(server: ${d.mcp_server})</span>` : ''}
+                    </td>
+                    <td class="callee-cell" style="text-align:right;">
+                      ${statusText}
+                    </td>
+                  </tr>
+                  ${fallbackAlert}
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        `;
+        depsViewContainer.appendChild(card);
+      });
+    }
+
+    function renderTraceView() {
+      traceViewContainer.innerHTML = '';
+      if (currentTurns.length === 0) {
+        // Fallback flat list
+        const card = document.createElement('div');
+        card.className = 'turn-card';
+        card.innerHTML = `<div class="turn-body">${currentNodes.map(n => renderNodeRowHTML(n)).join('')}</div>`;
+        traceViewContainer.appendChild(card);
+        return;
+      }
+
+      currentTurns.forEach((turn) => {
+        const card = document.createElement('div');
+        card.className = 'turn-card';
+
+        // Group nodes by caller_scope within turn
+        const scopes = {};
+        turn.nodes.forEach(n => {
+          const s = n.caller_scope || "Agent";
+          if (!scopes[s]) scopes[s] = [];
+          scopes[s].push(n);
         });
 
-        row.innerHTML = `
+        card.innerHTML = `
+          <div class="turn-header">
+            <div class="turn-prompt">💬 Turn ${turn.index}: ${turn.prompt || '(User prompt)'}</div>
+            <div class="turn-meta">${turn.nodes.length} tool call(s) · ${new Date(turn.timestamp).toLocaleTimeString()}</div>
+          </div>
+          <div class="turn-body">
+            ${Object.keys(scopes).map(scopeName => {
+              const scopeNodes = scopes[scopeName];
+              let icon = '🎯';
+              if (scopeName.startsWith('Skill:')) icon = '🧩';
+              else if (scopeName.startsWith('Subagent:')) icon = '🤖';
+
+              return `
+                <div class="scope-section">
+                  <div class="scope-title">${icon} <strong>${scopeName}</strong> (${scopeNodes.length})</div>
+                  ${scopeNodes.map(n => renderNodeRowHTML(n)).join('')}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+        traceViewContainer.appendChild(card);
+      });
+    }
+
+    function renderNodeRowHTML(node) {
+      let typeBadgeClass = 'badge-system';
+      if (node.type === 'mcp_tool') typeBadgeClass = 'badge-mcp';
+      else if (node.type === 'skill') typeBadgeClass = 'badge-skill';
+      else if (node.type === 'subagent') typeBadgeClass = 'badge-subagent';
+
+      let anomBadges = '';
+      node.anomalies.forEach(a => {
+        anomBadges += `<span class="badge ${a.severity === 'critical' ? 'badge-danger' : 'badge-warning'}">${a.type.replace('_', ' ')}</span>`;
+      });
+
+      return `
+        <div class="node-row ${node.id === selectedNodeId ? 'selected' : ''}" onclick='openDrawerById("${node.id}")'>
           <span style="color:${node.status === 'failed' ? 'var(--danger)' : 'var(--success)'}">${node.status === 'failed' ? '✗' : '✓'}</span>
           <span class="badge ${typeBadgeClass}">${node.type.replace('_', ' ')}</span>
           <span class="node-title">${node.name}</span>
           ${node.mcp_server ? `<span style="color:var(--text-muted); font-size:0.75rem;">(${node.mcp_server})</span>` : ''}
           ${anomBadges}
           <span class="node-meta">${new Date(node.timestamp).toLocaleTimeString()}</span>
-        `;
+        </div>
+      `;
+    }
 
-        row.addEventListener('click', () => openDrawer(node));
-        container.appendChild(row);
-      });
+    function openDrawerById(nodeId) {
+      const node = currentNodes.find(n => n.id === nodeId);
+      if (node) openDrawer(node);
+    }
+
+    function openDrawerByExample(nodeId) {
+      if (!nodeId) return;
+      openDrawerById(nodeId);
     }
 
     function openDrawer(node) {
@@ -569,10 +962,11 @@
 
       document.getElementById('drawerTitle').textContent = node.name;
       document.getElementById('drawerBadges').innerHTML = `
-        <span class="badge ${node.type === 'mcp_tool' ? 'badge-mcp' : 'badge-success'}">${node.type}</span>
+        <span class="badge ${node.type === 'mcp_tool' ? 'badge-mcp' : 'badge-system'}">${node.type}</span>
         <span class="badge ${node.status === 'failed' ? 'badge-danger' : 'badge-success'}">${node.status}</span>
+        ${node.caller_scope ? `<span class="badge badge-skill">${node.caller_scope}</span>` : ''}
       `;
-      document.getElementById('drawerMeta').textContent = `ID: ${node.id} | Time: ${node.timestamp}`;
+      document.getElementById('drawerMeta').textContent = `ID: ${node.id} | Turn: ${node.turn_index || 1} | Time: ${node.timestamp}`;
       document.getElementById('drawerArgs').textContent = JSON.stringify(node.arguments, null, 2);
       document.getElementById('drawerOutput').textContent = node.output ? String(node.output) : '(no output captured)';
 
@@ -594,12 +988,13 @@
 
     function loadSampleTrace() {
       const sample = [
-        {"step_index":0,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:00Z","tool_calls":[{"id":"c1","name":"mcp_github_create_issue","args":{"title":"Deploy Failure"}}]},
-        {"step_index":1,"type":"GENERIC","status":"ERROR","content":"401 Unauthorized: token expired"},
-        {"step_index":2,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:05Z","tool_calls":[{"id":"c2","name":"run_command","args":{"CommandLine":"gh issue create --title 'Deploy Failure'"}}]},
-        {"step_index":3,"type":"GENERIC","status":"DONE","content":"Created issue #42"},
-        {"step_index":4,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:10Z","tool_calls":[{"id":"c3","name":"mcp_slack_send_message","args":{"channel":"#alerts","message":"Issue opened"}}]},
-        {"step_index":5,"type":"GENERIC","status":"DONE","content":"ok: true"}
+        {"step_index":0,"type":"USER_INPUT","created_at":"2026-10-07T14:00:00Z","content":"<USER_REQUEST>File an urgent bug issue on github and inform slack team</USER_REQUEST>"},
+        {"step_index":1,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:01Z","tool_calls":[{"id":"c1","name":"mcp_github_create_issue","args":{"title":"Deploy Failure"}}]},
+        {"step_index":2,"type":"GENERIC","status":"ERROR","content":"401 Unauthorized: token expired"},
+        {"step_index":3,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:05Z","tool_calls":[{"id":"c2","name":"run_command","args":{"CommandLine":"gh issue create --title 'Deploy Failure'"}}]},
+        {"step_index":4,"type":"GENERIC","status":"DONE","content":"Created issue #42"},
+        {"step_index":5,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:10Z","tool_calls":[{"id":"c3","name":"mcp_slack_send_message","args":{"channel":"#alerts","message":"Issue opened"}}]},
+        {"step_index":6,"type":"GENERIC","status":"DONE","content":"ok: true"}
       ].map(JSON.stringify).join('\n');
       processTraceText(sample);
     }

@@ -63,6 +63,8 @@ type CallNode struct {
 	ID           string                 `json:"id"`
 	SessionID    string                 `json:"session_id"`
 	ParentID     string                 `json:"parent_id,omitempty"`
+	TurnIndex    int                    `json:"turn_index"`
+	CallerScope  string                 `json:"caller_scope,omitempty"` // "Agent", "Skill: <name>", "Subagent: <name>"
 	Type         CallNodeType           `json:"type"`
 	Name         string                 `json:"name"`
 	MCPServer    string                 `json:"mcp_server,omitempty"`
@@ -73,6 +75,28 @@ type CallNode struct {
 	Output       interface{}            `json:"output,omitempty"`
 	ErrorMessage string                 `json:"error_message,omitempty"`
 	Anomalies    []AnomalyRecord        `json:"anomalies,omitempty"`
+}
+
+// ExecutionTurn represents a conversational turn initiated by a user prompt.
+type ExecutionTurn struct {
+	Index     int        `json:"index"`
+	Prompt    string     `json:"prompt"`
+	Timestamp time.Time  `json:"timestamp"`
+	Nodes     []CallNode `json:"nodes"`
+}
+
+// CallerDependency summarizes who calls what across the session.
+type CallerDependency struct {
+	Caller       string       `json:"caller"`       // e.g. "Agent", "Skill: quota-aware-task-runner"
+	CallerType   CallNodeType `json:"caller_type"`  // agent, skill, subagent
+	Callee       string       `json:"callee"`       // e.g. "mcp_github_create_issue", "run_command"
+	CalleeType   CallNodeType `json:"callee_type"`  // mcp_tool, skill, system_tool
+	MCPServer    string       `json:"mcp_server,omitempty"`
+	CallCount    int          `json:"call_count"`
+	SuccessCount int          `json:"success_count"`
+	FailCount    int          `json:"fail_count"`
+	IsFallback   bool         `json:"is_fallback"`
+	FallbackTo   string       `json:"fallback_to,omitempty"`
 }
 
 // CallEdgeType represents edge semantics in the DAG.
@@ -94,11 +118,13 @@ type CallEdge struct {
 
 // ExecutionSession groups all nodes and edges for a conversation.
 type ExecutionSession struct {
-	SessionID string      `json:"session_id"`
-	Provider  string      `json:"provider"`
-	StartTime time.Time   `json:"start_time"`
-	EndTime   time.Time   `json:"end_time"`
-	Nodes     []CallNode  `json:"nodes"`
-	Edges     []CallEdge  `json:"edges"`
-	Anomalies []AnomalyRecord `json:"anomalies,omitempty"`
+	SessionID    string             `json:"session_id"`
+	Provider     string             `json:"provider"`
+	StartTime    time.Time          `json:"start_time"`
+	EndTime      time.Time          `json:"end_time"`
+	Turns        []ExecutionTurn    `json:"turns,omitempty"`
+	Nodes        []CallNode         `json:"nodes"`
+	Edges        []CallEdge         `json:"edges"`
+	Dependencies []CallerDependency `json:"dependencies,omitempty"`
+	Anomalies    []AnomalyRecord    `json:"anomalies,omitempty"`
 }

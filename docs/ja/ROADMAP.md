@@ -16,8 +16,9 @@
 | **Phase 3** | 異常・暗黙フォールバック検知エンジン | 完了 | PR #4 |
 | **Phase 4** | CLI 可視化 (`agentlens graph`, `inspect`, `watch`) | 完了 | PR #5 |
 | **Phase 5** | Web UI ダッシュボード (バイナリ内蔵 & 無料GitHub Pagesビューアー) | 完了 | PR #6 |
-| **Phase 6** | 各種生成AI向けプロバイダ定義 (Antigravity, Claude Code, Cursor 等) | 計画中 | PR #7 |
-| **Phase 7** | 多言語化 (i18n: 英語・日本語) CLI/UIローカライズ | 計画中 | PR #8 |
+| **Phase 6** | コールグラフ再設計: 呼出元➔呼出先トレース & ターン別階層エンジン | 完了 | PR #7 |
+| **Phase 7** | 各種生成AI向けプロバイダ定義 & リアルタイム監視 (`agentlens watch`) | 計画中 | PR #8 |
+| **Phase 8** | 多言語化 (i18n: 英語・日本語) CLI/UIローカライズ | 計画中 | PR #9 |
 
 ---
 
@@ -65,13 +66,20 @@
 - [x] 異常警告バナーおよびインスペクタードロワーの実装
 - [x] GitHub Pages 上での完全クライアントサイド（ドラッグ＆ドロップ）可視化の有効化
 
-### Phase 6: マルチプロバイダ対応 (PR #7)
-- [ ] Antigravity transcript パーサーおよびライブログ監視
+### Phase 6: コールグラフ再設計: 呼出元➔呼出先トレース & ターン別階層エンジン (PR #7)
+- [x] コールグラフを160階層の一本道階段状から、真の**呼出元➔呼出先（Caller ➔ Callee）依存関係グラフ**へ刷新
+- [x] SKILL起動（`view_file` による `.../skills/<name>/SKILL.md` の読み込み、`skill_*`）およびサブエージェント呼び出しスコープの自動検知
+- [x] 会話ターン（USER_INPUT）ごとにツール呼び出しを束ねる階層型トレースエンジンの実装
+- [x] CLIコマンドに `agentlens trace <session-id>` を追加（`agentlens graph` との役割分離）
+- [x] Web UIに「Caller ➔ Callee Graph」と「Turn Execution Trace」の2系統タブ切り替えを実装
+
+### Phase 7: 各種生成AI向けプロバイダ定義 & リアルタイム監視 (PR #8)
+- [ ] リアルタイムログ監視 (`agentlens watch`) と自動 tailing 実装
 - [ ] Claude Code セッショントレースアダプター
 - [ ] Cursor / Roo Code トレースアダプター
 - [ ] カスタムプロバイダ作成ガイドドキュメントの整備
 
-### Phase 7: 完全多言語化 & 仕上げ (PR #8)
+### Phase 8: 完全多言語化 & 仕上げ (PR #9)
 - [ ] 多言語管理モジュール実装 (英語・日本語)
 - [ ] CLI出力およびWeb UI文言のローカライズ
 - [ ] E2E統合テストおよび総合ドキュメントの完成
