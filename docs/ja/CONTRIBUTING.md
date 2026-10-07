@@ -31,6 +31,7 @@ AgentLens へのご貢献ありがとうございます！ 人間とAIエージ�
    ```bash
    go test ./...
    go vet ./...
+   cd tests/e2e && npm test && cd ../..
    ```
 3. [`docs/en/ROADMAP.md`](file:///home/tsbkw0/development/agentlens/docs/en/ROADMAP.md) および [`docs/ja/ROADMAP.md`](file:///home/tsbkw0/development/agentlens/docs/ja/ROADMAP.md) のタスク進捗チェックボックスを更新。
 4. 明確でわかりやすいコミットメッセージを作成。
