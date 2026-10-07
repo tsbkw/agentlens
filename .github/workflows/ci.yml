@@ -30,3 +30,14 @@ jobs:
 
       - name: Build binary
         run: go build -v ./cmd/agentlens
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run UI E2E regression tests
+        run: |
+          cd tests/e2e
+          npm ci || npm install
+          npm test

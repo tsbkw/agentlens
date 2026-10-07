@@ -31,6 +31,7 @@ All development is strictly **Pull Request (PR) driven**. Direct pushes to `main
    ```bash
    go test ./...
    go vet ./...
+   cd tests/e2e && npm test && cd ../..
    ```
 3. Update progress checkboxes in [`docs/en/ROADMAP.md`](file:///home/tsbkw0/development/agentlens/docs/en/ROADMAP.md) and [`docs/ja/ROADMAP.md`](file:///home/tsbkw0/development/agentlens/docs/ja/ROADMAP.md).
 4. Commit changes with clear, descriptive commit messages.
