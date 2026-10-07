@@ -13,7 +13,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 | **Phase 0** | Project Foundation, Specs, Go Architecture, AI Agent Guidance & PR Setup | Completed | PR #1 |
 | **Phase 1** | Core Data Models, Provider Definition Schema & YAML Loader | Completed | PR #2 |
 | **Phase 2** | Trace Collector Engine & Call Graph Assembler (DAG in Go) | Completed | PR #3 |
-| **Phase 3** | Anomaly & Silent Fallback Detection Engine | Planned | PR #4 |
+| **Phase 3** | Anomaly & Silent Fallback Detection Engine | Completed | PR #4 |
 | **Phase 4** | CLI Visualization (`agentlens graph`, `inspect`, `watch`) | Planned | PR #5 |
 | **Phase 5** | Web UI Dashboard (Embedded UI & Free GitHub Pages Live Viewer) | Planned | PR #6 |
 | **Phase 6** | Built-in Provider Adapters (Antigravity, Claude Code, Cursor, etc.) | Planned | PR #7 |
@@ -48,10 +48,10 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Add unit tests with synthetic transcript traces
 
 ### Phase 3: Anomaly & Fallback Detection Engine (PR #4)
-- [ ] Implement `AuthExpirationChecker` (regex pattern matching for token/401/403)
-- [ ] Implement `SilentFallbackDetector` (transition detection from failed tools to shell/substitute tools)
-- [ ] Implement `RetryLoopDetector` (consecutive failure detection)
-- [ ] Add unit tests for anomaly detection rules and edge tagging (`FALLBACK_TO`)
+- [x] Implement `AuthExpirationChecker` (regex pattern matching for token/401/403)
+- [x] Implement `SilentFallbackDetector` (transition detection from failed tools to shell/substitute tools)
+- [x] Implement `RetryLoopDetector` (consecutive failure detection)
+- [x] Add unit tests for anomaly detection rules and edge tagging (`FALLBACK_TO`)
 
 ### Phase 4: CLI Visualization (PR #5)
 - [ ] Implement `agentlens list` (list discovered sessions and trace files)
