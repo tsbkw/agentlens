@@ -13,7 +13,7 @@
 | **Phase 0** | プロジェクト基盤、仕様策定、Goアーキテクチャ、AI協調開発環境、PR運用確立 | 完了 | PR #1 |
 | **Phase 1** | コアデータモデル、プロバイダ定義スキーマ & YAMLローダー | 完了 | PR #2 |
 | **Phase 2** | トレース収集エンジン & コールグラフ構築器 (DAG in Go) | 完了 | PR #3 |
-| **Phase 3** | 異常・暗黙フォールバック検知エンジン | 計画中 | PR #4 |
+| **Phase 3** | 異常・暗黙フォールバック検知エンジン | 完了 | PR #4 |
 | **Phase 4** | CLI 可視化 (`agentlens graph`, `inspect`, `watch`) | 計画中 | PR #5 |
 | **Phase 5** | Web UI ダッシュボード (バイナリ内蔵 & 無料GitHub Pagesビューアー) | 計画中 | PR #6 |
 | **Phase 6** | 各種生成AI向けプロバイダ定義 (Antigravity, Claude Code, Cursor 等) | 計画中 | PR #7 |
@@ -48,10 +48,10 @@
 - [x] 模擬トレースを用いたユニットテスト作成
 
 ### Phase 3: 異常・フォールバック検知エンジン (PR #4)
-- [ ] `AuthExpirationChecker` (401/403/トークン失効パターンの検知) 実装
-- [ ] `SilentFallbackDetector` (失敗ツールからシェルや代替ツールへの暗黙遷移検知) 実装
-- [ ] `RetryLoopDetector` (連続失敗・無駄なリトライループの検知) 実装
-- [ ] 異常検知ルールとエッジ付与 (`FALLBACK_TO`) のユニットテスト作成
+- [x] `AuthExpirationChecker` (401/403/トークン失効パターンの検知) 実装
+- [x] `SilentFallbackDetector` (失敗ツールからシェルや代替ツールへの暗黙遷移検知) 実装
+- [x] `RetryLoopDetector` (連続失敗・無駄なリトライループの検知) 実装
+- [x] 異常検知ルールとエッジ付与 (`FALLBACK_TO`) のユニットテスト作成
 
 ### Phase 4: CLI 可視化 (PR #5)
 - [ ] `agentlens list` (セッションおよびトレース一覧表示) 実装
