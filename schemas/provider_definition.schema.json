@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentLensProviderDefinition",
+  "description": "Schema for defining how AgentLens extracts SKILL and MCP call traces from specific Generative AI systems.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "provider",
+    "source",
+    "extraction"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Version of the AgentLens provider definition schema, e.g., '1.0'."
+    },
+    "provider": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the AI provider, e.g., 'antigravity', 'claude-code'."
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable name of the AI platform or agent framework."
+        },
+        "description": {
+          "type": "string",
+          "description": "Brief description of the provider trace format."
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["file", "directory_watch", "command", "otel_collector"],
+          "description": "Ingestion mechanism used to gather raw traces."
+        },
+        "path_patterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Glob patterns or paths where session trace logs are stored (supports environment variable expansion)."
+        },
+        "format": {
+          "type": "string",
+          "enum": ["jsonl", "json", "regex_lines"],
+          "default": "jsonl"
+        }
+      }
+    },
+    "extraction": {
+      "type": "object",
+      "required": ["session", "events", "fields"],
+      "properties": {
+        "session": {
+          "type": "object",
+          "properties": {
+            "id_jsonpath": { "type": "string" },
+            "path_regex": { "type": "string" }
+          }
+        },
+        "events": {
+          "type": "object",
+          "required": ["tool_call_filter"],
+          "properties": {
+            "tool_call_filter": {
+              "type": "string",
+              "description": "JMESPath, JSONPath, or expression identifying tool/skill execution steps."
+            },
+            "subagent_spawn_filter": {
+              "type": "string",
+              "description": "Filter identifying subagent invocations."
+            }
+          }
+        },
+        "fields": {
+          "type": "object",
+          "required": ["call_id", "tool_name"],
+          "properties": {
+            "call_id": { "type": "string" },
+            "parent_id": { "type": "string" },
+            "timestamp": { "type": "string" },
+            "duration_ms": { "type": "string" },
+            "call_type": { "type": "string" },
+            "tool_name": { "type": "string" },
+            "mcp_server": { "type": "string" },
+            "arguments": { "type": "string" },
+            "status": { "type": "string" },
+            "output": { "type": "string" },
+            "error_message": { "type": "string" }
+          }
+        }
+      }
+    },
+    "anomaly_rules": {
+      "type": "object",
+      "properties": {
+        "auth_failure_regex": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "known_fallbacks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["original_tool", "fallback_tool"],
+            "properties": {
+              "original_tool": { "type": "string" },
+              "fallback_tool": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

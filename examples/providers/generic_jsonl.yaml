@@ -1,0 +1,39 @@
+schema_version: "1.0"
+
+provider:
+  id: "generic-jsonl"
+  name: "Generic JSONL Agent Trace"
+  description: "Standard JSONL trace format for custom AI agents and MCP hosts."
+
+source:
+  type: "file"
+  path_patterns:
+    - "./logs/*.jsonl"
+    - "~/.agentlens/traces/*.jsonl"
+  format: "jsonl"
+
+extraction:
+  session:
+    id_jsonpath: "session_id"
+
+  events:
+    tool_call_filter: "event_type == 'tool_call' || event_type == 'skill_call'"
+    subagent_spawn_filter: "event_type == 'subagent_call'"
+
+  fields:
+    call_id: "id"
+    parent_id: "parent_id"
+    timestamp: "timestamp"
+    duration_ms: "duration_ms"
+    call_type: "type"
+    tool_name: "name"
+    mcp_server: "mcp_server"
+    arguments: "params"
+    status: "status"
+    output: "result"
+    error_message: "error"
+
+anomaly_rules:
+  auth_failure_regex:
+    - "(?i)unauthorized|401|auth_error"
+  known_fallbacks: []

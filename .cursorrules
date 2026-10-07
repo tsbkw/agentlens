@@ -1,0 +1,15 @@
+# Cursor AI Rules for AgentLens
+
+You are collaborating on AgentLens, an AI observability and call graph visualizer built in Go with an embedded Web UI and GitHub Pages hosting.
+
+For complete architectural guidelines and principles, read `AGENTS.md`.
+
+## Principles
+1. **5-Layer Separation of Concerns**: Never hardcode platform-specific parsing (e.g. Antigravity or Claude Code formats) into `internal/`. AI vendor formats belong solely in declarative YAML provider definitions (`schemas/provider_definition.schema.json`).
+2. **Language Policy**:
+   - Code, docstrings, variable names, and comments: Strictly English.
+   - Documentation (`docs/`): Maintain dual English (`docs/en/`) and Japanese (`docs/ja/`).
+3. **Branch & PR Policy**:
+   - Never commit directly to `main`.
+   - Update `docs/en/ROADMAP.md` and `docs/ja/ROADMAP.md` for any completed tasks.
+   - Run `go test ./...` and `go vet ./...` before finishing tasks.
