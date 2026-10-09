@@ -125,37 +125,7 @@ func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*Ses
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, 10*1024*1024)
 
-	extraction := c.Provider.Definition.Extraction
-	turnCfg := extraction.Turns
-	resultCfg := extraction.Results
-
-	var allNodes []models.CallNode
-	var turns []models.ExecutionTurn
-	var turnNodeIdx [][]int // per turn, indices into allNodes (materialized at the end)
-	var turnNodes []int
-
-	sessionID := c.Parser.ExtractSessionID(filePath, nil)
-	stepNodeMap := make(map[int]int)    // step index -> index in allNodes
-	callNodeMap := make(map[string]int) // call ID -> index in allNodes
-
-	currentTurnIndex := 0
-	currentPrompt := ""
-	currentTurnTime := time.Now()
-	scopes := providers.NewScopeTracker(c.Provider)
-
-	flushTurn := func() {
-		if currentTurnIndex == 0 && currentPrompt == "" {
-			return
-		}
-		turns = append(turns, models.ExecutionTurn{
-			Index:     currentTurnIndex,
-			Prompt:    currentPrompt,
-			Timestamp: currentTurnTime,
-		})
-		turnNodeIdx = append(turnNodeIdx, turnNodes)
-		turnNodes = nil
-	}
-
+	asm := NewAssembler(c.Provider, filePath)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -167,76 +137,8 @@ func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*Ses
 			continue
 		}
 
-		if sessionID == "" {
-			sessionID = c.Parser.ExtractSessionID(filePath, payload)
-		}
-
-		// Detect user interaction turn
-		if prompt, ts, ok := extractTurn(turnCfg, payload); ok {
-			flushTurn()
-			currentTurnIndex++
-			currentPrompt = prompt
-			if !ts.IsZero() {
-				currentTurnTime = ts
-			}
-			scopes.Reset()
-		}
-
-		// Extract tool call nodes if present
-		nodes, err := c.Parser.ParseNodes(sessionID, payload, currentTurnTime)
-		if err != nil {
+		if _, err := asm.Feed(payload); err != nil {
 			return nil, err
-		}
-
-		stepIdx := -1
-		if resultCfg.StepIndexField != "" {
-			if num, ok := providers.ResolveField(payload, resultCfg.StepIndexField).(float64); ok {
-				stepIdx = int(num)
-			}
-		}
-
-		for i := range nodes {
-			nodes[i].TurnIndex = currentTurnIndex
-
-			scopes.Apply(&nodes[i])
-			allNodes = append(allNodes, nodes[i])
-			idx := len(allNodes) - 1
-			turnNodes = append(turnNodes, idx)
-			callNodeMap[nodes[i].ID] = idx
-
-			if stepIdx >= 0 {
-				stepNodeMap[stepIdx] = idx
-			}
-		}
-
-		// Correlate tool results back to their calls
-		if resultCfg.Filter != "" && !providers.MatchesFilter(payload, resultCfg.Filter) {
-			continue
-		}
-		switch resultCfg.Correlation {
-		case models.CorrelationPreviousStep:
-			if stepIdx > 0 {
-				if idx, exists := stepNodeMap[stepIdx-1]; exists && allNodes[idx].Output == nil {
-					applyResult(&allNodes[idx], resultCfg, payload, false)
-				}
-			}
-		case models.CorrelationCallID:
-			for _, item := range resultItems(resultCfg, payload) {
-				callID := fmt.Sprintf("%v", providers.ResolveField(item, resultCfg.CallIDField))
-				if idx, exists := callNodeMap[callID]; exists {
-					applyResult(&allNodes[idx], resultCfg, item, true)
-					applyResultTiming(&allNodes[idx], resultCfg, payload)
-				}
-			}
-		}
-	}
-
-	flushTurn()
-
-	// Snapshot nodes per turn after all results have been correlated
-	for t, indices := range turnNodeIdx {
-		for _, idx := range indices {
-			turns[t].Nodes = append(turns[t].Nodes, allNodes[idx])
 		}
 	}
 
@@ -244,11 +146,7 @@ func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*Ses
 		return nil, fmt.Errorf("error reading trace stream: %w", err)
 	}
 
-	return &SessionData{
-		SessionID: sessionID,
-		Turns:     turns,
-		Nodes:     allNodes,
-	}, nil
+	return asm.Finish(), nil
 }
 
 // extractTurn reports whether payload starts a new user turn and returns its prompt and timestamp.
@@ -291,12 +189,12 @@ func resultItems(cfg models.ResultExtraction, payload map[string]interface{}) []
 	return items
 }
 
-// applyResult copies output and failure status from a result record onto its call node.
-// flattenText reduces content-block outputs to plain text.
-func applyResult(node *models.CallNode, cfg models.ResultExtraction, result map[string]interface{}, flattenText bool) {
+// applyResult copies output and failure status from a result record onto its call node,
+// reporting whether a result was found. flattenText reduces content-block outputs to plain text.
+func applyResult(node *models.CallNode, cfg models.ResultExtraction, result map[string]interface{}, flattenText bool) bool {
 	output := providers.ResolveField(result, cfg.OutputField)
 	if output == nil {
-		return
+		return false
 	}
 	if flattenText {
 		if _, isBlocks := output.([]interface{}); isBlocks {
@@ -323,6 +221,7 @@ func applyResult(node *models.CallNode, cfg models.ResultExtraction, result map[
 			node.ErrorMessage = providers.TextContent(output)
 		}
 	}
+	return true
 }
 
 // applyResultTiming derives the call duration from the result event timestamp.
