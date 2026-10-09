@@ -228,6 +228,64 @@ async function runTestSuite() {
   await page.evaluate(() => { document.getElementById('searchInput').value = ''; });
 
   // -------------------------------------------------------------
+  // Test 7a: Claude Code trace (auto-detected provider)
+  // -------------------------------------------------------------
+  console.log('\nTest 7a: Claude Code Sample (provider auto-detection)...');
+  await page.click('#resetBtn');
+  await page.click('#loadClaudeSampleBtn');
+  await page.waitForSelector('#graphSection', { visible: true });
+
+  const claudeStats = await page.evaluate(() => ({
+    provider: currentProvider && currentProvider.id,
+    nodes: document.getElementById('statTotalNodes').textContent.trim(),
+    mcp: document.getElementById('statMcpCalls').textContent.trim(),
+    failed: document.getElementById('statFailedCalls').textContent.trim(),
+    anomalyTypes: currentAnomalies.map(a => a.type).sort(),
+    turns: currentTurns.length,
+    callees: [...document.querySelectorAll('.callee-row')].map(el => el.textContent.replace(/\s+/g, ' ').trim()),
+    trace: document.getElementById('traceViewContainer').textContent
+  }));
+  console.log(`  Detected provider: ${claudeStats.provider}, nodes=${claudeStats.nodes}, mcp=${claudeStats.mcp}, failed=${claudeStats.failed}, anomalies=${claudeStats.anomalyTypes.join(',')}`);
+  if (claudeStats.provider !== 'claude-code') throw new Error(`Expected claude-code provider, got ${claudeStats.provider}`);
+  if (claudeStats.nodes !== '6' || claudeStats.mcp !== '2' || claudeStats.failed !== '1') {
+    throw new Error(`Unexpected Claude Code stats: ${JSON.stringify(claudeStats)}`);
+  }
+  if (claudeStats.turns !== 2) throw new Error(`Expected 2 turns (tool results/notifications excluded), got ${claudeStats.turns}`);
+  if (JSON.stringify(claudeStats.anomalyTypes) !== JSON.stringify(['auth_expired', 'silent_fallback'])) {
+    throw new Error(`Expected auth_expired + silent_fallback, got ${claudeStats.anomalyTypes}`);
+  }
+  for (const scope of ['Skill: incident-triage', 'Subagent: Explore']) {
+    if (!claudeStats.callees.some(c => c.includes(scope))) {
+      throw new Error(`Expected ${scope} in the call graph, got ${claudeStats.callees}`);
+    }
+  }
+  if (!claudeStats.trace.includes('Skill: incident-triage')) {
+    throw new Error('Expected the skill scope in the turn trace');
+  }
+  console.log('  ✓ Claude Code trace parsed with turns, scopes, MCP failure and anomalies');
+
+  // -------------------------------------------------------------
+  // Test 7b: Trace content is rendered as text, not HTML
+  // -------------------------------------------------------------
+  console.log('\nTest 7b: HTML escaping of trace content...');
+  await page.click('#resetBtn');
+  const injected = await page.evaluate(() => {
+    const lines = [
+      { type: 'user', timestamp: '2026-10-07T14:00:00Z', message: { content: '<img src=x id=pwned-prompt onerror="window.__pwned=1"> run it' } },
+      { type: 'assistant', timestamp: '2026-10-07T14:00:01Z', message: { content: [{ type: 'tool_use', id: 't1', name: '<b id=pwned-name>Bash</b>', input: {} }] } }
+    ].map(l => JSON.stringify(l)).join('\n');
+    processTraceText(lines);
+    return {
+      injectedElements: document.querySelectorAll('#pwned-prompt, #pwned-name').length,
+      pwned: window.__pwned === 1,
+      promptShown: document.getElementById('traceViewContainer').textContent.includes('<img src=x')
+    };
+  });
+  if (injected.injectedElements > 0 || injected.pwned) throw new Error('Trace content was injected as HTML');
+  if (!injected.promptShown) throw new Error('Expected the raw prompt text to be displayed');
+  console.log('  ✓ Prompts and tool names are escaped');
+
+  // -------------------------------------------------------------
   // Test 7: Console & Runtime Errors
   // -------------------------------------------------------------
   console.log('\nTest 7: Uncaught Errors Check...');
@@ -238,7 +296,7 @@ async function runTestSuite() {
 
   await browser.close();
   console.log('\n===============================================================');
-  console.log('🎉 ALL 7 UI REGRESSION TESTS PASSED!');
+  console.log('🎉 ALL UI REGRESSION TESTS PASSED!');
   console.log('===============================================================');
 }
 
