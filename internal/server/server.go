@@ -18,18 +18,25 @@ var indexHTML []byte
 
 // Server provides local HTTP endpoints and embedded UI.
 type Server struct {
-	Provider  *providers.LoadedProvider
-	Collector *collector.Collector
+	Providers []*providers.LoadedProvider
 	Port      int
 }
 
-// NewServer creates a new local Server instance.
-func NewServer(port int, provider *providers.LoadedProvider) *Server {
+// NewServer creates a new local Server serving sessions from the given providers.
+func NewServer(port int, provs ...*providers.LoadedProvider) *Server {
 	return &Server{
-		Provider:  provider,
-		Collector: collector.NewCollector(provider),
+		Providers: provs,
 		Port:      port,
 	}
+}
+
+func (s *Server) providerByID(id string) *providers.LoadedProvider {
+	for _, p := range s.Providers {
+		if p.Definition.Provider.ID == id {
+			return p
+		}
+	}
+	return nil
 }
 
 // Start launches the local HTTP server.
@@ -44,7 +51,7 @@ func (s *Server) Start() error {
 
 	// API: Sessions list
 	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
-		sessions, err := s.Collector.DiscoverSessions()
+		sessions, err := collector.DiscoverAllSessions(s.Providers)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -63,7 +70,7 @@ func (s *Server) Start() error {
 		}
 
 		sessionID := parts[0]
-		sessions, err := s.Collector.DiscoverSessions()
+		sessions, err := collector.DiscoverAllSessions(s.Providers)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -81,17 +88,22 @@ func (s *Server) Start() error {
 			http.NotFound(w, r)
 			return
 		}
+		provider := s.providerByID(matched.ProviderID)
+		if provider == nil {
+			http.NotFound(w, r)
+			return
+		}
 
-		data, err := s.Collector.IngestSessionFile(matched.FilePath)
+		data, err := collector.NewCollector(provider).IngestSessionFile(matched.FilePath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		builder := graph.NewGraphBuilder()
-		g := builder.BuildWithTurns(matched.SessionID, s.Provider.Definition.Provider.ID, data.Turns, data.Nodes)
+		g := builder.BuildWithTurns(matched.SessionID, provider.Definition.Provider.ID, data.Turns, data.Nodes)
 
-		det := detector.NewDetector(s.Provider)
+		det := detector.NewDetector(provider)
 		det.Analyze(g)
 
 		w.Header().Set("Content-Type", "application/json")
