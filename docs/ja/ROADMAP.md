@@ -19,6 +19,7 @@
 | **Phase 6** | コールグラフ再設計: 呼出元➔呼出先トレース & ターン別階層エンジン | 完了 | PR #7 |
 | **Phase 7** | 各種生成AI向けプロバイダ定義 & リアルタイム監視 (`agentlens watch`) | 完了 | PR #8 |
 | **Phase 8** | 多言語化 (i18n: 英語・日本語) CLI/UIローカライズ | 計画中 | PR #9 |
+| **Phase 9** | Claude Code 対応 (実際の `~/.claude/projects` トランスクリプトをエンドツーエンドで解析) | 進行中 | PR #12– |
 
 ---
 
@@ -83,3 +84,11 @@
 - [ ] 多言語管理モジュール実装 (英語・日本語)
 - [ ] CLI出力およびWeb UI文言のローカライズ
 - [ ] E2E統合テストおよび総合ドキュメントの完成
+
+### Phase 9: Claude Code 対応 (PR #12–)
+- [x] ネストされたコンテンツブロックからの宣言的ツール呼び出し抽出 (`tool_calls_path`, `tool_call_item_filter`)、`||` フィルタ、`mcp_server_regex` (PR #12)
+- [ ] 宣言的なターン検出と ID ベースのツール結果紐付け (`tool_use` ↔ `tool_result`)
+- [ ] Skill / Subagent スコープ判定ルールの宣言化 (コア層から Antigravity 固有ツール名を除去)
+- [ ] CLI / Web サーバー / watcher の `--provider` 切り替えと Claude Code 定義の同梱
+- [ ] Claude Code のサブエージェントトランスクリプト (`<session>/subagents/agent-*.jsonl`) をコールグラフへ統合
+- [ ] ブラウザビューアー (GitHub Pages) の Claude Code トレース対応とドキュメント整備
