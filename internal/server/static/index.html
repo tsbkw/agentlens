@@ -384,6 +384,7 @@
     <div class="nav-links">
       <span class="badge badge-success">Client-Side Privacy</span>
       <button class="btn" id="loadSampleBtn">Load Antigravity Sample</button>
+      <button class="btn" id="loadClaudeSampleBtn">Load Claude Code Sample</button>
       <a href="https://github.com/tsbkw/agentlens" class="btn" target="_blank">GitHub</a>
     </div>
   </header>
@@ -398,8 +399,8 @@
         </div>
         <div class="dropzone" id="dropzone">
           <div class="dropzone-icon">📂</div>
-          <h2>Drop Antigravity or JSONL trace log here</h2>
-          <p>Drop a <code>transcript.jsonl</code> file or click to select</p>
+          <h2>Drop an Antigravity, Claude Code or JSONL trace log here</h2>
+          <p>Drop a <code>transcript.jsonl</code> or <code>~/.claude/projects/&lt;project&gt;/&lt;session&gt;.jsonl</code> file, or click to select. The format is detected automatically.</p>
           <input type="file" id="fileInput" style="display:none" accept=".jsonl,.json,.txt">
         </div>
       </div>
@@ -491,6 +492,7 @@
     </div>
   </div>
 
+  <script type="application/json" id="provider-rules">[{"id":"antigravity","name":"Google Antigravity","extraction":{"session":{"id_jsonpath":"session_id","path_regex":"brain/([a-zA-Z0-9_-]+)/.*transcript\\.jsonl"},"events":{"tool_call_filter":"type == 'PLANNER_RESPONSE' \u0026\u0026 tool_calls != null","subagent_spawn_filter":"tool_calls[?name == 'invoke_subagent']"},"fields":{"call_id":"tool_call.id || step_index","parent_id":"parent_call_id || conversation_id","timestamp":"created_at","duration_ms":"duration_ms","call_type":"tool_call.type","tool_name":"tool_call.name","mcp_server":"tool_call.mcp_server || null","arguments":"tool_call.args || tool_call.arguments","status":"status","output":"tool_call.output","error_message":"tool_call.error"},"turns":{"filter":"type == 'USER_INPUT'","prompt_field":"content","timestamp_field":"created_at","prompt_tag":"USER_REQUEST"},"results":{"correlation":"previous_step","step_index_field":"step_index","output_field":"content","status_field":"status"},"scopes":[{"tool_name":"view_file","kind":"skill","name_field":"AbsolutePath","name_regex":"/skills/([^/]+)/SKILL\\.md$"},{"tool_name":"skill_*","kind":"skill","name_regex":"^skill_(.+)$"},{"tool_name":"invoke_subagent","kind":"subagent","name_field":"Role || TypeName"}]},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"],"known_fallbacks":[{"original_tool":"mcp_*","fallback_tool":"run_command","description":"MCP tool failed or unauthenticated; model fell back to raw shell execution."}]}},{"id":"claude-code","name":"Claude Code","extraction":{"session":{"id_jsonpath":"sessionId","path_regex":"projects/[^/]+/([^/]+)\\.jsonl$"},"events":{"tool_call_filter":"type == 'assistant'","tool_calls_path":"message.content","tool_call_item_filter":"type == 'tool_use'"},"fields":{"call_id":"id","timestamp":"timestamp","tool_name":"name","mcp_server_regex":"^mcp__(.+?)__","arguments":"input"},"turns":{"filter":"type == 'user' \u0026\u0026 toolUseResult == null \u0026\u0026 isMeta != true \u0026\u0026 isCompactSummary != true \u0026\u0026 origin.kind != 'task-notification'","prompt_field":"message.content","timestamp_field":"timestamp","prompt_tag":"command-name"},"results":{"correlation":"call_id","filter":"type == 'user'","items_path":"message.content","item_filter":"type == 'tool_result'","call_id_field":"tool_use_id","output_field":"content","error_flag_field":"is_error","timestamp_field":"timestamp"},"scopes":[{"tool_name":"Skill","kind":"skill","name_field":"skill"},{"tool_name":"Agent","kind":"subagent","name_field":"subagent_type || description","enter_scope":false},{"tool_name":"Task","kind":"subagent","name_field":"subagent_type || description","enter_scope":false}]},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"],"known_fallbacks":[{"original_tool":"mcp__*","fallback_tool":"Bash","description":"MCP tool failed or unauthenticated; Claude Code silently fell back to raw Bash execution."},{"original_tool":"mcp__*","fallback_tool":"WebFetch","description":"MCP tool failed; Claude Code fell back to fetching the resource over plain HTTP."}]}},{"id":"cursor","name":"Cursor Composer","extraction":{"session":{"id_jsonpath":"composer_id","path_regex":"([^/]+)\\.jsonl"},"events":{"tool_call_filter":"type == 'tool_call' || event == 'tool_executed'","subagent_spawn_filter":"tool_calls[?name == 'subagent']"},"fields":{"call_id":"id","parent_id":"parent_id","timestamp":"timestamp","duration_ms":"duration_ms","call_type":"type","tool_name":"tool","mcp_server":"server","arguments":"args","status":"status","output":"result","error_message":"error"},"turns":{},"results":{}},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"],"known_fallbacks":[{"original_tool":"mcp_*","fallback_tool":"terminal_cmd","description":"Cursor Composer MCP failed; agent silently attempted terminal execution."}]}},{"id":"generic-jsonl","name":"Generic JSONL Agent Trace","extraction":{"session":{"id_jsonpath":"session_id"},"events":{"tool_call_filter":"event_type == 'tool_call' || event_type == 'skill_call'","subagent_spawn_filter":"event_type == 'subagent_call'"},"fields":{"call_id":"id","parent_id":"parent_id","timestamp":"timestamp","duration_ms":"duration_ms","call_type":"type","tool_name":"name","mcp_server":"mcp_server","arguments":"params","status":"status","output":"result","error_message":"error"},"turns":{},"results":{}},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|401|auth_error"]}}]</script>
   <script>
     let currentNodes = [];
     let currentTurns = [];
@@ -505,6 +507,7 @@
     const dropzoneSection = document.getElementById('dropzoneSection');
     const graphSection = document.getElementById('graphSection');
     const loadSampleBtn = document.getElementById('loadSampleBtn');
+    const loadClaudeSampleBtn = document.getElementById('loadClaudeSampleBtn');
     const resetBtn = document.getElementById('resetBtn');
     const searchInput = document.getElementById('searchInput');
     const filterSelect = document.getElementById('filterSelect');
@@ -529,6 +532,7 @@
     });
 
     loadSampleBtn.addEventListener('click', () => loadSampleTrace());
+    loadClaudeSampleBtn.addEventListener('click', () => loadClaudeSampleTrace());
     resetBtn.addEventListener('click', () => {
       graphSection.style.display = 'none';
       dropzoneSection.style.display = 'block';
@@ -560,94 +564,300 @@
       reader.readAsText(file);
     }
 
-    function processTraceText(text) {
-      const lines = text.split('\n');
+    // Declarative provider rules, generated from examples/providers/*.yaml
+    // (regenerate with: UPDATE_WEB_RULES=1 go test ./internal/server/ -run TestWebProviderRules).
+    const PROVIDER_RULES = JSON.parse(document.getElementById('provider-rules').textContent);
+    let currentProvider = null;
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function resolveField(obj, path) {
+      if (obj == null || !path) return undefined;
+      let cur = obj;
+      for (const part of path.split('.')) {
+        if (cur == null || typeof cur !== 'object' || Array.isArray(cur)) return undefined;
+        cur = cur[part];
+        if (cur == null) return undefined;
+      }
+      return cur;
+    }
+
+    // Mirrors evaluateSimpleFilter in internal/providers/parser.go
+    function matchesFilter(obj, filter) {
+      if (!filter) return true;
+      return filter.split('||').some(group => group.split('&&').every(clause => {
+        clause = clause.trim();
+        if (!clause) return true;
+        const op = clause.includes('!=') ? '!=' : (clause.includes('==') ? '==' : '');
+        if (!op) return resolveField(obj, clause) !== undefined;
+        const idx = clause.indexOf(op);
+        const key = clause.slice(0, idx).trim();
+        const rawExpected = clause.slice(idx + 2).trim();
+        const val = resolveField(obj, key);
+        const equal = rawExpected === 'null'
+          ? val === undefined
+          : val !== undefined && String(val) === rawExpected.replace(/^['"]+|['"]+$/g, '');
+        return op === '==' ? equal : !equal;
+      }));
+    }
+
+    function textContent(v) {
+      if (v == null) return '';
+      if (typeof v === 'string') return v;
+      if (Array.isArray(v)) {
+        return v.map(b => typeof b === 'string' ? b : (b && typeof b.text === 'string' ? b.text : null))
+          .filter(t => t !== null).join('\n');
+      }
+      return typeof v === 'object' ? JSON.stringify(v) : String(v);
+    }
+
+    // Mirrors resolveValue in internal/providers/parser.go: "a || b" alternatives, looked up
+    // on the call first (also without a "tool_call." prefix), then on the enclosing event.
+    function resolveExpr(callObj, rootObj, expr) {
+      if (!expr) return undefined;
+      for (let key of expr.split('||')) {
+        key = key.trim();
+        if (key === 'null') continue;
+        let val = resolveField(callObj, key);
+        if (val === undefined && key.startsWith('tool_call.')) val = resolveField(callObj, key.slice('tool_call.'.length));
+        if (val === undefined) val = resolveField(rootObj, key);
+        if (val !== undefined) return val;
+      }
+      return undefined;
+    }
+
+    function toRegExp(pattern) {
+      if (!pattern) return null;
+      let flags = '';
+      if (pattern.startsWith('(?i)')) { flags = 'i'; pattern = pattern.slice(4); }
+      try { return new RegExp(pattern, flags); } catch (e) { return null; }
+    }
+
+    function classifyToolType(name, explicitType) {
+      switch (String(explicitType || '').toLowerCase()) {
+        case 'skill': return 'skill';
+        case 'mcp': case 'mcp_tool': return 'mcp_tool';
+        case 'subagent': return 'subagent';
+        case 'system_tool': return 'system_tool';
+      }
+      if (name.includes('subagent')) return 'subagent';
+      if (name.startsWith('mcp_') || name.includes('_mcp')) return 'mcp_tool';
+      if (name.startsWith('skill_')) return 'skill';
+      return 'system_tool';
+    }
+
+    function cleanPromptText(raw, tag) {
+      if (tag) {
+        const open = `<${tag}>`, close = `</${tag}>`;
+        const start = raw.indexOf(open), end = raw.indexOf(close);
+        if (start >= 0 && end > start + open.length) return raw.substring(start + open.length, end).trim();
+      }
+      return raw.trim().split('\n')[0].trim();
+    }
+
+    // Mirrors CompiledScopeRule.match / ScopeTracker.Apply in internal/providers/scope.go
+    function applyScope(rules, tracker, node) {
+      let caller = tracker.active;
+      for (const rule of rules || []) {
+        const nameMatches = rule.tool_name.endsWith('*')
+          ? node.name.startsWith(rule.tool_name.slice(0, -1))
+          : node.name === rule.tool_name;
+        if (!nameMatches) continue;
+
+        let source = node.name;
+        if (rule.name_field) {
+          source = '';
+          for (const key of rule.name_field.split('||')) {
+            const val = resolveField(node.arguments, key.trim());
+            if (val !== undefined && String(val) !== '') { source = String(val); break; }
+          }
+        }
+        let name = source;
+        if (rule.name_regex) {
+          const re = toRegExp(rule.name_regex);
+          const m = re && source.match(re);
+          if (!m) continue;
+          name = m.length > 1 ? m[1] : m[0];
+        }
+
+        const enter = rule.enter_scope !== false;
+        if (rule.kind === 'skill') {
+          node.type = 'skill';
+          if (name) node.scope_name = 'Skill: ' + name;
+        } else if (rule.kind === 'subagent') {
+          node.type = 'subagent';
+          if (enter && tracker.active.startsWith('Skill:')) {
+            tracker.active = tracker.defaultScope;
+            caller = tracker.defaultScope;
+          }
+          if (name) node.scope_name = 'Subagent: ' + name;
+        }
+        if (enter && node.scope_name) tracker.active = node.scope_name;
+        break;
+      }
+      node.caller_scope = caller;
+    }
+
+    // Mirrors collector.Assembler: turns, tool calls, scopes and result correlation.
+    function assembleTrace(events, provider) {
+      const ex = provider.extraction;
+      const ev = ex.events || {};
+      const fields = ex.fields || {};
+      const turnCfg = ex.turns || {};
+      const resCfg = ex.results || {};
+      const mcpRe = toRegExp(fields.mcp_server_regex);
+      const callsPath = ev.tool_calls_path || 'tool_calls';
+
       const nodes = [];
       const turns = [];
       const stepNodeMap = {};
-
+      const callNodeMap = {};
+      const tracker = { defaultScope: 'Agent', active: 'Agent' };
       let currentTurnIndex = 0;
-      let currentPrompt = "";
       let currentTurnTime = new Date().toISOString();
-      let activeScope = "Agent";
 
-      lines.forEach((line) => {
+      events.forEach((item, lineIdx) => {
+        // Turn detection
+        if (turnCfg.filter && matchesFilter(item, turnCfg.filter)) {
+          const raw = resolveField(item, turnCfg.prompt_field);
+          const text = textContent(raw);
+          if (text !== '' || !Array.isArray(raw)) {
+            currentTurnIndex++;
+            currentTurnTime = resolveField(item, turnCfg.timestamp_field) || currentTurnTime;
+            tracker.active = tracker.defaultScope;
+            turns.push({ index: currentTurnIndex, prompt: cleanPromptText(text, turnCfg.prompt_tag), timestamp: currentTurnTime, nodes: [] });
+          }
+        }
+
+        // Tool calls
+        const stepIdx = resCfg.step_index_field ? resolveField(item, resCfg.step_index_field) : undefined;
+        if (matchesFilter(item, ev.tool_call_filter)) {
+          let calls = resolveField(item, callsPath);
+          calls = Array.isArray(calls)
+            ? calls.filter(c => c && typeof c === 'object' && matchesFilter(c, ev.tool_call_item_filter))
+            : [];
+          if (calls.length === 0 && !ev.tool_calls_path) calls = [item];
+
+          calls.forEach((call, idx) => {
+            const name = resolveExpr(call, item, fields.tool_name);
+            if (name === undefined || name === '') return;
+            const toolName = String(name);
+
+            let mcpServer = resolveExpr(call, item, fields.mcp_server);
+            let mcpMatched = false;
+            if (mcpRe) {
+              const m = toolName.match(mcpRe);
+              if (m) { mcpMatched = true; if (!mcpServer && m.length > 1) mcpServer = m[1]; }
+            } else if (!mcpServer && toolName.startsWith('mcp_')) {
+              const parts = toolName.split('_');
+              if (parts.length >= 2) mcpServer = parts[1];
+            }
+            let type = classifyToolType(toolName, resolveExpr(call, item, fields.call_type));
+            if (mcpMatched && type === 'system_tool') type = 'mcp_tool';
+
+            let status = 'success';
+            switch (String(resolveExpr(call, item, fields.status) || '').toLowerCase()) {
+              case 'error': case 'failed': case 'err': status = 'failed'; break;
+              case 'timeout': status = 'timeout'; break;
+            }
+
+            let args = resolveExpr(call, item, fields.arguments);
+            if (typeof args === 'string' && args.trim().startsWith('{')) {
+              try { args = JSON.parse(args); } catch (e) { args = {}; }
+            }
+            if (!args || typeof args !== 'object' || Array.isArray(args)) args = {};
+
+            const node = {
+              id: String(resolveExpr(call, item, fields.call_id) || `line-${lineIdx}-${idx}`),
+              name: toolName,
+              type: type,
+              mcp_server: mcpServer ? String(mcpServer) : null,
+              parent_id: resolveExpr(call, item, fields.parent_id) || '',
+              turn_index: currentTurnIndex,
+              caller_scope: '',
+              scope_name: '',
+              timestamp: resolveExpr(call, item, fields.timestamp) || currentTurnTime,
+              status: status,
+              arguments: args,
+              output: fields.output ? (resolveExpr(call, item, fields.output) ?? null) : null,
+              errorMessage: resolveExpr(call, item, fields.error_message) || null,
+              anomalies: []
+            };
+            applyScope(ex.scopes, tracker, node);
+
+            nodes.push(node);
+            if (turns.length > 0) turns[turns.length - 1].nodes.push(node);
+            callNodeMap[node.id] = node;
+            if (typeof stepIdx === 'number') stepNodeMap[stepIdx] = node;
+          });
+        }
+
+        // Result correlation
+        if (resCfg.filter && !matchesFilter(item, resCfg.filter)) return;
+        const applyResult = (node, result, flatten) => {
+          let output = resolveField(result, resCfg.output_field);
+          if (output === undefined) return false;
+          if (flatten && Array.isArray(output)) output = textContent(output);
+          node.output = output;
+          let failed = resCfg.error_flag_field && resolveField(result, resCfg.error_flag_field) === true;
+          if (resCfg.status_field && ['error', 'failed', 'err'].includes(String(resolveField(result, resCfg.status_field) || '').toLowerCase())) failed = true;
+          if (failed) {
+            node.status = 'failed';
+            if (flatten && !node.errorMessage) node.errorMessage = textContent(output);
+          }
+          return true;
+        };
+        if (resCfg.correlation === 'previous_step') {
+          const prev = typeof stepIdx === 'number' && stepIdx > 0 ? stepNodeMap[stepIdx - 1] : null;
+          if (prev && prev.output == null) applyResult(prev, item, false);
+        } else if (resCfg.correlation === 'call_id') {
+          let items = [item];
+          if (resCfg.items_path) {
+            const arr = resolveField(item, resCfg.items_path);
+            items = Array.isArray(arr) ? arr.filter(r => r && typeof r === 'object' && matchesFilter(r, resCfg.item_filter)) : [];
+          }
+          items.forEach(r => {
+            const node = callNodeMap[String(resolveField(r, resCfg.call_id_field))];
+            if (node && applyResult(node, r, true) && resCfg.timestamp_field && !node.duration_ms) {
+              const end = Date.parse(resolveField(item, resCfg.timestamp_field));
+              const start = Date.parse(node.timestamp);
+              if (end > start) node.duration_ms = end - start;
+            }
+          });
+        }
+      });
+
+      return { nodes, turns };
+    }
+
+    function processTraceText(text) {
+      const events = [];
+      text.split('\n').forEach(line => {
         line = line.trim();
         if (!line) return;
         try {
           const item = JSON.parse(line);
-          const stepIdx = item.step_index;
-
-          if (item.type === 'USER_INPUT') {
-            currentTurnIndex++;
-            currentPrompt = cleanPromptText(String(item.content || ''));
-            currentTurnTime = item.created_at || new Date().toISOString();
-            activeScope = "Agent";
-            turns.push({
-              index: currentTurnIndex,
-              prompt: currentPrompt,
-              timestamp: currentTurnTime,
-              nodes: []
-            });
-          } else if (item.type === 'PLANNER_RESPONSE' && Array.isArray(item.tool_calls)) {
-            item.tool_calls.forEach((tc, idx) => {
-              const name = tc.name || 'unknown_tool';
-              let nodeType = 'system_tool';
-              let mcpServer = null;
-
-              if (name.startsWith('mcp_')) {
-                nodeType = 'mcp_tool';
-                const parts = name.split('_');
-                if (parts.length > 1) mcpServer = parts[1];
-              } else if (name.startsWith('skill_')) {
-                nodeType = 'skill';
-                activeScope = "Skill: " + name.replace('skill_', '');
-              } else if (name.includes('subagent')) {
-                nodeType = 'subagent';
-                const args = tc.args || tc.arguments || {};
-                if (args.Role) activeScope = "Subagent: " + args.Role;
-                else if (args.TypeName) activeScope = "Subagent: " + args.TypeName;
-              } else if (name === 'view_file') {
-                const args = tc.args || tc.arguments || {};
-                const p = String(args.AbsolutePath || '');
-                if (p.includes('/skills/') && p.endsWith('/SKILL.md')) {
-                  const parts = p.split('/skills/');
-                  if (parts.length > 1) {
-                    activeScope = "Skill: " + parts[1].split('/')[0];
-                  }
-                }
-              }
-
-              const node = {
-                id: tc.id || `step-${stepIdx}-${idx}`,
-                name: name,
-                type: nodeType,
-                mcp_server: mcpServer,
-                turn_index: currentTurnIndex,
-                caller_scope: activeScope,
-                timestamp: item.created_at || currentTurnTime,
-                status: 'success',
-                arguments: tc.args || tc.arguments || {},
-                output: null,
-                errorMessage: null,
-                anomalies: []
-              };
-
-              nodes.push(node);
-              if (turns.length > 0) {
-                turns[turns.length - 1].nodes.push(node);
-              }
-              if (stepIdx !== undefined) stepNodeMap[stepIdx] = node;
-            });
-          } else if (stepIdx > 0 && stepNodeMap[stepIdx - 1]) {
-            const prev = stepNodeMap[stepIdx - 1];
-            if (item.content) prev.output = item.content;
-            if (item.status === 'ERROR') prev.status = 'failed';
-          }
+          if (item && typeof item === 'object' && !Array.isArray(item)) events.push(item);
         } catch (err) {}
       });
 
-      analyzeAnomalies(nodes);
+      // Pick the provider whose rules recognise the most calls and turns (collector.DetectProvider)
+      let best = null;
+      PROVIDER_RULES.forEach(provider => {
+        const result = assembleTrace(events, provider);
+        const score = result.nodes.length + result.turns.length;
+        if (!best || score > best.score) best = { provider, result, score };
+      });
+
+      currentProvider = best ? best.provider : null;
+      const nodes = best ? best.result.nodes : [];
+      const turns = best ? best.result.turns : [];
+
+      analyzeAnomalies(nodes, turns, currentProvider);
       computeDependencies(nodes);
       currentNodes = nodes;
       currentTurns = turns;
@@ -655,22 +865,29 @@
       displayGraph();
     }
 
-    function cleanPromptText(raw) {
-      if (raw.includes('<USER_REQUEST>') && raw.includes('</USER_REQUEST>')) {
-        const start = raw.indexOf('<USER_REQUEST>') + '<USER_REQUEST>'.length;
-        const end = raw.indexOf('</USER_REQUEST>');
-        if (end > start) return raw.substring(start, end).trim();
-      }
-      return raw.split('\n')[0].trim();
+    function matchToolPattern(pattern, name) {
+      if (pattern === '*') return true;
+      return pattern.endsWith('*') ? name.startsWith(pattern.slice(0, -1)) : pattern === name;
     }
 
-    function analyzeAnomalies(nodes) {
+    // Mirrors internal/detector: auth expiry, confirmed silent fallbacks and retry loops.
+    let confirmedFallbacks = {};
+    function analyzeAnomalies(nodes, turns, provider) {
       currentAnomalies = [];
-      nodes.forEach((node, i) => {
-        const outStr = String(node.output || '') + ' ' + String(node.errorMessage || '');
-        if (/unauthorized|\b401\b|\b403\b|token expired|authentication failed/i.test(outStr)) {
-          node.status = 'failed';
-          const anom = {
+      confirmedFallbacks = {};
+      const rules = (provider && provider.anomaly_rules) || {};
+      const authRegexes = (rules.auth_failure_regex || []).map(toRegExp).filter(Boolean);
+      const knownFallbacks = rules.known_fallbacks || [];
+      const isFailed = n => n.status === 'failed' || n.status === 'timeout';
+      const record = (node, anom) => { node.anomalies.push(anom); currentAnomalies.push(anom); };
+
+      nodes.forEach(node => {
+        // Successful system tools print arbitrary text, so only failed calls and MCP tools are scanned
+        const parts = [node.errorMessage || ''];
+        if (node.output != null && (isFailed(node) || node.type === 'mcp_tool')) parts.push(textContent(node.output));
+        const outStr = parts.join(' ').trim();
+        if (outStr && authRegexes.some(re => re.test(outStr))) {
+          record(node, {
             id: `auth-${node.id}`,
             type: 'auth_expired',
             severity: 'critical',
@@ -678,60 +895,64 @@
             title: `Authentication Expired: ${node.name}`,
             description: `Tool encountered authentication failure. Output matched expired credential patterns.`,
             recommendation: `Check and renew OAuth tokens or credentials for ${node.mcp_server || node.name}.`
-          };
-          node.anomalies.push(anom);
-          currentAnomalies.push(anom);
-        }
-
-        // Silent fallback detection
-        if (node.status === 'failed' && i + 1 < nodes.length) {
-          const next = nodes[i + 1];
-          if ((node.type === 'mcp_tool' || node.type === 'skill') && next.type === 'system_tool') {
-            const anom = {
-              id: `fallback-${node.id}-${next.id}`,
-              type: 'silent_fallback',
-              severity: 'warning',
-              nodeId: next.id,
-              relatedNodeId: node.id,
-              title: `Silent Fallback: ${node.name} → ${next.name}`,
-              description: `Primary tool ${node.name} failed. Agent silently fell back to substitute tool ${next.name} without warning.`,
-              recommendation: `Fix ${node.name} to avoid degraded or incomplete results from fallback tool.`
-            };
-            next.anomalies.push(anom);
-            currentAnomalies.push(anom);
-          }
+          });
         }
       });
 
-      // Retry loop detection
-      let consecutiveFails = 0;
-      let lastFailedName = "";
-      nodes.forEach((node) => {
-        if (node.status === 'failed') {
+      // Sequences per turn and actor (calls sharing a parent), like GraphBuilder
+      const sequences = {};
+      nodes.forEach(n => {
+        const key = `${n.turn_index}::${n.parent_id}`;
+        (sequences[key] = sequences[key] || []).push(n);
+      });
+
+      Object.values(sequences).forEach(seq => {
+        seq.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+
+        // Silent fallback: a failed call followed by a different tool
+        for (let i = 0; i + 1 < seq.length; i++) {
+          const node = seq[i], next = seq[i + 1];
+          if (!isFailed(node) || node.name === next.name) continue;
+          const rule = knownFallbacks.find(r => matchToolPattern(r.original_tool, node.name) && matchToolPattern(r.fallback_tool, next.name));
+          const generic = (node.type === 'mcp_tool' || node.type === 'skill') && next.type === 'system_tool';
+          if (!rule && !generic) continue;
+          confirmedFallbacks[`${node.caller_scope || 'Agent'}::${node.name}`] = next.name;
+          record(next, {
+            id: `fallback-${node.id}-${next.id}`,
+            type: 'silent_fallback',
+            severity: 'warning',
+            nodeId: next.id,
+            relatedNodeId: node.id,
+            title: `Silent Fallback: ${node.name} → ${next.name}`,
+            description: (rule && rule.description) || `Primary tool ${node.name} failed. Agent silently fell back to substitute tool ${next.name} without warning.`,
+            recommendation: `Fix ${node.name} to avoid degraded or incomplete results from fallback tool.`
+          });
+        }
+
+        // Retry loop: the same tool failing 3+ times in a row
+        let consecutiveFails = 0;
+        let lastFailedName = '';
+        seq.forEach(node => {
+          if (!isFailed(node)) { consecutiveFails = 0; lastFailedName = ''; return; }
           if (node.name === lastFailedName || !lastFailedName) {
             consecutiveFails++;
             lastFailedName = node.name;
             if (consecutiveFails >= 3) {
-              const anom = {
+              record(node, {
                 id: `loop-${node.id}-${consecutiveFails}`,
                 type: 'retry_loop',
                 severity: 'warning',
                 nodeId: node.id,
                 title: `Retry Loop: ${node.name} failed ${consecutiveFails} times consecutively`,
                 description: `Tool ${node.name} failed repeatedly without backoff. Agent appears stuck in an error loop.`,
-                recommendation: `Inspect tool parameters or database state causing repeated execution failure.`
-              };
-              node.anomalies.push(anom);
-              currentAnomalies.push(anom);
+                recommendation: `Inspect tool parameters or environment state causing repeated execution failure.`
+              });
             }
           } else {
             consecutiveFails = 1;
             lastFailedName = node.name;
           }
-        } else {
-          consecutiveFails = 0;
-          lastFailedName = "";
-        }
+        });
       });
     }
 
@@ -742,31 +963,9 @@
 
       nodes.forEach((node, i) => {
         let caller = node.caller_scope || "Agent";
-        let callee = node.name;
+        let callee = node.scope_name || node.name;
         let calleeType = node.type;
-
-        if (node.name === 'invoke_subagent') {
-          calleeType = 'subagent';
-          const args = node.arguments || {};
-          if (args.Role) callee = "Subagent: " + args.Role;
-          else if (args.TypeName) callee = "Subagent: " + args.TypeName;
-          scopeParentMap[callee] = caller;
-        } else if (node.name === 'view_file') {
-          const args = node.arguments || {};
-          const p = String(args.AbsolutePath || '');
-          if (p.includes('/skills/') && p.endsWith('/SKILL.md')) {
-            const parts = p.split('/skills/');
-            if (parts.length > 1) {
-              callee = "Skill: " + parts[1].split('/')[0];
-              calleeType = 'skill';
-              scopeParentMap[callee] = caller;
-            }
-          }
-        } else if (node.name.startsWith('skill_')) {
-          callee = "Skill: " + node.name.replace('skill_', '');
-          calleeType = 'skill';
-          scopeParentMap[callee] = caller;
-        }
+        if (node.scope_name) scopeParentMap[callee] = caller;
 
         const key = `${caller}::${callee}`;
         if (!depMap[key]) {
@@ -795,9 +994,11 @@
         if (node.status === 'success') dep.success_count++;
         else if (node.status === 'failed') dep.fail_count++;
 
-        if (node.status === 'failed' && i + 1 < nodes.length) {
+        // Only fallbacks confirmed by analyzeAnomalies are flagged
+        const fallbackTo = confirmedFallbacks[key];
+        if (fallbackTo) {
           dep.is_fallback = true;
-          dep.fallback_to = nodes[i + 1].name;
+          dep.fallback_to = fallbackTo;
         }
       });
 
@@ -898,9 +1099,9 @@
         alertEl.innerHTML = `
           <div style="font-size:1.5rem">${a.severity === 'critical' ? '🚨' : '⚠️'}</div>
           <div>
-            <div class="alert-title">${a.title}</div>
-            <div class="alert-desc">${a.description}</div>
-            <div class="alert-rec">💡 ${a.recommendation}</div>
+            <div class="alert-title">${escapeHtml(a.title)}</div>
+            <div class="alert-desc">${escapeHtml(a.description)}</div>
+            <div class="alert-rec">💡 ${escapeHtml(a.recommendation)}</div>
           </div>
         `;
         alertsContainer.appendChild(alertEl);
@@ -941,7 +1142,7 @@
         fallbackAlert = `
           <tr>
             <td colspan="3" class="fallback-alert-row" style="padding-left: ${3.5 + depth * 1.5}rem;">
-              ⚠️ <strong>Silent Fallback Detected:</strong> Primary tool failed, agent substituted execution with <code>${d.fallback_to}</code>.
+              ⚠️ <strong>Silent Fallback Detected:</strong> Primary tool failed, agent substituted execution with <code>${escapeHtml(d.fallback_to)}</code>.
             </td>
           </tr>
         `;
@@ -958,8 +1159,8 @@
             ${indentGuide}<span class="badge ${calleeTypeBadge}">${d.callee_type.replace('_', ' ')}</span>
           </td>
           <td class="callee-cell" style="font-weight:600; color:#fff;">
-            ${d.callee}
-            ${d.mcp_server ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem;">(server: ${d.mcp_server})</span>` : ''}
+            ${escapeHtml(d.callee)}
+            ${d.mcp_server ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem;">(server: ${escapeHtml(d.mcp_server)})</span>` : ''}
             ${hasChildren ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem; margin-left:0.5rem;">[${d.children.length} nested call(s)]</span>` : ''}
           </td>
           <td class="callee-cell" style="text-align:right;">
@@ -1019,7 +1220,7 @@
             <div class="caller-title">
               <span>${callerIcon}</span>
               <span class="badge ${callerBadgeClass}">${caller.startsWith('Skill:') ? 'Skill Caller' : (caller.startsWith('Subagent:') ? 'Subagent Caller' : 'Agent Planner')}</span>
-              <span>${caller}</span>
+              <span>${escapeHtml(caller)}</span>
             </div>
             <div class="caller-stats">${deps.length} target tool(s) · ${totalCalls} total invocation(s)</div>
           </div>
@@ -1058,7 +1259,7 @@
 
         card.innerHTML = `
           <div class="turn-header">
-            <div class="turn-prompt">💬 Turn ${turn.index}: ${turn.prompt || '(User prompt)'}</div>
+            <div class="turn-prompt">💬 Turn ${turn.index}: ${escapeHtml(turn.prompt || '(User prompt)')}</div>
             <div class="turn-meta">${turn.nodes.length} tool call(s) · ${new Date(turn.timestamp).toLocaleTimeString()}</div>
           </div>
           <div class="turn-body">
@@ -1070,7 +1271,7 @@
 
               return `
                 <div class="scope-section">
-                  <div class="scope-title">${icon} <strong>${scopeName}</strong> (${scopeNodes.length})</div>
+                  <div class="scope-title">${icon} <strong>${escapeHtml(scopeName)}</strong> (${scopeNodes.length})</div>
                   ${scopeNodes.map(n => renderNodeRowHTML(n)).join('')}
                 </div>
               `;
@@ -1093,11 +1294,11 @@
       });
 
       return `
-        <div class="node-row ${node.id === selectedNodeId ? 'selected' : ''}" onclick='openDrawerById("${node.id}")'>
+        <div class="node-row ${node.id === selectedNodeId ? 'selected' : ''}" onclick='openDrawerById(${escapeHtml(JSON.stringify(node.id))})'>
           <span style="color:${node.status === 'failed' ? 'var(--danger)' : 'var(--success)'}">${node.status === 'failed' ? '✗' : '✓'}</span>
           <span class="badge ${typeBadgeClass}">${node.type.replace('_', ' ')}</span>
-          <span class="node-title">${node.name}</span>
-          ${node.mcp_server ? `<span style="color:var(--text-muted); font-size:0.75rem;">(${node.mcp_server})</span>` : ''}
+          <span class="node-title">${escapeHtml(node.name)}</span>
+          ${node.mcp_server ? `<span style="color:var(--text-muted); font-size:0.75rem;">(${escapeHtml(node.mcp_server)})</span>` : ''}
           ${anomBadges}
           <span class="node-meta">${new Date(node.timestamp).toLocaleTimeString()}</span>
         </div>
@@ -1162,7 +1363,7 @@
       document.getElementById('drawerBadges').innerHTML = `
         <span class="badge ${node.type === 'mcp_tool' ? 'badge-mcp' : 'badge-system'}">${node.type}</span>
         <span class="badge ${node.status === 'failed' ? 'badge-danger' : 'badge-success'}">${node.status}</span>
-        ${node.caller_scope ? `<span class="badge badge-skill">${node.caller_scope}</span>` : ''}
+        ${node.caller_scope ? `<span class="badge badge-skill">${escapeHtml(node.caller_scope)}</span>` : ''}
       `;
       document.getElementById('drawerMeta').textContent = `ID: ${node.id} | Turn: ${node.turn_index || 1} | Time: ${node.timestamp}`;
       document.getElementById('drawerArgs').textContent = JSON.stringify(node.arguments, null, 2);
@@ -1174,9 +1375,9 @@
         anomSection.style.display = 'block';
         anomList.innerHTML = node.anomalies.map(a => `
           <div style="font-size:0.85rem; margin-top:0.5rem;">
-            <strong>${a.title}</strong>
-            <p style="color:var(--text-muted)">${a.description}</p>
-            <p style="color:var(--primary); font-size:0.8rem">💡 ${a.recommendation}</p>
+            <strong>${escapeHtml(a.title)}</strong>
+            <p style="color:var(--text-muted)">${escapeHtml(a.description)}</p>
+            <p style="color:var(--primary); font-size:0.8rem">💡 ${escapeHtml(a.recommendation)}</p>
           </div>
         `).join('');
       } else {
@@ -1227,6 +1428,31 @@
         {"step_index":38,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:02:25Z","content":"{\"ok\":true,\"ts\":\"1728309745.002\"}"},
         {"step_index":39,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:02:28Z","tool_calls":[{"id":"call-schedule","name":"schedule","args":{"DurationSeconds":1800,"Prompt":"Perform 30-minute post-incident latency health check"}}]},
         {"step_index":40,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:02:29Z","content":"Scheduled task task-992 for 1800s."}
+      ].map(JSON.stringify).join('\n');
+      processTraceText(sample);
+    }
+
+    function loadClaudeSampleTrace() {
+      // Main transcript of examples/traces/sample_claude_code_session.jsonl
+      const sample = [
+        {"type":"permission-mode","permissionMode":"default","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"Triage the failing deploy: check CI, then open a GitHub issue and notify #deploys on Slack"},"uuid":"u-001","timestamp":"2026-10-07T14:00:00.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a","cwd":"/home/dev/backend-api"},
+        {"parentUuid":"u-001","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll load the incident triage skill first."},{"type":"tool_use","id":"toolu_skill_01","name":"Skill","input":{"skill":"incident-triage"}}]},"uuid":"a-001","timestamp":"2026-10-07T14:00:02.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"a-001","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_skill_01","content":"Launching skill: incident-triage"}]},"toolUseResult":{"success":true,"commandName":"incident-triage"},"uuid":"u-002","timestamp":"2026-10-07T14:00:02.400Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"u-002","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: /home/dev/.claude/skills/incident-triage"}]},"isMeta":true,"uuid":"u-003","timestamp":"2026-10-07T14:00:02.500Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"u-003","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_bash_01","name":"Bash","input":{"command":"gh run list --limit 3","description":"List recent CI runs"}}]},"uuid":"a-002","timestamp":"2026-10-07T14:00:04.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"a-002","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_bash_01","content":"completed failure deploy-prod main 2m14s","is_error":false}]},"toolUseResult":{"stdout":"completed failure deploy-prod main 2m14s","stderr":""},"uuid":"u-004","timestamp":"2026-10-07T14:00:05.800Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"u-004","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_agent_01","name":"Agent","input":{"description":"Inspect deploy logs","prompt":"Read the failing deploy-prod job logs and summarize the root cause","subagent_type":"Explore"}}]},"uuid":"a-003","timestamp":"2026-10-07T14:00:07.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"a-003","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_agent_01","content":[{"type":"text","text":"Root cause: migration 0042 times out acquiring a lock on user_sessions."}]}]},"toolUseResult":{"status":"completed","agentId":"a1b2c3d4e5f60718"},"uuid":"u-005","timestamp":"2026-10-07T14:00:31.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"u-005","isSidechain":false,"type":"user","message":{"role":"user","content":"<task-notification>\n<task-id>b7x1</task-id>\n<status>completed</status>\n</task-notification>"},"origin":{"kind":"task-notification"},"uuid":"u-005b","timestamp":"2026-10-07T14:00:40.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"u-005","isSidechain":false,"type":"user","message":{"role":"user","content":"Looks right. Go ahead and file the issue and post to Slack."},"uuid":"u-006","timestamp":"2026-10-07T14:01:00.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"u-006","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_mcp_gh_01","name":"mcp__github__create_issue","input":{"owner":"example","repo":"backend-api","title":"deploy-prod fails: migration 0042 lock timeout"}}]},"uuid":"a-004","timestamp":"2026-10-07T14:01:02.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"a-004","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_mcp_gh_01","content":"Error: 401 Unauthorized - Bad credentials (token expired)","is_error":true}]},"toolUseResult":"Error: 401 Unauthorized - Bad credentials (token expired)","uuid":"u-007","timestamp":"2026-10-07T14:01:03.200Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"u-007","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_bash_02","name":"Bash","input":{"command":"gh issue create --repo example/backend-api --title 'deploy-prod fails: migration 0042 lock timeout'","description":"Create issue via gh CLI"}}]},"uuid":"a-005","timestamp":"2026-10-07T14:01:05.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"a-005","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_bash_02","content":"https://github.com/example/backend-api/issues/321","is_error":false}]},"toolUseResult":{"stdout":"https://github.com/example/backend-api/issues/321","stderr":""},"uuid":"u-008","timestamp":"2026-10-07T14:01:07.100Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"u-008","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_mcp_slack_01","name":"mcp__slack__slack_send_message","input":{"channel_id":"C0DEPLOYS","message":"deploy-prod is failing, tracked in backend-api#321"}}]},"uuid":"a-006","timestamp":"2026-10-07T14:01:09.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"a-006","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_mcp_slack_01","content":[{"type":"text","text":"{\"ok\":true,\"ts\":\"1759845669.000100\"}"}]}]},"toolUseResult":[{"type":"text","text":"{\"ok\":true,\"ts\":\"1759845669.000100\"}"}],"uuid":"u-009","timestamp":"2026-10-07T14:01:09.900Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"u-009","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Filed backend-api#321 (via gh CLI because the GitHub MCP token expired) and posted to #deploys."}]},"uuid":"a-007","timestamp":"2026-10-07T14:01:11.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"}
       ].map(JSON.stringify).join('\n');
       processTraceText(sample);
     }

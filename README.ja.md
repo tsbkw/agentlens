@@ -78,24 +78,45 @@ Web UI は以下の2通りの方法で利用できます:
 
 ---
 
-## ⚡ 予定されるCLIコマンド
+## ⚡ CLIコマンド
 
 ```bash
-# 記録されたセッション一覧の表示
+# 対応する全エージェント (Antigravity, Claude Code など) の記録済みセッション一覧を表示
 agentlens list
 
-# ターミナル上で色分けツリー型コールグラフを描画
-agentlens graph <session-id>
+# 呼出元 ➔ 呼出先のコールグラフを色分けツリーで描画
+agentlens graph <session-id | trace-file>
+
+# ターン単位の実行トレースを描画
+agentlens trace <session-id | trace-file>
 
 # 特定ノードの引数、実行結果、異常診断の詳細を表示
 agentlens inspect <call-id>
 
-# 内蔵Web UIダッシュボードを起動（ブラウザが自動起動）
-agentlens ui --port 8000
+# 内蔵Web UIダッシュボードを http://localhost:8000 で起動
+agentlens ui
 
-# 実行中のAIセッションをターミナルでリアルタイム監視
-agentlens watch --provider antigravity
+# 実行中のAIセッションをリアルタイム監視 (省略時は最新のセッション)
+agentlens watch [session-id]
 ```
+
+トレース形式は自動判定されます。固定したい場合はグローバルフラグ `--provider` / `-p` (`antigravity`, `claude-code`, `cursor`, `generic-jsonl`、または独自のプロバイダYAMLのパス) か、環境変数 `AGENTLENS_PROVIDER` を指定してください。
+
+### Claude Code
+
+Claude Code は各セッションを `~/.claude/projects/<エンコードされたcwd>/<session-id>.jsonl` に保存します。AgentLens は追加設定なしでこれを読み込めます。
+
+```bash
+agentlens list                              # Claude Code のセッションは provider "claude-code" として表示
+agentlens graph 5b0c8f2e                    # セッションIDの前方一致
+agentlens trace ~/.claude/projects/-Users-me-repo/5b0c8f2e-....jsonl
+agentlens --provider claude-code watch      # 最新の Claude Code セッションを追跡
+```
+
+- `Skill` 呼び出しは **Skill** スコープを開き、`Agent` / `Task` 呼び出しは **Subagent** として表示されます。各サブエージェント自身のトランスクリプト (`<session-id>/subagents/agent-*.jsonl`) は、それを起動した呼び出しの配下に統合されます。
+- `mcp__<server>__<tool>` 形式の呼び出しは `<server>` の **MCP** ツールとして分類されます。
+- `tool_result` ブロックは ID で `tool_use` に紐付けられ、出力・`is_error` による失敗・所要時間が記録されます。MCP 呼び出しの失敗直後に `Bash` / `WebFetch` が実行された場合は **暗黙のフォールバック** として検出されます。
+- 同梱サンプルで試せます: `agentlens graph examples/traces/sample_claude_code_session.jsonl`
 
 ---
 
