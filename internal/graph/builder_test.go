@@ -185,3 +185,20 @@ func TestTransitiveMultiHopCallTree(t *testing.T) {
 		t.Errorf("Expected MCPServer 'postgres', got %s", skillDep.Children[0].MCPServer)
 	}
 }
+
+func TestSameToolAfterFailureIsRetry(t *testing.T) {
+	now := time.Now()
+	nodes := []models.CallNode{
+		{ID: "a", Name: "Bash", Timestamp: now, Status: models.StatusFailed},
+		{ID: "b", Name: "Bash", Timestamp: now.Add(time.Second), Status: models.StatusSuccess},
+	}
+	g := NewGraphBuilder().Build("s", "test", nodes)
+	if len(g.Edges) != 1 || g.Edges[0].Type != models.EdgeTypeRetries {
+		t.Fatalf("Expected a single retries edge, got %+v", g.Edges)
+	}
+	for _, dep := range g.Dependencies {
+		if dep.IsFallback {
+			t.Errorf("A retry must not be reported as a fallback: %+v", dep)
+		}
+	}
+}
