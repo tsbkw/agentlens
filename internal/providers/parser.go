@@ -149,12 +149,8 @@ func (p *TraceParser) buildNode(
 
 	// Timestamp
 	nodeTime := fallbackTime
-	if tsStr := resolveString(callPayload, rootPayload, fields.Timestamp); tsStr != "" {
-		if t, err := time.Parse(time.RFC3339Nano, tsStr); err == nil {
-			nodeTime = t
-		} else if t, err := time.Parse(time.RFC3339, tsStr); err == nil {
-			nodeTime = t
-		}
+	if t, ok := ParseTimestamp(resolveString(callPayload, rootPayload, fields.Timestamp)); ok {
+		nodeTime = t
 	}
 
 	// Status
@@ -325,6 +321,52 @@ func ResolveField(data map[string]interface{}, path string) interface{} {
 		}
 	}
 	return current
+}
+
+// ParseTimestamp parses an RFC 3339 timestamp, reporting whether parsing succeeded.
+func ParseTimestamp(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Time{}, false
+	}
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, true
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, true
+	}
+	return time.Time{}, false
+}
+
+// TextContent flattens a value into display text. Arrays of content blocks
+// (e.g. [{"type":"text","text":"..."}]) are reduced to their joined "text" fields;
+// it returns "" when a block array carries no text.
+func TextContent(v interface{}) string {
+	switch val := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return val
+	case []interface{}:
+		var texts []string
+		for _, item := range val {
+			switch block := item.(type) {
+			case string:
+				texts = append(texts, block)
+			case map[string]interface{}:
+				if text, ok := block["text"].(string); ok {
+					texts = append(texts, text)
+				}
+			}
+		}
+		return strings.Join(texts, "\n")
+	default:
+		return fmt.Sprintf("%v", val)
+	}
+}
+
+// MatchesFilter reports whether payload satisfies a filter expression (see evaluateSimpleFilter).
+func MatchesFilter(payload map[string]interface{}, filter string) bool {
+	return evaluateSimpleFilter(payload, filter)
 }
 
 // evaluateSimpleFilter evaluates a minimal boolean expression against a payload.

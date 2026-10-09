@@ -32,6 +32,25 @@ extraction:
     mcp_server_regex: "^mcp__(.+?)__"
     arguments: "input"
 
+  turns:
+    # Real prompts are user messages that are not tool results, meta/compaction messages,
+    # or background task notifications.
+    filter: "type == 'user' && toolUseResult == null && isMeta != true && isCompactSummary != true && origin.kind != 'task-notification'"
+    prompt_field: "message.content"
+    timestamp_field: "timestamp"
+    # Slash commands are recorded as <command-name>/cmd</command-name>...
+    prompt_tag: "command-name"
+
+  results:
+    correlation: "call_id"
+    filter: "type == 'user'"
+    items_path: "message.content"
+    item_filter: "type == 'tool_result'"
+    call_id_field: "tool_use_id"
+    output_field: "content"
+    error_flag_field: "is_error"
+    timestamp_field: "timestamp"
+
 anomaly_rules:
   auth_failure_regex:
     - "(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"
