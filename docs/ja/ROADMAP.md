@@ -91,5 +91,6 @@
 - [x] Skill / Subagent スコープ判定ルールの宣言化 (コア層から Antigravity 固有ツール名を除去) (PR #14)
 - [x] インクリメンタルなセッション組み立て処理を共通化し、`agentlens watch` も宣言的なターン / 結果 / スコープ規則に従うよう変更 (PR #15)
 - [x] CLI / Web サーバー / watcher の `--provider` 切り替えと Claude Code 定義の同梱、トレース形式の自動判定 (PR #16)
+- [x] 実セッションでの異常検知の誤検知削減: 同一ツールのリトライ、未確認のフォールバック、成功したシステムツール出力中の認証パターン (PR #17)
 - [ ] Claude Code のサブエージェントトランスクリプト (`<session>/subagents/agent-*.jsonl`) をコールグラフへ統合
 - [ ] ブラウザビューアー (GitHub Pages) の Claude Code トレース対応とドキュメント整備
