@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tsbkw/agentlens/internal/collector"
 	"github.com/tsbkw/agentlens/internal/detector"
 	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/models"
@@ -32,7 +33,6 @@ const (
 // Watcher provides live stream monitoring of an active agent trace file.
 type Watcher struct {
 	Provider     *providers.LoadedProvider
-	Parser       *providers.TraceParser
 	FilePath     string
 	PollInterval time.Duration
 	FromStart    bool
@@ -42,7 +42,6 @@ type Watcher struct {
 func NewWatcher(provider *providers.LoadedProvider, filePath string) *Watcher {
 	return &Watcher{
 		Provider:     provider,
-		Parser:       providers.NewTraceParser(provider),
 		FilePath:     filePath,
 		PollInterval: 500 * time.Millisecond,
 		FromStart:    false,
@@ -69,10 +68,7 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 	fmt.Fprintf(out, "%sStreaming tool calls and anomaly alerts. Press Ctrl+C to exit.%s\n\n", colorDim, colorReset)
 
 	reader := bufio.NewReader(file)
-	stepNodeMap := make(map[int]*models.CallNode)
-	scopes := providers.NewScopeTracker(w.Provider)
-	var allNodes []models.CallNode
-	builder := graph.NewGraphBuilder()
+	asm := collector.NewAssembler(w.Provider, w.FilePath)
 	det := detector.NewDetector(w.Provider)
 
 	for {
@@ -102,77 +98,77 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 			continue
 		}
 
-		// Handle user input turn
-		if fmt.Sprintf("%v", payload["type"]) == "USER_INPUT" {
-			prompt := cleanPrompt(fmt.Sprintf("%v", payload["content"]))
+		res, err := asm.Feed(payload)
+		if err != nil {
+			continue
+		}
+		nodes := asm.Nodes()
+
+		if res.TurnStarted {
 			timeStr := time.Now().Format("15:04:05")
-			fmt.Fprintf(out, "\n%s[%s] 💬 %sUSER PROMPT:%s %s\n", colorCyan, timeStr, colorBold, colorReset, prompt)
-			scopes.Reset()
+			fmt.Fprintf(out, "\n%s[%s] 💬 %sUSER PROMPT:%s %s\n", colorCyan, timeStr, colorBold, colorReset, res.Prompt)
+		}
+
+		for _, idx := range res.NewCalls {
+			node := nodes[idx]
+			scope := node.CallerScope
+			if node.ScopeName != "" {
+				scope = node.ScopeName
+			}
+			timeStr := node.Timestamp.Format("15:04:05")
+			typeBadge := formatTypeBadge(node.Type, node.MCPServer)
+			scopeStr := fmt.Sprintf("%s[%s]%s", colorDim, scope, colorReset)
+			fmt.Fprintf(out, "[%s] %s %s ➔ %s%s%s\n",
+				timeStr, scopeStr, typeBadge, colorBold, node.Name, colorReset,
+			)
+		}
+
+		if len(res.Results) == 0 {
 			continue
 		}
 
-		// Parse tool calls
-		stepIdx := -1
-		if s, ok := payload["step_index"].(float64); ok {
-			stepIdx = int(s)
-		}
+		// Run live anomaly check over everything seen so far
+		g := graph.NewGraphBuilder().Build("live-session", w.Provider.Definition.Provider.ID, nodes)
+		anomalies := det.Analyze(g)
 
-		nodes, err := w.Parser.ParseNodes("live-session", payload, time.Now())
-		if err == nil && len(nodes) > 0 {
-			for i := range nodes {
-				node := &nodes[i]
-				scopes.Apply(node)
-				allNodes = append(allNodes, *node)
-				if stepIdx >= 0 {
-					stepNodeMap[stepIdx] = node
-				}
-
-				timeStr := node.Timestamp.Format("15:04:05")
-				typeBadge := formatTypeBadge(node.Type, node.MCPServer)
-				scopeStr := fmt.Sprintf("%s[%s]%s", colorDim, scopes.Active, colorReset)
-				fmt.Fprintf(out, "[%s] %s %s ➔ %s%s%s\n",
-					timeStr, scopeStr, typeBadge, colorBold, node.Name, colorReset,
+		for _, idx := range res.Results {
+			node := nodes[idx]
+			if node.Status == models.StatusFailed {
+				timeStr := time.Now().Format("15:04:05")
+				fmt.Fprintf(out, "  %s[%s] ✗ FAILED: %s (Error: %v)%s\n",
+					colorRed, timeStr, node.Name, failureText(node), colorReset,
 				)
 			}
-		}
 
-		// Correlate result / output
-		if stepIdx > 0 {
-			if prevNode, exists := stepNodeMap[stepIdx-1]; exists && prevNode.Output == nil {
-				if content := payload["content"]; content != nil {
-					prevNode.Output = content
-				}
-				if status := payload["status"]; status == "ERROR" {
-					prevNode.Status = models.StatusFailed
-					if errStr, ok := payload["content"].(string); ok {
-						prevNode.ErrorMessage = errStr
+			for _, a := range anomalies.Anomalies {
+				if a.NodeID == node.ID || a.RelatedNodeID == node.ID {
+					sevColor := colorYellow
+					if a.Severity == models.SeverityCritical {
+						sevColor = colorRed
 					}
-					timeStr := time.Now().Format("15:04:05")
-					fmt.Fprintf(out, "  %s[%s] ✗ FAILED: %s (Error: %v)%s\n",
-						colorRed, timeStr, prevNode.Name, prevNode.ErrorMessage, colorReset,
+					fmt.Fprintf(out, "  %s🚨 %s: %s%s\n",
+						sevColor, a.Title, a.Description, colorReset,
 					)
-				}
-
-				// Run live anomaly check
-				g := builder.Build("live-session", w.Provider.Definition.Provider.ID, allNodes)
-				anomalies := det.Analyze(g)
-				for _, a := range anomalies.Anomalies {
-					if a.NodeID == prevNode.ID || a.RelatedNodeID == prevNode.ID {
-						sevColor := colorYellow
-						if a.Severity == models.SeverityCritical {
-							sevColor = colorRed
-						}
-						fmt.Fprintf(out, "  %s🚨 %s: %s%s\n",
-							sevColor, a.Title, a.Description, colorReset,
-						)
-						if a.Recommendation != "" {
-							fmt.Fprintf(out, "    %s💡 %s%s\n", colorCyan, a.Recommendation, colorReset)
-						}
+					if a.Recommendation != "" {
+						fmt.Fprintf(out, "    %s💡 %s%s\n", colorCyan, a.Recommendation, colorReset)
 					}
 				}
 			}
 		}
 	}
+}
+
+// failureText returns a single-line, bounded description of why a call failed.
+func failureText(node models.CallNode) string {
+	text := node.ErrorMessage
+	if text == "" {
+		text = providers.TextContent(node.Output)
+	}
+	text = strings.TrimSpace(strings.SplitN(text, "\n", 2)[0])
+	if len(text) > 200 {
+		text = text[:200] + "..."
+	}
+	return text
 }
 
 func formatTypeBadge(t models.CallNodeType, mcpServer string) string {
@@ -190,19 +186,4 @@ func formatTypeBadge(t models.CallNodeType, mcpServer string) string {
 	default:
 		return fmt.Sprintf("%s[System]%s", colorDim, colorReset)
 	}
-}
-
-func cleanPrompt(content string) string {
-	if strings.Contains(content, "<USER_REQUEST>") && strings.Contains(content, "</USER_REQUEST>") {
-		start := strings.Index(content, "<USER_REQUEST>") + len("<USER_REQUEST>")
-		end := strings.Index(content, "</USER_REQUEST>")
-		if end > start {
-			return strings.TrimSpace(content[start:end])
-		}
-	}
-	lines := strings.Split(strings.TrimSpace(content), "\n")
-	if len(lines) > 0 {
-		return strings.TrimSpace(lines[0])
-	}
-	return content
 }
