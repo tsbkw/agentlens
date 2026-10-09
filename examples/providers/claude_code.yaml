@@ -22,7 +22,6 @@ extraction:
     tool_call_filter: "type == 'assistant'"
     tool_calls_path: "message.content"
     tool_call_item_filter: "type == 'tool_use'"
-    subagent_spawn_filter: "name == 'Agent' || name == 'Task'"
 
   fields:
     call_id: "id"
@@ -50,6 +49,22 @@ extraction:
     output_field: "content"
     error_flag_field: "is_error"
     timestamp_field: "timestamp"
+
+  scopes:
+    - tool_name: "Skill"
+      kind: "skill"
+      name_field: "skill"
+    # Subagents log their own calls to <session>/subagents/agent-*.jsonl, so the
+    # main agent's following calls stay in the caller's scope.
+    - tool_name: "Agent"
+      kind: "subagent"
+      name_field: "subagent_type || description"
+      enter_scope: false
+    # Name used by older Claude Code versions
+    - tool_name: "Task"
+      kind: "subagent"
+      name_field: "subagent_type || description"
+      enter_scope: false
 
 anomaly_rules:
   auth_failure_regex:

@@ -113,6 +113,21 @@
             "timestamp_field": { "type": "string", "description": "Dot-path of the result timestamp, used to derive call duration." }
           }
         },
+        "scopes": {
+          "type": "array",
+          "description": "Tool calls that activate a Skill or spawn a Subagent. Subsequent calls are attributed to the opened scope until the next user turn.",
+          "items": {
+            "type": "object",
+            "required": ["tool_name", "kind"],
+            "properties": {
+              "tool_name": { "type": "string", "description": "Exact tool name, or a prefix pattern ending in '*'." },
+              "kind": { "type": "string", "enum": ["skill", "subagent"] },
+              "name_field": { "type": "string", "description": "Dot-path into the call arguments holding the scope name, with '||' alternatives. Empty uses the tool name." },
+              "name_regex": { "type": "string", "description": "Optional regex; its first capture group is the scope name and the rule only applies when it matches." },
+              "enter_scope": { "type": "boolean", "default": true, "description": "Whether subsequent calls are attributed to the opened scope. Use false when the spawned scope logs its calls elsewhere." }
+            }
+          }
+        },
         "fields": {
           "type": "object",
           "required": ["call_id", "tool_name"],
