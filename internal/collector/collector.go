@@ -125,17 +125,36 @@ func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*Ses
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, 10*1024*1024)
 
+	extraction := c.Provider.Definition.Extraction
+	turnCfg := extraction.Turns
+	resultCfg := extraction.Results
+
 	var allNodes []models.CallNode
 	var turns []models.ExecutionTurn
-	var turnNodes []models.CallNode
+	var turnNodeIdx [][]int // per turn, indices into allNodes (materialized at the end)
+	var turnNodes []int
 
 	sessionID := c.Parser.ExtractSessionID(filePath, nil)
-	stepNodeMap := make(map[int]*models.CallNode)
+	stepNodeMap := make(map[int]int)    // step index -> index in allNodes
+	callNodeMap := make(map[string]int) // call ID -> index in allNodes
 
 	currentTurnIndex := 0
 	currentPrompt := ""
 	currentTurnTime := time.Now()
 	activeScope := "Agent"
+
+	flushTurn := func() {
+		if currentTurnIndex == 0 && currentPrompt == "" {
+			return
+		}
+		turns = append(turns, models.ExecutionTurn{
+			Index:     currentTurnIndex,
+			Prompt:    currentPrompt,
+			Timestamp: currentTurnTime,
+		})
+		turnNodeIdx = append(turnNodeIdx, turnNodes)
+		turnNodes = nil
+	}
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -152,27 +171,13 @@ func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*Ses
 			sessionID = c.Parser.ExtractSessionID(filePath, payload)
 		}
 
-		eventType := fmt.Sprintf("%v", payload["type"])
-
 		// Detect user interaction turn
-		if eventType == "USER_INPUT" {
-			if currentTurnIndex > 0 || currentPrompt != "" {
-				turns = append(turns, models.ExecutionTurn{
-					Index:     currentTurnIndex,
-					Prompt:    currentPrompt,
-					Timestamp: currentTurnTime,
-					Nodes:     turnNodes,
-				})
-				turnNodes = nil
-			}
+		if prompt, ts, ok := extractTurn(turnCfg, payload); ok {
+			flushTurn()
 			currentTurnIndex++
-			currentPrompt = cleanPrompt(fmt.Sprintf("%v", payload["content"]))
-			if tsStr := fmt.Sprintf("%v", payload["created_at"]); tsStr != "" {
-				if t, err := time.Parse(time.RFC3339Nano, tsStr); err == nil {
-					currentTurnTime = t
-				} else if t, err := time.Parse(time.RFC3339, tsStr); err == nil {
-					currentTurnTime = t
-				}
+			currentPrompt = prompt
+			if !ts.IsZero() {
+				currentTurnTime = ts
 			}
 			activeScope = "Agent"
 		}
@@ -184,8 +189,8 @@ func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*Ses
 		}
 
 		stepIdx := -1
-		if val := providers.ResolveField(payload, "step_index"); val != nil {
-			if num, ok := val.(float64); ok {
+		if resultCfg.StepIndexField != "" {
+			if num, ok := providers.ResolveField(payload, resultCfg.StepIndexField).(float64); ok {
 				stepIdx = int(num)
 			}
 		}
@@ -226,35 +231,44 @@ func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*Ses
 
 			nodes[i].CallerScope = callerForThisNode
 			allNodes = append(allNodes, nodes[i])
-			turnNodes = append(turnNodes, nodes[i])
+			idx := len(allNodes) - 1
+			turnNodes = append(turnNodes, idx)
+			callNodeMap[nodes[i].ID] = idx
 
 			if stepIdx >= 0 {
-				stepNodeMap[stepIdx] = &allNodes[len(allNodes)-1]
+				stepNodeMap[stepIdx] = idx
 			}
 		}
 
-		// Correlate results from subsequent output steps
-		if stepIdx > 0 {
-			if prevNode, exists := stepNodeMap[stepIdx-1]; exists && prevNode.Output == nil {
-				if content := payload["content"]; content != nil {
-					prevNode.Output = content
-					if status := payload["status"]; status != nil {
-						if strings.EqualFold(fmt.Sprintf("%v", status), "ERROR") {
-							prevNode.Status = models.StatusFailed
-						}
-					}
+		// Correlate tool results back to their calls
+		if resultCfg.Filter != "" && !providers.MatchesFilter(payload, resultCfg.Filter) {
+			continue
+		}
+		switch resultCfg.Correlation {
+		case models.CorrelationPreviousStep:
+			if stepIdx > 0 {
+				if idx, exists := stepNodeMap[stepIdx-1]; exists && allNodes[idx].Output == nil {
+					applyResult(&allNodes[idx], resultCfg, payload, false)
+				}
+			}
+		case models.CorrelationCallID:
+			for _, item := range resultItems(resultCfg, payload) {
+				callID := fmt.Sprintf("%v", providers.ResolveField(item, resultCfg.CallIDField))
+				if idx, exists := callNodeMap[callID]; exists {
+					applyResult(&allNodes[idx], resultCfg, item, true)
+					applyResultTiming(&allNodes[idx], resultCfg, payload)
 				}
 			}
 		}
 	}
 
-	if currentTurnIndex > 0 || currentPrompt != "" {
-		turns = append(turns, models.ExecutionTurn{
-			Index:     currentTurnIndex,
-			Prompt:    currentPrompt,
-			Timestamp: currentTurnTime,
-			Nodes:     turnNodes,
-		})
+	flushTurn()
+
+	// Snapshot nodes per turn after all results have been correlated
+	for t, indices := range turnNodeIdx {
+		for _, idx := range indices {
+			turns[t].Nodes = append(turns[t].Nodes, allNodes[idx])
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -268,12 +282,101 @@ func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*Ses
 	}, nil
 }
 
-func cleanPrompt(content string) string {
-	if strings.Contains(content, "<USER_REQUEST>") && strings.Contains(content, "</USER_REQUEST>") {
-		start := strings.Index(content, "<USER_REQUEST>") + len("<USER_REQUEST>")
-		end := strings.Index(content, "</USER_REQUEST>")
-		if end > start {
-			return strings.TrimSpace(content[start:end])
+// extractTurn reports whether payload starts a new user turn and returns its prompt and timestamp.
+func extractTurn(cfg models.TurnExtraction, payload map[string]interface{}) (string, time.Time, bool) {
+	if cfg.Filter == "" || !providers.MatchesFilter(payload, cfg.Filter) {
+		return "", time.Time{}, false
+	}
+	raw := providers.ResolveField(payload, cfg.PromptField)
+	text := providers.TextContent(raw)
+	if text == "" {
+		// A content-block array without text (e.g. only tool results) is not a prompt
+		if _, isBlocks := raw.([]interface{}); isBlocks {
+			return "", time.Time{}, false
+		}
+	}
+	ts, _ := providers.ParseTimestamp(fmt.Sprintf("%v", providers.ResolveField(payload, cfg.TimestampField)))
+	return cleanPrompt(text, cfg.PromptTag), ts, true
+}
+
+// resultItems returns the individual result records contained in a result event.
+func resultItems(cfg models.ResultExtraction, payload map[string]interface{}) []map[string]interface{} {
+	if cfg.ItemsPath == "" {
+		return []map[string]interface{}{payload}
+	}
+	arr, ok := providers.ResolveField(payload, cfg.ItemsPath).([]interface{})
+	if !ok {
+		return nil
+	}
+	var items []map[string]interface{}
+	for _, raw := range arr {
+		item, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if cfg.ItemFilter != "" && !providers.MatchesFilter(item, cfg.ItemFilter) {
+			continue
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+// applyResult copies output and failure status from a result record onto its call node.
+// flattenText reduces content-block outputs to plain text.
+func applyResult(node *models.CallNode, cfg models.ResultExtraction, result map[string]interface{}, flattenText bool) {
+	output := providers.ResolveField(result, cfg.OutputField)
+	if output == nil {
+		return
+	}
+	if flattenText {
+		if _, isBlocks := output.([]interface{}); isBlocks {
+			output = providers.TextContent(output)
+		}
+	}
+	node.Output = output
+
+	failed := false
+	if cfg.ErrorFlagField != "" {
+		if flag, ok := providers.ResolveField(result, cfg.ErrorFlagField).(bool); ok && flag {
+			failed = true
+		}
+	}
+	if cfg.StatusField != "" {
+		switch strings.ToLower(fmt.Sprintf("%v", providers.ResolveField(result, cfg.StatusField))) {
+		case "error", "failed", "err":
+			failed = true
+		}
+	}
+	if failed {
+		node.Status = models.StatusFailed
+		if flattenText && node.ErrorMessage == "" {
+			node.ErrorMessage = providers.TextContent(output)
+		}
+	}
+}
+
+// applyResultTiming derives the call duration from the result event timestamp.
+func applyResultTiming(node *models.CallNode, cfg models.ResultExtraction, event map[string]interface{}) {
+	if cfg.TimestampField == "" || node.DurationMs != 0 {
+		return
+	}
+	ts, ok := providers.ParseTimestamp(fmt.Sprintf("%v", providers.ResolveField(event, cfg.TimestampField)))
+	if ok && ts.After(node.Timestamp) {
+		node.DurationMs = ts.Sub(node.Timestamp).Milliseconds()
+	}
+}
+
+// cleanPrompt extracts the inner text of tag when present, otherwise the first line of content.
+func cleanPrompt(content, tag string) string {
+	if tag != "" {
+		open, closing := "<"+tag+">", "</"+tag+">"
+		if strings.Contains(content, open) && strings.Contains(content, closing) {
+			start := strings.Index(content, open) + len(open)
+			end := strings.Index(content, closing)
+			if end > start {
+				return strings.TrimSpace(content[start:end])
+			}
 		}
 	}
 	lines := strings.Split(strings.TrimSpace(content), "\n")

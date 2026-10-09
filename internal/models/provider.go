@@ -29,6 +29,52 @@ type ExtractionConfig struct {
 	Session SessionExtraction `json:"session" yaml:"session"`
 	Events  EventFilters      `json:"events" yaml:"events"`
 	Fields  FieldMappings     `json:"fields" yaml:"fields"`
+	Turns   TurnExtraction    `json:"turns,omitempty" yaml:"turns,omitempty"`
+	Results ResultExtraction  `json:"results,omitempty" yaml:"results,omitempty"`
+}
+
+// TurnExtraction specifies how user prompts that start a new conversational turn are detected.
+type TurnExtraction struct {
+	// Filter identifies events that carry a user prompt (e.g. "type == 'USER_INPUT'").
+	Filter string `json:"filter,omitempty" yaml:"filter,omitempty"`
+	// PromptField is the dot-path of the prompt. Arrays of content blocks are reduced to their text.
+	PromptField string `json:"prompt_field,omitempty" yaml:"prompt_field,omitempty"`
+	// TimestampField is the dot-path of the prompt timestamp (RFC 3339).
+	TimestampField string `json:"timestamp_field,omitempty" yaml:"timestamp_field,omitempty"`
+	// PromptTag optionally names a wrapper tag (e.g. "USER_REQUEST") whose inner text is the prompt.
+	PromptTag string `json:"prompt_tag,omitempty" yaml:"prompt_tag,omitempty"`
+}
+
+// Result correlation strategies.
+const (
+	CorrelationCallID       = "call_id"
+	CorrelationPreviousStep = "previous_step"
+)
+
+// ResultExtraction specifies how tool results are attached back to their tool calls.
+type ResultExtraction struct {
+	// Correlation is "call_id" (results reference the call ID) or "previous_step"
+	// (the event at step N holds the result of the call made at step N-1).
+	Correlation string `json:"correlation,omitempty" yaml:"correlation,omitempty"`
+	// Filter identifies events that carry tool results. Empty matches every event.
+	Filter string `json:"filter,omitempty" yaml:"filter,omitempty"`
+	// ItemsPath is the dot-path of an array of result items inside the event (call_id mode).
+	// Empty treats the event itself as a single result.
+	ItemsPath string `json:"items_path,omitempty" yaml:"items_path,omitempty"`
+	// ItemFilter selects result items within ItemsPath (e.g. "type == 'tool_result'").
+	ItemFilter string `json:"item_filter,omitempty" yaml:"item_filter,omitempty"`
+	// CallIDField is the dot-path of the referenced call ID (call_id mode).
+	CallIDField string `json:"call_id_field,omitempty" yaml:"call_id_field,omitempty"`
+	// StepIndexField is the dot-path of the numeric step index (previous_step mode).
+	StepIndexField string `json:"step_index_field,omitempty" yaml:"step_index_field,omitempty"`
+	// OutputField is the dot-path of the result payload. Arrays of content blocks are reduced to their text.
+	OutputField string `json:"output_field,omitempty" yaml:"output_field,omitempty"`
+	// ErrorFlagField is the dot-path of a boolean that is true when the call failed.
+	ErrorFlagField string `json:"error_flag_field,omitempty" yaml:"error_flag_field,omitempty"`
+	// StatusField is the dot-path of a status string; "error"/"failed" marks the call as failed.
+	StatusField string `json:"status_field,omitempty" yaml:"status_field,omitempty"`
+	// TimestampField is the dot-path of the result timestamp, used to derive call duration.
+	TimestampField string `json:"timestamp_field,omitempty" yaml:"timestamp_field,omitempty"`
 }
 
 // SessionExtraction specifies rules to find the session or conversation ID.
