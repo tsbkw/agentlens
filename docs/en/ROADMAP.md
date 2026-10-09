@@ -92,5 +92,5 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Shared incremental session assembler so `agentlens watch` follows the same declarative turn / result / scope rules (PR #15)
 - [x] CLI / Web server / watcher `--provider` selection with a built-in Claude Code definition and trace-format auto-detection (PR #16)
 - [x] Reduce anomaly false positives on real sessions: same-tool retries, unconfirmed fallbacks, auth patterns in successful system tool output (PR #17)
-- [ ] Stitch Claude Code subagent transcripts (`<session>/subagents/agent-*.jsonl`) into the call graph
+- [x] Stitch Claude Code subagent transcripts (`<session>/subagents/agent-*.jsonl`) into the call graph (PR #18)
 - [ ] Claude Code trace support in the browser viewer (GitHub Pages) and docs

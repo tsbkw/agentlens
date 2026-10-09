@@ -22,6 +22,21 @@ type SourceConfig struct {
 	Type         string   `json:"type" yaml:"type"` // "file", "directory_watch", "command", "otel_collector"
 	PathPatterns []string `json:"path_patterns" yaml:"path_patterns"`
 	Format       string   `json:"format" yaml:"format"` // "jsonl", "json", "regex_lines"
+	// ChildTraces locates trace files written by spawned subagents, stitched under the spawning call.
+	ChildTraces *ChildTraceConfig `json:"child_traces,omitempty" yaml:"child_traces,omitempty"`
+}
+
+// ChildTraceConfig specifies where child (subagent) trace files live and how each one
+// is linked back to the tool call that spawned it.
+type ChildTraceConfig struct {
+	// PathGlob locates child trace files. "{dir}" is the parent trace's directory and
+	// "{stem}" its file name without extension (e.g. "{dir}/{stem}/subagents/*.jsonl").
+	PathGlob string `json:"path_glob" yaml:"path_glob"`
+	// SidecarSuffix replaces the child trace's extension to find its metadata JSON file
+	// (e.g. ".meta.json").
+	SidecarSuffix string `json:"sidecar_suffix" yaml:"sidecar_suffix"`
+	// ParentCallIDField is the dot-path in the sidecar holding the spawning call ID.
+	ParentCallIDField string `json:"parent_call_id_field" yaml:"parent_call_id_field"`
 }
 
 // ExtractionConfig specifies how to retrieve session IDs, filter events, and map fields.

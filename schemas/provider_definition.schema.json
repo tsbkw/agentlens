@@ -50,6 +50,16 @@
           "type": "string",
           "enum": ["jsonl", "json", "regex_lines"],
           "default": "jsonl"
+        },
+        "child_traces": {
+          "type": "object",
+          "description": "Trace files written by spawned subagents, stitched under the call that spawned them.",
+          "required": ["path_glob", "sidecar_suffix", "parent_call_id_field"],
+          "properties": {
+            "path_glob": { "type": "string", "description": "Glob for child trace files; '{dir}' is the parent trace's directory and '{stem}' its file name without extension." },
+            "sidecar_suffix": { "type": "string", "description": "Replaces the child trace's extension to locate its metadata JSON (e.g. '.meta.json')." },
+            "parent_call_id_field": { "type": "string", "description": "Dot-path in the sidecar JSON holding the spawning call ID." }
+          }
         }
       }
     },

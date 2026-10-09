@@ -57,6 +57,13 @@ func NewAssembler(provider *providers.LoadedProvider, filePath string) *Assemble
 	}
 }
 
+// SetDefaultScope attributes calls made directly by the traced agent to scope, e.g. the
+// "Subagent: <name>" scope when assembling a subagent's own trace.
+func (a *Assembler) SetDefaultScope(scope string) {
+	a.scopes.Default = scope
+	a.scopes.Active = scope
+}
+
 // Nodes returns all call nodes assembled so far.
 func (a *Assembler) Nodes() []models.CallNode {
 	return a.nodes

@@ -10,6 +10,12 @@ source:
   path_patterns:
     - "~/.claude/projects/*/*.jsonl"
   format: "jsonl"
+  # Subagents (Agent tool) write their own transcript next to the session; the sidecar
+  # metadata names the Agent tool_use that spawned them.
+  child_traces:
+    path_glob: "{dir}/{stem}/subagents/*.jsonl"
+    sidecar_suffix: ".meta.json"
+    parent_call_id_field: "toolUseId"
 
 extraction:
   session:
