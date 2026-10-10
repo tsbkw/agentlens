@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tsbkw/agentlens/internal/models"
+	"github.com/tsbkw/agentlens/internal/textutil"
 )
 
 // Graph represents the compiled hierarchical DAG and caller-to-callee dependencies.
@@ -128,10 +129,7 @@ func (b *GraphBuilder) BuildWithTurns(
 
 		for _, turn := range turns {
 			turnNodeID := fmt.Sprintf("turn-%d", turn.Index)
-			turnLabel := turn.Prompt
-			if len(turnLabel) > 60 {
-				turnLabel = turnLabel[:60] + "..."
-			}
+			turnLabel := textutil.Truncate(turn.Prompt, 60, "...")
 			if turnLabel == "" {
 				turnLabel = fmt.Sprintf("Turn %d", turn.Index)
 			}
