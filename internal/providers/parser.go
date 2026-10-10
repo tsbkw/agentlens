@@ -57,18 +57,32 @@ func (p *TraceParser) ParseNodes(sessionID string, payload map[string]interface{
 		return nil, nil
 	}
 
-	// Check if the payload contains multiple tool calls (e.g. Antigravity / OpenAI "tool_calls" array)
+	events := p.Provider.Definition.Extraction.Events
+	callsPath := events.ToolCallsPath
+	if callsPath == "" {
+		callsPath = "tool_calls"
+	}
+
+	// Collect individual tool calls from the configured array (e.g. "tool_calls", "message.content")
 	var rawCalls []map[string]interface{}
-	if rawArray, ok := payload["tool_calls"].([]interface{}); ok {
+	if rawArray, ok := ResolveField(payload, callsPath).([]interface{}); ok {
 		for _, item := range rawArray {
-			if callMap, ok := item.(map[string]interface{}); ok {
-				rawCalls = append(rawCalls, callMap)
+			callMap, ok := item.(map[string]interface{})
+			if !ok {
+				continue
 			}
+			if events.ToolCallItemFilter != "" && !evaluateSimpleFilter(callMap, events.ToolCallItemFilter) {
+				continue
+			}
+			rawCalls = append(rawCalls, callMap)
 		}
 	}
 
-	// If no tool_calls array, treat the payload itself as a single call event
+	// Without an explicit tool_calls_path, treat the payload itself as a single call event
 	if len(rawCalls) == 0 {
+		if events.ToolCallsPath != "" {
+			return nil, nil
+		}
 		rawCalls = append(rawCalls, payload)
 	}
 
@@ -110,8 +124,28 @@ func (p *TraceParser) buildNode(
 	// Parent ID
 	parentID := resolveString(callPayload, rootPayload, fields.ParentID)
 
+	// MCP server extraction
+	mcpServer := resolveString(callPayload, rootPayload, fields.MCPServer)
+	mcpMatched := false
+	if p.Provider.MCPServerRegex != nil {
+		if m := p.Provider.MCPServerRegex.FindStringSubmatch(toolName); m != nil {
+			mcpMatched = true
+			if mcpServer == "" && len(m) > 1 {
+				mcpServer = m[1]
+			}
+		}
+	} else if mcpServer == "" && strings.HasPrefix(toolName, "mcp_") {
+		parts := strings.Split(toolName, "_")
+		if len(parts) >= 2 {
+			mcpServer = parts[1]
+		}
+	}
+
 	// Tool Type Classification
 	nodeType := classifyToolType(toolName, resolveString(callPayload, rootPayload, fields.CallType))
+	if mcpMatched && nodeType == models.NodeTypeSystemTool {
+		nodeType = models.NodeTypeMCPTool
+	}
 
 	// Timestamp
 	nodeTime := fallbackTime
@@ -146,15 +180,6 @@ func (p *TraceParser) buildNode(
 	var output interface{}
 	if fields.Output != "" {
 		output = resolveValue(callPayload, rootPayload, fields.Output)
-	}
-
-	// MCP Server extraction
-	mcpServer := resolveString(callPayload, rootPayload, fields.MCPServer)
-	if mcpServer == "" && strings.HasPrefix(toolName, "mcp_") {
-		parts := strings.Split(toolName, "_")
-		if len(parts) >= 2 {
-			mcpServer = parts[1]
-		}
 	}
 
 	node := &models.CallNode{
@@ -302,27 +327,57 @@ func ResolveField(data map[string]interface{}, path string) interface{} {
 	return current
 }
 
+// evaluateSimpleFilter evaluates a minimal boolean expression against a payload.
+// Supported grammar: OR-groups separated by "||", each made of AND-clauses separated by "&&".
+// A clause is "path == value", "path != value" (value may be quoted or the literal null),
+// or a bare "path", which is true when the field exists.
 func evaluateSimpleFilter(payload map[string]interface{}, filter string) bool {
-	clauses := strings.Split(filter, "&&")
-	for _, clause := range clauses {
-		clause = strings.TrimSpace(clause)
-		if strings.Contains(clause, "==") {
-			sides := strings.Split(clause, "==")
-			key := strings.TrimSpace(sides[0])
-			expected := strings.Trim(strings.TrimSpace(sides[1]), "'\"")
-			val := ResolveField(payload, key)
-			if val == nil || fmt.Sprintf("%v", val) != expected {
-				return false
-			}
-		} else if strings.Contains(clause, "!=") {
-			sides := strings.Split(clause, "!=")
-			key := strings.TrimSpace(sides[0])
-			expected := strings.Trim(strings.TrimSpace(sides[1]), "'\"")
-			val := ResolveField(payload, key)
-			if expected == "null" && val == nil {
-				return false
-			}
+	for _, group := range strings.Split(filter, "||") {
+		if evaluateAndGroup(payload, group) {
+			return true
+		}
+	}
+	return false
+}
+
+func evaluateAndGroup(payload map[string]interface{}, group string) bool {
+	for _, clause := range strings.Split(group, "&&") {
+		if !evaluateClause(payload, strings.TrimSpace(clause)) {
+			return false
 		}
 	}
 	return true
+}
+
+func evaluateClause(payload map[string]interface{}, clause string) bool {
+	if clause == "" {
+		return true
+	}
+	op := ""
+	if strings.Contains(clause, "!=") {
+		op = "!="
+	} else if strings.Contains(clause, "==") {
+		op = "=="
+	}
+	if op == "" {
+		return ResolveField(payload, clause) != nil
+	}
+
+	sides := strings.SplitN(clause, op, 2)
+	key := strings.TrimSpace(sides[0])
+	rawExpected := strings.TrimSpace(sides[1])
+	val := ResolveField(payload, key)
+
+	var equal bool
+	if rawExpected == "null" {
+		equal = val == nil
+	} else {
+		expected := strings.Trim(rawExpected, "'\"")
+		equal = val != nil && fmt.Sprintf("%v", val) == expected
+	}
+
+	if op == "==" {
+		return equal
+	}
+	return !equal
 }

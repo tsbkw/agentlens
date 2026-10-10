@@ -8,39 +8,37 @@ provider:
 source:
   type: "file"
   path_patterns:
-    - "~/.claude/logs/*.jsonl"
     - "~/.claude/projects/*/*.jsonl"
   format: "jsonl"
 
 extraction:
   session:
-    path_regex: "(?:logs|projects)/([^/]+)/.*\\.jsonl"
-    id_jsonpath: "session_id"
+    # ~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl
+    path_regex: "projects/[^/]+/([^/]+)\\.jsonl$"
+    id_jsonpath: "sessionId"
 
   events:
-    tool_call_filter: "type == 'tool_use' || message.content[?type == 'tool_use']"
-    subagent_spawn_filter: "tool_calls[?name == 'Agent']"
+    # Tool calls are "tool_use" content blocks inside assistant messages.
+    tool_call_filter: "type == 'assistant'"
+    tool_calls_path: "message.content"
+    tool_call_item_filter: "type == 'tool_use'"
+    subagent_spawn_filter: "name == 'Agent' || name == 'Task'"
 
   fields:
     call_id: "id"
-    parent_id: "parent_id"
     timestamp: "timestamp"
-    duration_ms: "duration_ms"
-    call_type: "type"
     tool_name: "name"
-    mcp_server: "server_name"
+    # MCP tools are named mcp__<server>__<tool>
+    mcp_server_regex: "^mcp__(.+?)__"
     arguments: "input"
-    status: "status"
-    output: "output"
-    error_message: "error"
 
 anomaly_rules:
   auth_failure_regex:
     - "(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"
   known_fallbacks:
-    - original_tool: "mcp_*"
+    - original_tool: "mcp__*"
       fallback_tool: "Bash"
       description: "MCP tool failed or unauthenticated; Claude Code silently fell back to raw Bash execution."
-    - original_tool: "mcp_*"
-      fallback_tool: "command_run"
-      description: "MCP tool failed; agent fell back to shell execution."
+    - original_tool: "mcp__*"
+      fallback_tool: "WebFetch"
+      description: "MCP tool failed; Claude Code fell back to fetching the resource over plain HTTP."

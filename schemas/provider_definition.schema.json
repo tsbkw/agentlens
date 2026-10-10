@@ -75,6 +75,15 @@
             "subagent_spawn_filter": {
               "type": "string",
               "description": "Filter identifying subagent invocations."
+            },
+            "tool_calls_path": {
+              "type": "string",
+              "default": "tool_calls",
+              "description": "Dot-path of the array holding individual tool calls inside a matched event (e.g. 'tool_calls', 'message.content')."
+            },
+            "tool_call_item_filter": {
+              "type": "string",
+              "description": "Filter applied to each element of tool_calls_path to select tool calls (e.g. \"type == 'tool_use'\")."
             }
           }
         },
@@ -89,6 +98,10 @@
             "call_type": { "type": "string" },
             "tool_name": { "type": "string" },
             "mcp_server": { "type": "string" },
+            "mcp_server_regex": {
+              "type": "string",
+              "description": "Regex whose first capture group extracts the MCP server from the tool name (e.g. '^mcp__(.+?)__'). A match also classifies the call as an MCP tool."
+            },
             "arguments": { "type": "string" },
             "status": { "type": "string" },
             "output": { "type": "string" },

@@ -12,9 +12,10 @@ import (
 
 // LoadedProvider wraps a ProviderDefinition with pre-compiled regular expressions.
 type LoadedProvider struct {
-	Definition        *models.ProviderDefinition
-	SessionPathRegex  *regexp.Regexp
-	AuthFailureRegex  []*regexp.Regexp
+	Definition       *models.ProviderDefinition
+	SessionPathRegex *regexp.Regexp
+	AuthFailureRegex []*regexp.Regexp
+	MCPServerRegex   *regexp.Regexp
 }
 
 // LoadProviderFromFile reads and parses a YAML provider definition from disk.
@@ -48,6 +49,15 @@ func LoadProviderFromBytes(data []byte) (*LoadedProvider, error) {
 			return nil, fmt.Errorf("invalid session path_regex %q: %w", def.Extraction.Session.PathRegex, err)
 		}
 		loaded.SessionPathRegex = re
+	}
+
+	// Pre-compile MCP server extraction regex if defined
+	if def.Extraction.Fields.MCPServerRegex != "" {
+		re, err := regexp.Compile(def.Extraction.Fields.MCPServerRegex)
+		if err != nil {
+			return nil, fmt.Errorf("invalid mcp_server_regex %q: %w", def.Extraction.Fields.MCPServerRegex, err)
+		}
+		loaded.MCPServerRegex = re
 	}
 
 	// Pre-compile anomaly auth failure regex patterns

@@ -41,21 +41,30 @@ type SessionExtraction struct {
 type EventFilters struct {
 	ToolCallFilter      string `json:"tool_call_filter" yaml:"tool_call_filter"`
 	SubagentSpawnFilter string `json:"subagent_spawn_filter,omitempty" yaml:"subagent_spawn_filter,omitempty"`
+	// ToolCallsPath is the dot-path of the array holding individual tool calls inside a
+	// matched event (e.g. "tool_calls" or "message.content"). Defaults to "tool_calls".
+	ToolCallsPath string `json:"tool_calls_path,omitempty" yaml:"tool_calls_path,omitempty"`
+	// ToolCallItemFilter selects which elements of ToolCallsPath are tool calls
+	// (e.g. "type == 'tool_use'"). Empty means every element is a tool call.
+	ToolCallItemFilter string `json:"tool_call_item_filter,omitempty" yaml:"tool_call_item_filter,omitempty"`
 }
 
 // FieldMappings maps raw trace properties to normalized CallNode fields.
 type FieldMappings struct {
-	CallID       string `json:"call_id" yaml:"call_id"`
-	ParentID     string `json:"parent_id,omitempty" yaml:"parent_id,omitempty"`
-	Timestamp    string `json:"timestamp,omitempty" yaml:"timestamp,omitempty"`
-	DurationMs   string `json:"duration_ms,omitempty" yaml:"duration_ms,omitempty"`
-	CallType     string `json:"call_type,omitempty" yaml:"call_type,omitempty"`
-	ToolName     string `json:"tool_name" yaml:"tool_name"`
-	MCPServer    string `json:"mcp_server,omitempty" yaml:"mcp_server,omitempty"`
-	Arguments    string `json:"arguments,omitempty" yaml:"arguments,omitempty"`
-	Status       string `json:"status,omitempty" yaml:"status,omitempty"`
-	Output       string `json:"output,omitempty" yaml:"output,omitempty"`
-	ErrorMessage string `json:"error_message,omitempty" yaml:"error_message,omitempty"`
+	CallID     string `json:"call_id" yaml:"call_id"`
+	ParentID   string `json:"parent_id,omitempty" yaml:"parent_id,omitempty"`
+	Timestamp  string `json:"timestamp,omitempty" yaml:"timestamp,omitempty"`
+	DurationMs string `json:"duration_ms,omitempty" yaml:"duration_ms,omitempty"`
+	CallType   string `json:"call_type,omitempty" yaml:"call_type,omitempty"`
+	ToolName   string `json:"tool_name" yaml:"tool_name"`
+	MCPServer  string `json:"mcp_server,omitempty" yaml:"mcp_server,omitempty"`
+	// MCPServerRegex extracts the MCP server name from the tool name via its first capture
+	// group (e.g. "^mcp__(.+?)__"). A match also classifies the call as an MCP tool.
+	MCPServerRegex string `json:"mcp_server_regex,omitempty" yaml:"mcp_server_regex,omitempty"`
+	Arguments      string `json:"arguments,omitempty" yaml:"arguments,omitempty"`
+	Status         string `json:"status,omitempty" yaml:"status,omitempty"`
+	Output         string `json:"output,omitempty" yaml:"output,omitempty"`
+	ErrorMessage   string `json:"error_message,omitempty" yaml:"error_message,omitempty"`
 }
 
 // AnomalyRulesConfig defines platform-specific heuristics for detecting errors.
