@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/tsbkw/agentlens/internal/models"
 )
@@ -243,5 +244,16 @@ func TestOrderedNodesKeepInputOrderForTies(t *testing.T) {
 		if strings.Join(got, ",") != "first,z,a,m" {
 			t.Fatalf("Expected chronological order with input order for ties, got %v", got)
 		}
+	}
+}
+
+func TestTurnLabelKeepsMultiByteCharactersIntact(t *testing.T) {
+	now := time.Now()
+	prompt := "このOSSへContributeしてほしいです。Claudeでも使えるか検証し、使えない場合、Claudeでも使えるように修正をしてください。"
+	turns := []models.ExecutionTurn{{Index: 1, Prompt: prompt, Timestamp: now}}
+	g := NewGraphBuilder().BuildWithTurns("s", "test", turns, nil)
+	label := g.Nodes["turn-1"].Name
+	if !utf8.ValidString(label) || !strings.HasSuffix(label, "...") {
+		t.Fatalf("Expected a valid truncated label, got %q", label)
 	}
 }

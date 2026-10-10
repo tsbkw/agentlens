@@ -10,6 +10,7 @@ import (
 	"github.com/tsbkw/agentlens/internal/collector"
 	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/models"
+	"github.com/tsbkw/agentlens/internal/textutil"
 )
 
 // ANSI color codes
@@ -37,10 +38,7 @@ func RenderSessionList(w io.Writer, sessions []collector.SessionInfo) {
 
 	for _, s := range sessions {
 		// Display shorter session ID if long
-		displayID := s.SessionID
-		if len(displayID) > 24 {
-			displayID = displayID[:24] + "..."
-		}
+		displayID := textutil.Truncate(s.SessionID, 24, "...")
 
 		timeStr := s.ModTime.Format("2006-01-02 15:04:05")
 		sizeStr := fmt.Sprintf("%.1f KB", float64(s.SizeBytes)/1024.0)
@@ -347,10 +345,7 @@ func RenderNodeInspect(w io.Writer, node *models.CallNode) {
 	// Print output if present
 	if node.Output != nil {
 		fmt.Fprintf(w, "\n%sOutput:%s\n", colorBold, colorReset)
-		outStr := fmt.Sprintf("%v", node.Output)
-		if len(outStr) > 500 {
-			outStr = outStr[:500] + "... (truncated)"
-		}
+		outStr := textutil.Truncate(fmt.Sprintf("%v", node.Output), 500, "... (truncated)")
 		fmt.Fprintf(w, "  %s\n", strings.ReplaceAll(outStr, "\n", "\n  "))
 	}
 

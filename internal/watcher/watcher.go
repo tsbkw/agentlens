@@ -15,6 +15,7 @@ import (
 	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/models"
 	"github.com/tsbkw/agentlens/internal/providers"
+	"github.com/tsbkw/agentlens/internal/textutil"
 )
 
 // ANSI colors
@@ -307,10 +308,7 @@ func failureText(node models.CallNode) string {
 		text = providers.TextContent(node.Output)
 	}
 	text = strings.TrimSpace(strings.SplitN(text, "\n", 2)[0])
-	if len(text) > 200 {
-		text = text[:200] + "..."
-	}
-	return text
+	return textutil.Truncate(text, 200, "...")
 }
 
 func formatTypeBadge(t models.CallNodeType, mcpServer string) string {
