@@ -70,7 +70,7 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 
 	reader := bufio.NewReader(file)
 	stepNodeMap := make(map[int]*models.CallNode)
-	var activeScope string = "Agent"
+	scopes := providers.NewScopeTracker(w.Provider)
 	var allNodes []models.CallNode
 	builder := graph.NewGraphBuilder()
 	det := detector.NewDetector(w.Provider)
@@ -107,7 +107,7 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 			prompt := cleanPrompt(fmt.Sprintf("%v", payload["content"]))
 			timeStr := time.Now().Format("15:04:05")
 			fmt.Fprintf(out, "\n%s[%s] 💬 %sUSER PROMPT:%s %s\n", colorCyan, timeStr, colorBold, colorReset, prompt)
-			activeScope = "Agent"
+			scopes.Reset()
 			continue
 		}
 
@@ -121,27 +121,7 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 		if err == nil && len(nodes) > 0 {
 			for i := range nodes {
 				node := &nodes[i]
-				// Scope detection
-				if node.Name == "view_file" {
-					if absPath, ok := node.Arguments["AbsolutePath"].(string); ok {
-						if strings.Contains(absPath, "/skills/") && strings.HasSuffix(absPath, "/SKILL.md") {
-							parts := strings.Split(absPath, "/skills/")
-							if len(parts) > 1 {
-								activeScope = "Skill: " + strings.Split(parts[1], "/")[0]
-							}
-						}
-					}
-				} else if node.Name == "invoke_subagent" {
-					node.Type = models.NodeTypeSubagent
-					if role, ok := node.Arguments["Role"].(string); ok && role != "" {
-						activeScope = "Subagent: " + role
-					}
-				} else if strings.HasPrefix(node.Name, "skill_") {
-					node.Type = models.NodeTypeSkill
-					activeScope = "Skill: " + strings.TrimPrefix(node.Name, "skill_")
-				}
-
-				node.CallerScope = activeScope
+				scopes.Apply(node)
 				allNodes = append(allNodes, *node)
 				if stepIdx >= 0 {
 					stepNodeMap[stepIdx] = node
@@ -149,7 +129,7 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 
 				timeStr := node.Timestamp.Format("15:04:05")
 				typeBadge := formatTypeBadge(node.Type, node.MCPServer)
-				scopeStr := fmt.Sprintf("%s[%s]%s", colorDim, activeScope, colorReset)
+				scopeStr := fmt.Sprintf("%s[%s]%s", colorDim, scopes.Active, colorReset)
 				fmt.Fprintf(out, "[%s] %s %s ➔ %s%s%s\n",
 					timeStr, scopeStr, typeBadge, colorBold, node.Name, colorReset,
 				)

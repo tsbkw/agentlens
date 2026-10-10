@@ -47,6 +47,19 @@ extraction:
     output_field: "content"
     status_field: "status"
 
+  scopes:
+    # Skills are activated by reading their instruction file
+    - tool_name: "view_file"
+      kind: "skill"
+      name_field: "AbsolutePath"
+      name_regex: "/skills/([^/]+)/SKILL\\.md$"
+    - tool_name: "skill_*"
+      kind: "skill"
+      name_regex: "^skill_(.+)$"
+    - tool_name: "invoke_subagent"
+      kind: "subagent"
+      name_field: "Role || TypeName"
+
 anomaly_rules:
   auth_failure_regex:
     - "(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"

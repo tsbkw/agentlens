@@ -65,6 +65,7 @@ type CallNode struct {
 	ParentID     string                 `json:"parent_id,omitempty"`
 	TurnIndex    int                    `json:"turn_index"`
 	CallerScope  string                 `json:"caller_scope,omitempty"` // "Agent", "Skill: <name>", "Subagent: <name>"
+	ScopeName    string                 `json:"scope_name,omitempty"`   // Scope this call opens, e.g. "Skill: <name>"
 	Type         CallNodeType           `json:"type"`
 	Name         string                 `json:"name"`
 	MCPServer    string                 `json:"mcp_server,omitempty"`

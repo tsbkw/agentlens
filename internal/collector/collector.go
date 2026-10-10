@@ -141,7 +141,7 @@ func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*Ses
 	currentTurnIndex := 0
 	currentPrompt := ""
 	currentTurnTime := time.Now()
-	activeScope := "Agent"
+	scopes := providers.NewScopeTracker(c.Provider)
 
 	flushTurn := func() {
 		if currentTurnIndex == 0 && currentPrompt == "" {
@@ -179,7 +179,7 @@ func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*Ses
 			if !ts.IsZero() {
 				currentTurnTime = ts
 			}
-			activeScope = "Agent"
+			scopes.Reset()
 		}
 
 		// Extract tool call nodes if present
@@ -198,38 +198,7 @@ func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*Ses
 		for i := range nodes {
 			nodes[i].TurnIndex = currentTurnIndex
 
-			callerForThisNode := activeScope
-
-			// Detect Skill activation from viewing a skill instruction file (e.g. view_file on SKILL.md)
-			if nodes[i].Name == "view_file" {
-				if absPath, ok := nodes[i].Arguments["AbsolutePath"].(string); ok {
-					if strings.Contains(absPath, "/skills/") && strings.HasSuffix(absPath, "/SKILL.md") {
-						parts := strings.Split(absPath, "/skills/")
-						if len(parts) > 1 {
-							skillName := strings.Split(parts[1], "/")[0]
-							nodes[i].Type = models.NodeTypeSkill
-							activeScope = "Skill: " + skillName
-						}
-					}
-				}
-			} else if nodes[i].Name == "invoke_subagent" {
-				nodes[i].Type = models.NodeTypeSubagent
-				// If currently in a skill, invoke_subagent is initiated by the enclosing agent/subagent
-				if strings.HasPrefix(activeScope, "Skill:") {
-					activeScope = "Agent"
-				}
-				callerForThisNode = activeScope
-				if role, ok := nodes[i].Arguments["Role"].(string); ok && role != "" {
-					activeScope = "Subagent: " + role
-				} else if typeName, ok := nodes[i].Arguments["TypeName"].(string); ok && typeName != "" {
-					activeScope = "Subagent: " + typeName
-				}
-			} else if strings.HasPrefix(nodes[i].Name, "skill_") {
-				nodes[i].Type = models.NodeTypeSkill
-				activeScope = "Skill: " + strings.TrimPrefix(nodes[i].Name, "skill_")
-			}
-
-			nodes[i].CallerScope = callerForThisNode
+			scopes.Apply(&nodes[i])
 			allNodes = append(allNodes, nodes[i])
 			idx := len(allNodes) - 1
 			turnNodes = append(turnNodes, idx)

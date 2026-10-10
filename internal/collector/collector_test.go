@@ -161,3 +161,32 @@ func TestIngestClaudeCodeSample(t *testing.T) {
 		}
 	}
 }
+
+func TestIngestClaudeCodeSampleScopes(t *testing.T) {
+	loaded, err := providers.LoadProviderFromFile(filepath.Join("..", "..", "examples", "providers", "claude_code.yaml"))
+	if err != nil {
+		t.Fatalf("Failed to load Claude Code provider: %v", err)
+	}
+	data, err := NewCollector(loaded).IngestSessionFile(filepath.Join("..", "..", "examples", "traces", "sample_claude_code_session.jsonl"))
+	if err != nil {
+		t.Fatalf("Failed to ingest Claude Code sample: %v", err)
+	}
+
+	callers := make(map[string]string)
+	for _, n := range data.Nodes {
+		callers[n.ID] = n.CallerScope
+	}
+	want := map[string]string{
+		"toolu_skill_01":     "Agent",
+		"toolu_bash_01":      "Skill: incident-triage",
+		"toolu_agent_01":     "Skill: incident-triage",
+		"toolu_mcp_gh_01":    "Agent", // new turn resets the scope
+		"toolu_bash_02":      "Agent",
+		"toolu_mcp_slack_01": "Agent",
+	}
+	for id, scope := range want {
+		if callers[id] != scope {
+			t.Errorf("%s: expected caller scope %q, got %q", id, scope, callers[id])
+		}
+	}
+}

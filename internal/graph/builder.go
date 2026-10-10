@@ -255,29 +255,8 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 		callee := node.Name
 		calleeType := node.Type
 
-		if node.Name == "invoke_subagent" {
-			calleeType = models.NodeTypeSubagent
-			if role, ok := node.Arguments["Role"].(string); ok && role != "" {
-				callee = "Subagent: " + role
-			} else if typeName, ok := node.Arguments["TypeName"].(string); ok && typeName != "" {
-				callee = "Subagent: " + typeName
-			}
-			scopeParentMap[callee] = caller
-		} else if node.Name == "view_file" {
-			if absPath, ok := node.Arguments["AbsolutePath"].(string); ok {
-				if strings.Contains(absPath, "/skills/") && strings.HasSuffix(absPath, "/SKILL.md") {
-					parts := strings.Split(absPath, "/skills/")
-					if len(parts) > 1 {
-						skillName := strings.Split(parts[1], "/")[0]
-						callee = "Skill: " + skillName
-						calleeType = models.NodeTypeSkill
-						scopeParentMap[callee] = caller
-					}
-				}
-			}
-		} else if strings.HasPrefix(node.Name, "skill_") {
-			callee = "Skill: " + strings.TrimPrefix(node.Name, "skill_")
-			calleeType = models.NodeTypeSkill
+		if node.ScopeName != "" {
+			callee = node.ScopeName
 			scopeParentMap[callee] = caller
 		}
 

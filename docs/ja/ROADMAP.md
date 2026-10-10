@@ -88,7 +88,7 @@
 ### Phase 9: Claude Code 対応 (PR #12–)
 - [x] ネストされたコンテンツブロックからの宣言的ツール呼び出し抽出 (`tool_calls_path`, `tool_call_item_filter`)、`||` フィルタ、`mcp_server_regex` (PR #12)
 - [x] 宣言的なターン検出と ID ベースのツール結果紐付け (`tool_use` ↔ `tool_result`) (PR #13)
-- [ ] Skill / Subagent スコープ判定ルールの宣言化 (コア層から Antigravity 固有ツール名を除去)
+- [x] Skill / Subagent スコープ判定ルールの宣言化 (コア層から Antigravity 固有ツール名を除去) (PR #14)
 - [ ] CLI / Web サーバー / watcher の `--provider` 切り替えと Claude Code 定義の同梱
 - [ ] Claude Code のサブエージェントトランスクリプト (`<session>/subagents/agent-*.jsonl`) をコールグラフへ統合
 - [ ] ブラウザビューアー (GitHub Pages) の Claude Code トレース対応とドキュメント整備

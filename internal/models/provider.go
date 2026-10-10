@@ -31,6 +31,30 @@ type ExtractionConfig struct {
 	Fields  FieldMappings     `json:"fields" yaml:"fields"`
 	Turns   TurnExtraction    `json:"turns,omitempty" yaml:"turns,omitempty"`
 	Results ResultExtraction  `json:"results,omitempty" yaml:"results,omitempty"`
+	Scopes  []ScopeRule       `json:"scopes,omitempty" yaml:"scopes,omitempty"`
+}
+
+// Scope kinds a ScopeRule can open.
+const (
+	ScopeKindSkill    = "skill"
+	ScopeKindSubagent = "subagent"
+)
+
+// ScopeRule declares a tool call that activates a Skill or spawns a Subagent.
+type ScopeRule struct {
+	// ToolName is the exact tool name, or a prefix pattern ending in "*" (e.g. "skill_*").
+	ToolName string `json:"tool_name" yaml:"tool_name"`
+	// Kind is "skill" or "subagent".
+	Kind string `json:"kind" yaml:"kind"`
+	// NameField is the dot-path into the call arguments holding the scope name, with "||"
+	// alternatives (e.g. "Role || TypeName"). Empty uses the tool name itself.
+	NameField string `json:"name_field,omitempty" yaml:"name_field,omitempty"`
+	// NameRegex optionally extracts the name via its first capture group; when set,
+	// the rule only applies if it matches (e.g. "/skills/([^/]+)/SKILL\\.md$").
+	NameRegex string `json:"name_regex,omitempty" yaml:"name_regex,omitempty"`
+	// EnterScope controls whether subsequent calls in the turn are attributed to the new
+	// scope (default true). Use false when the spawned scope logs its calls elsewhere.
+	EnterScope *bool `json:"enter_scope,omitempty" yaml:"enter_scope,omitempty"`
 }
 
 // TurnExtraction specifies how user prompts that start a new conversational turn are detected.
