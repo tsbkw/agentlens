@@ -72,6 +72,7 @@ AgentLens provides two ways to experience the Web UI:
 1. **GitHub Pages (Free Online Viewer)**:
    - Hosted at `https://tsbkw.github.io/agentlens` at zero hosting cost.
    - **100% Private Client-Side Execution**: Drag and drop your session trace log (`transcript.jsonl` or JSON export) directly onto the page. The graph is computed and rendered entirely in your browser—no data is sent to external servers.
+   - **Claude Code subagents**: drop the `<session-id>.jsonl` file together with its `<session-id>/` folder (or pick it with the `subagents/agent-*.jsonl` and `.meta.json` files) to stitch subagent transcripts into the graph.
 2. **Local Embedded Server (`agentlens ui`)**:
    - The Go binary bundles the compiled Web UI using Go's `embed` mechanism.
    - Simply run `agentlens ui` to launch a local server and auto-open your default browser without needing internet access or Node.js.

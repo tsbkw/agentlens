@@ -22,6 +22,7 @@ type webProviderRule struct {
 	Name         string                    `json:"name"`
 	Extraction   models.ExtractionConfig   `json:"extraction"`
 	AnomalyRules models.AnomalyRulesConfig `json:"anomaly_rules"`
+	ChildTraces  *models.ChildTraceConfig  `json:"child_traces,omitempty"`
 }
 
 var webPages = []string{
@@ -43,6 +44,7 @@ func TestWebProviderRules(t *testing.T) {
 			Name:         p.Definition.Provider.Name,
 			Extraction:   p.Definition.Extraction,
 			AnomalyRules: p.Definition.AnomalyRules,
+			ChildTraces:  p.Definition.Source.ChildTraces,
 		})
 	}
 	// json.Marshal escapes <, > and &, so the payload cannot close the script element
