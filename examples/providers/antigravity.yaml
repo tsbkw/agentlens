@@ -34,6 +34,19 @@ extraction:
     output: "tool_call.output"
     error_message: "tool_call.error"
 
+  turns:
+    filter: "type == 'USER_INPUT'"
+    prompt_field: "content"
+    timestamp_field: "created_at"
+    prompt_tag: "USER_REQUEST"
+
+  results:
+    # The step following a tool call (step N+1) carries that call's result.
+    correlation: "previous_step"
+    step_index_field: "step_index"
+    output_field: "content"
+    status_field: "status"
+
 anomaly_rules:
   auth_failure_regex:
     - "(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"

@@ -87,6 +87,32 @@
             }
           }
         },
+        "turns": {
+          "type": "object",
+          "description": "How user prompts that start a new conversational turn are detected.",
+          "properties": {
+            "filter": { "type": "string", "description": "Filter identifying prompt events (e.g. \"type == 'USER_INPUT'\")." },
+            "prompt_field": { "type": "string", "description": "Dot-path of the prompt. Arrays of content blocks are reduced to their text." },
+            "timestamp_field": { "type": "string", "description": "Dot-path of the prompt timestamp (RFC 3339)." },
+            "prompt_tag": { "type": "string", "description": "Optional wrapper tag whose inner text is used as the prompt (e.g. 'USER_REQUEST')." }
+          }
+        },
+        "results": {
+          "type": "object",
+          "description": "How tool results are attached back to their tool calls.",
+          "properties": {
+            "correlation": { "type": "string", "enum": ["call_id", "previous_step"] },
+            "filter": { "type": "string", "description": "Filter identifying result events. Empty matches every event." },
+            "items_path": { "type": "string", "description": "Dot-path of an array of result items inside the event (call_id mode)." },
+            "item_filter": { "type": "string", "description": "Filter selecting result items within items_path." },
+            "call_id_field": { "type": "string", "description": "Dot-path of the referenced call ID (call_id mode)." },
+            "step_index_field": { "type": "string", "description": "Dot-path of the numeric step index (previous_step mode)." },
+            "output_field": { "type": "string" },
+            "error_flag_field": { "type": "string", "description": "Dot-path of a boolean that is true when the call failed." },
+            "status_field": { "type": "string", "description": "Dot-path of a status string; 'error'/'failed' marks the call as failed." },
+            "timestamp_field": { "type": "string", "description": "Dot-path of the result timestamp, used to derive call duration." }
+          }
+        },
         "fields": {
           "type": "object",
           "required": ["call_id", "tool_name"],

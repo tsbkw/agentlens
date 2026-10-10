@@ -97,3 +97,67 @@ func TestIngestComplexIncidentResponseSample(t *testing.T) {
 		t.Errorf("Expected Agent scope to be detected")
 	}
 }
+
+func TestIngestClaudeCodeSample(t *testing.T) {
+	providerPath := filepath.Join("..", "..", "examples", "providers", "claude_code.yaml")
+	loaded, err := providers.LoadProviderFromFile(providerPath)
+	if err != nil {
+		t.Fatalf("Failed to load Claude Code provider: %v", err)
+	}
+
+	col := NewCollector(loaded)
+	data, err := col.IngestSessionFile(filepath.Join("..", "..", "examples", "traces", "sample_claude_code_session.jsonl"))
+	if err != nil {
+		t.Fatalf("Failed to ingest Claude Code sample: %v", err)
+	}
+
+	if data.SessionID != "5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a" {
+		t.Errorf("Expected sessionId from payload, got %q", data.SessionID)
+	}
+
+	// Tool results and meta messages must not start turns
+	if len(data.Turns) != 2 {
+		t.Fatalf("Expected 2 turns, got %d", len(data.Turns))
+	}
+	if !strings.HasPrefix(data.Turns[0].Prompt, "Triage the failing deploy") {
+		t.Errorf("Unexpected first prompt %q", data.Turns[0].Prompt)
+	}
+	if len(data.Turns[0].Nodes) != 3 || len(data.Turns[1].Nodes) != 3 {
+		t.Errorf("Expected 3 nodes per turn, got %d and %d", len(data.Turns[0].Nodes), len(data.Turns[1].Nodes))
+	}
+
+	if len(data.Nodes) != 6 {
+		t.Fatalf("Expected 6 tool call nodes, got %d", len(data.Nodes))
+	}
+
+	byID := make(map[string]models.CallNode)
+	for _, n := range data.Nodes {
+		byID[n.ID] = n
+	}
+
+	gh := byID["toolu_mcp_gh_01"]
+	if gh.Status != models.StatusFailed {
+		t.Errorf("Expected GitHub MCP call to be failed via is_error, got %v", gh.Status)
+	}
+	if !strings.Contains(gh.ErrorMessage, "401 Unauthorized") {
+		t.Errorf("Expected error message from tool_result, got %q", gh.ErrorMessage)
+	}
+	if gh.DurationMs != 1200 {
+		t.Errorf("Expected duration 1200ms derived from result timestamp, got %d", gh.DurationMs)
+	}
+	if gh.MCPServer != "github" || gh.Type != models.NodeTypeMCPTool {
+		t.Errorf("Expected MCP tool on server github, got %q (%v)", gh.MCPServer, gh.Type)
+	}
+
+	// Content-block outputs are flattened to text
+	if out, _ := byID["toolu_agent_01"].Output.(string); !strings.HasPrefix(out, "Root cause:") {
+		t.Errorf("Expected flattened Agent output, got %v", byID["toolu_agent_01"].Output)
+	}
+
+	// Turn snapshots carry correlated results too
+	for _, n := range data.Turns[1].Nodes {
+		if n.ID == "toolu_mcp_gh_01" && n.Status != models.StatusFailed {
+			t.Errorf("Expected turn snapshot to include correlated failure status")
+		}
+	}
+}
