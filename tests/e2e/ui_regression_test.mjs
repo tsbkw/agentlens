@@ -243,11 +243,14 @@ async function runTestSuite() {
     anomalyTypes: currentAnomalies.map(a => a.type).sort(),
     turns: currentTurns.length,
     callees: [...document.querySelectorAll('.callee-row')].map(el => el.textContent.replace(/\s+/g, ' ').trim()),
-    trace: document.getElementById('traceViewContainer').textContent
+    trace: document.getElementById('traceViewContainer').textContent,
+    subagentCalls: currentNodes.filter(n => n.caller_scope === 'Subagent: Explore').map(n => `${n.name}<${n.parent_id}`),
+    sourceInfo: document.getElementById('sourceInfo').textContent
   }));
   console.log(`  Detected provider: ${claudeStats.provider}, nodes=${claudeStats.nodes}, mcp=${claudeStats.mcp}, failed=${claudeStats.failed}, anomalies=${claudeStats.anomalyTypes.join(',')}`);
   if (claudeStats.provider !== 'claude-code') throw new Error(`Expected claude-code provider, got ${claudeStats.provider}`);
-  if (claudeStats.nodes !== '6' || claudeStats.mcp !== '2' || claudeStats.failed !== '1') {
+  // 6 calls in the main transcript + 2 in the stitched subagent transcript
+  if (claudeStats.nodes !== '8' || claudeStats.mcp !== '2' || claudeStats.failed !== '1') {
     throw new Error(`Unexpected Claude Code stats: ${JSON.stringify(claudeStats)}`);
   }
   if (claudeStats.turns !== 2) throw new Error(`Expected 2 turns (tool results/notifications excluded), got ${claudeStats.turns}`);
@@ -262,7 +265,89 @@ async function runTestSuite() {
   if (!claudeStats.trace.includes('Skill: incident-triage')) {
     throw new Error('Expected the skill scope in the turn trace');
   }
-  console.log('  ✓ Claude Code trace parsed with turns, scopes, MCP failure and anomalies');
+  if (JSON.stringify(claudeStats.subagentCalls) !== JSON.stringify(['Bash<toolu_agent_01', 'Read<toolu_agent_01'])) {
+    throw new Error(`Expected the subagent's Bash and Read nested under its Agent call, got ${claudeStats.subagentCalls}`);
+  }
+  if (!claudeStats.sourceInfo.includes('Claude Code') || !claudeStats.sourceInfo.includes('1 subagent transcript')) {
+    throw new Error(`Unexpected source info: ${claudeStats.sourceInfo}`);
+  }
+  console.log('  ✓ Claude Code trace parsed with turns, scopes, subagent transcript, MCP failure and anomalies');
+
+  // -------------------------------------------------------------
+  // Test 7c: Subagent stitching from picked files and dropped folders
+  // -------------------------------------------------------------
+  console.log('\nTest 7c: Subagent transcripts from picked files and dropped folders...');
+  const traces = path.join(__dirname, '..', '..', 'examples', 'traces');
+  const subDir = path.join(traces, 'sample_claude_code_session', 'subagents');
+
+  // File picker without folder information: the session file plus the subagent files
+  await page.click('#resetBtn');
+  const input = await page.$('#fileInput');
+  await input.uploadFile(
+    path.join(subDir, 'agent-a1b2c3d4e5f60718.jsonl'),
+    path.join(traces, 'sample_claude_code_session.jsonl'),
+    path.join(subDir, 'agent-a1b2c3d4e5f60718.meta.json')
+  );
+  await page.waitForFunction(() => document.getElementById('graphSection').style.display !== 'none' && currentNodes.length > 0);
+  const picked = await page.evaluate(() => ({
+    nodes: currentNodes.length,
+    stitched: currentSubagentTraces.length,
+    subagentParents: currentNodes.filter(n => n.caller_scope === 'Subagent: Explore').map(n => n.parent_id)
+  }));
+  if (picked.nodes !== 8 || picked.stitched !== 1 || picked.subagentParents.some(id => id !== 'toolu_agent_01')) {
+    throw new Error(`Picked files were not stitched: ${JSON.stringify(picked)}`);
+  }
+
+  // Dropped session file + its folder, with a nested subagent spawned by the first one
+  await page.click('#resetBtn');
+  const files = {
+    '/sess.jsonl': fs.readFileSync(path.join(traces, 'sample_claude_code_session.jsonl'), 'utf8'),
+    '/sess/subagents/agent-a1b2c3d4e5f60718.jsonl': fs.readFileSync(path.join(subDir, 'agent-a1b2c3d4e5f60718.jsonl'), 'utf8')
+      + JSON.stringify({ type: 'assistant', timestamp: '2026-10-07T14:00:20Z', message: { content: [{ type: 'tool_use', id: 'toolu_nested', name: 'Agent', input: { subagent_type: 'reviewer' } }] } }) + '\n',
+    '/sess/subagents/agent-a1b2c3d4e5f60718.meta.json': fs.readFileSync(path.join(subDir, 'agent-a1b2c3d4e5f60718.meta.json'), 'utf8'),
+    '/sess/subagents/agent-nested.jsonl': JSON.stringify({ type: 'assistant', timestamp: '2026-10-07T14:00:21Z', message: { content: [{ type: 'tool_use', id: 'toolu_nested_grep', name: 'Grep', input: {} }] } }) + '\n',
+    '/sess/subagents/agent-nested.meta.json': JSON.stringify({ toolUseId: 'toolu_nested' }),
+    '/other-session/subagents/agent-x.jsonl': '{}\n'
+  };
+  const dropped = await page.evaluate(async (files) => {
+    // Minimal FileSystemEntry tree, as produced by dropping a file and a folder
+    const tree = {};
+    for (const [p, text] of Object.entries(files)) {
+      let dir = tree;
+      const parts = p.slice(1).split('/');
+      parts.slice(0, -1).forEach(seg => { dir = dir[seg] = dir[seg] || {}; });
+      dir[parts[parts.length - 1]] = new File([text], parts[parts.length - 1]);
+    }
+    const toEntry = (name, node, parent) => {
+      const fullPath = `${parent}/${name}`;
+      if (node instanceof File) return { isFile: true, isDirectory: false, fullPath, file: (ok) => ok(node) };
+      const children = Object.entries(node).map(([n, v]) => toEntry(n, v, fullPath));
+      return {
+        isFile: false, isDirectory: true, fullPath,
+        createReader: () => { let done = false; return { readEntries: (ok) => { ok(done ? [] : children); done = true; } }; }
+      };
+    };
+    const items = Object.entries(tree).map(([n, v]) => ({ webkitGetAsEntry: () => toEntry(n, v, '') }));
+    const event = new Event('drop', { bubbles: true, cancelable: true });
+    event.dataTransfer = { items, files: [] };
+    document.getElementById('dropzone').dispatchEvent(event);
+    for (let i = 0; i < 50 && currentSubagentTraces.length < 2; i++) await new Promise(r => setTimeout(r, 20));
+    return {
+      stitched: currentSubagentTraces.slice().sort(),
+      nested: currentNodes.filter(n => n.name === 'Grep').map(n => `${n.caller_scope}<${n.parent_id}`),
+      anomalies: currentAnomalies.map(a => a.type).sort()
+    };
+  }, files);
+  if (JSON.stringify(dropped.stitched) !== JSON.stringify(['/sess/subagents/agent-a1b2c3d4e5f60718.jsonl', '/sess/subagents/agent-nested.jsonl'])) {
+    throw new Error(`Expected both subagent transcripts of the dropped session, got ${dropped.stitched}`);
+  }
+  if (JSON.stringify(dropped.nested) !== JSON.stringify(['Subagent: reviewer<toolu_nested'])) {
+    throw new Error(`Expected the nested subagent call under its spawning call, got ${dropped.nested}`);
+  }
+  if (JSON.stringify(dropped.anomalies) !== JSON.stringify(['auth_expired', 'silent_fallback'])) {
+    throw new Error(`Subagent calls must not create cross-actor anomalies, got ${dropped.anomalies}`);
+  }
+  console.log('  ✓ Subagent transcripts stitched from picked files and from a dropped folder (nested included)');
 
   // -------------------------------------------------------------
   // Test 7b: Trace content is rendered as text, not HTML
