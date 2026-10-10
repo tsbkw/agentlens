@@ -78,24 +78,45 @@ AgentLens provides two ways to experience the Web UI:
 
 ---
 
-## ⚡ Planned CLI Usage
+## ⚡ CLI Usage
 
 ```bash
-# List recorded AI execution sessions
+# List recorded sessions of every supported agent (Antigravity, Claude Code, ...)
 agentlens list
 
-# Render call graph in the terminal with colored status & anomaly highlights
-agentlens graph <session-id>
+# Render the Caller ➔ Callee call graph with colored status & anomaly highlights
+agentlens graph <session-id | trace-file>
+
+# Render the turn-by-turn execution trace
+agentlens trace <session-id | trace-file>
 
 # Inspect detailed input arguments, results, and anomaly diagnosis for a node
 agentlens inspect <call-id>
 
-# Launch the interactive local Web UI dashboard (embedded, zero dependencies)
-agentlens ui --port 8000
+# Launch the interactive local Web UI dashboard on http://localhost:8000
+agentlens ui
 
-# Live-watch an ongoing AI session in real-time
-agentlens watch --provider antigravity
+# Live-watch an ongoing AI session in real-time (latest session when omitted)
+agentlens watch [session-id]
 ```
+
+The trace format is detected automatically. Pin it with the global `--provider` / `-p` flag (`antigravity`, `claude-code`, `cursor`, `generic-jsonl`, or a path to your own provider YAML) or the `AGENTLENS_PROVIDER` environment variable.
+
+### Claude Code
+
+Claude Code stores each session as `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`, and AgentLens reads it with no extra setup:
+
+```bash
+agentlens list                              # Claude Code sessions are listed with provider "claude-code"
+agentlens graph 5b0c8f2e                    # session ID prefix
+agentlens trace ~/.claude/projects/-Users-me-repo/5b0c8f2e-....jsonl
+agentlens --provider claude-code watch      # follow the most recent Claude Code session
+```
+
+- `Skill` calls open a **Skill** scope; `Agent` / `Task` calls are shown as **Subagents**. Each subagent's own transcript (`<session-id>/subagents/agent-*.jsonl`) is stitched under the call that spawned it.
+- `mcp__<server>__<tool>` calls are classified as **MCP** tools of `<server>`.
+- `tool_result` blocks are matched to their `tool_use` by ID, so outputs, `is_error` failures and durations are recorded. A failed MCP call followed by `Bash` / `WebFetch` is flagged as a **silent fallback**.
+- Try it on the bundled sample: `agentlens graph examples/traces/sample_claude_code_session.jsonl`.
 
 ---
 
