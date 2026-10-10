@@ -263,3 +263,72 @@ func TestWatcherTailsSubagentSpawnedWhileWatching(t *testing.T) {
 		}
 	}
 }
+
+func TestWatcherLinksForkedAndUnrecordedSubagents(t *testing.T) {
+	provider := loadClaudeProvider(t)
+
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "session.jsonl")
+	appendLine(t, logPath, "")
+	subDir := filepath.Join(dir, "session", "subagents")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	w := NewWatcher(provider, logPath)
+	w.PollInterval = 20 * time.Millisecond
+	w.InferAfter = 150 * time.Millisecond
+
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		appendLine(t, logPath, `{"type":"user","message":{"content":"Check the page"},"timestamp":"2026-10-07T14:01:00Z"}`+"\n")
+		appendLine(t, logPath, `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call_skill","name":"Skill","input":{"skill":"use-browser"}}]},"timestamp":"2026-10-07T14:01:01Z"}`+"\n")
+		// The forked child appears before the Skill's result names it
+		appendLine(t, filepath.Join(subDir, "agent-forked.meta.json"), `{"agentType":"general-purpose","name":"use-browser"}`)
+		appendLine(t, filepath.Join(subDir, "agent-forked.jsonl"), `{"agentId":"forked","type":"assistant","message":{"content":[{"type":"tool_use","id":"f_nav","name":"WebFetch","input":{}}]},"timestamp":"2026-10-07T14:01:02Z"}`+"\n")
+		time.Sleep(60 * time.Millisecond)
+		appendLine(t, logPath, `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"call_skill","content":"launched"}]},"toolUseResult":{"status":"forked","agentId":"forked"},"timestamp":"2026-10-07T14:01:03Z"}`+"\n")
+
+		// A fork that replays the spawning Agent call, and one nothing links to
+		appendLine(t, logPath, `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call_agent","name":"Agent","input":{"subagent_type":"fork"}}]},"timestamp":"2026-10-07T14:01:04Z"}`+"\n")
+		appendLine(t, filepath.Join(subDir, "agent-fork.meta.json"), `{"agentType":"fork","toolUseId":"call_agent"}`)
+		appendLine(t, filepath.Join(subDir, "agent-fork.jsonl"),
+			`{"agentId":"fork","type":"assistant","message":{"content":[{"type":"tool_use","id":"call_agent","name":"Agent","input":{"subagent_type":"fork"}}]},"timestamp":"2026-10-07T14:01:04Z"}`+"\n"+
+				`{"agentId":"fork","type":"assistant","message":{"content":[{"type":"tool_use","id":"k_read","name":"Read","input":{}}]},"timestamp":"2026-10-07T14:01:05Z"}`+"\n")
+		appendLine(t, filepath.Join(subDir, "agent-orphan.meta.json"), `{"agentType":"general-purpose","name":"background-check"}`)
+		appendLine(t, filepath.Join(subDir, "agent-orphan.jsonl"), `{"agentId":"orphan","type":"assistant","message":{"content":[{"type":"tool_use","id":"o_grep","name":"Grep","input":{}}]},"timestamp":"2026-10-07T14:01:06Z"}`+"\n")
+	}()
+
+	var buf bytes.Buffer
+	ctx, cancel := context.WithTimeout(context.Background(), 900*time.Millisecond)
+	defer cancel()
+	if err := w.Watch(ctx, &buf); err != nil {
+		t.Fatalf("Watch returned error: %v", err)
+	}
+
+	out := buf.String()
+	lines := strings.Split(out, "\n")
+	find := func(sub string) string {
+		for _, l := range lines {
+			if strings.Contains(l, sub) {
+				return l
+			}
+		}
+		return ""
+	}
+	if l := find("WebFetch"); !strings.HasPrefix(l, "  ↳ ") || !strings.Contains(l, "[Skill: use-browser]") || strings.Contains(l, "inferred") {
+		t.Errorf("Expected the forked call linked to its Skill call, got %q in:\n%s", l, out)
+	}
+	if l := find("Read"); !strings.HasPrefix(l, "  ↳ ") || !strings.Contains(l, "[Subagent: fork]") {
+		t.Errorf("Expected the fork's own call nested under it, got %q in:\n%s", l, out)
+	}
+	if strings.Count(out, "➔ \033[1mAgent") != 1 {
+		t.Errorf("The spawning call replayed by the fork must be shown once:\n%s", out)
+	}
+	if !strings.Contains(out, "[Subagent: background-check] spawning call not recorded") {
+		t.Errorf("Expected the unrecorded subagent to be announced as inferred:\n%s", out)
+	}
+	if l := find("Grep"); !strings.Contains(l, "(inferred parent)") {
+		t.Errorf("Expected the unrecorded subagent's call marked as inferred, got %q in:\n%s", l, out)
+	}
+}

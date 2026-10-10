@@ -306,6 +306,9 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 			depOrder = append(depOrder, key)
 		}
 
+		if node.IsInferredPlaceholder() {
+			dep.Inferred = true
+		}
 		dep.CallCount++
 		if node.Status == models.StatusSuccess {
 			dep.SuccessCount++

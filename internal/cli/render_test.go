@@ -117,3 +117,38 @@ func TestRenderCallGraphIsDeterministic(t *testing.T) {
 		last = idx
 	}
 }
+
+func TestRenderMarksInferredSubagents(t *testing.T) {
+	now := time.Now()
+	placeholder := models.CallNode{
+		ID: "inferred-subagent-x", SessionID: "s", TurnIndex: 1, Type: models.NodeTypeSubagent, Name: "Subagent",
+		CallerScope: "Agent", ScopeName: "Subagent: background-check", Timestamp: now, Status: models.StatusSuccess,
+		ParentLink: models.ParentLinkInferred,
+	}
+	nodes := []models.CallNode{
+		{ID: "a", SessionID: "s", TurnIndex: 1, Type: models.NodeTypeSystemTool, Name: "Bash", CallerScope: "Agent", Timestamp: now, Status: models.StatusSuccess},
+		placeholder,
+		{ID: "u", SessionID: "s", TurnIndex: 1, ParentID: placeholder.ID, ParentLink: models.ParentLinkInferred, Type: models.NodeTypeSystemTool,
+			Name: "Grep", CallerScope: "Subagent: background-check", Timestamp: now.Add(time.Second), Status: models.StatusSuccess},
+	}
+	turns := []models.ExecutionTurn{{Index: 1, Prompt: "go", Timestamp: now}}
+	g := graph.NewGraphBuilder().BuildWithTurns("s", "claude-code", turns, nodes)
+
+	var buf bytes.Buffer
+	RenderExecutionTrace(&buf, g)
+	if !strings.Contains(buf.String(), "Subagent: background-check") || !strings.Contains(buf.String(), "inferred: spawning call not recorded") {
+		t.Errorf("Expected the inferred subagent to be marked in the trace:\n%s", buf.String())
+	}
+
+	buf.Reset()
+	RenderCallGraph(&buf, g)
+	if !strings.Contains(buf.String(), "inferred: spawning call not recorded") {
+		t.Errorf("Expected the inferred dependency to be marked in the graph:\n%s", buf.String())
+	}
+
+	buf.Reset()
+	RenderNodeInspect(&buf, &nodes[2])
+	if !strings.Contains(buf.String(), "Parent link:") || !strings.Contains(buf.String(), "inferred") {
+		t.Errorf("Expected the parent link in inspect output:\n%s", buf.String())
+	}
+}

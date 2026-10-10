@@ -29,6 +29,8 @@ type SessionData struct {
 	SessionID string                 `json:"session_id"`
 	Turns     []models.ExecutionTurn `json:"turns"`
 	Nodes     []models.CallNode      `json:"nodes"`
+	// ChildLinks maps child trace IDs to their spawning call IDs, as named by tool results.
+	ChildLinks map[string]string `json:"-"`
 }
 
 // Collector reads trace logs and converts them into normalized events.

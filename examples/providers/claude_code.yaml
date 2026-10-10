@@ -10,12 +10,16 @@ source:
   path_patterns:
     - "~/.claude/projects/*/*.jsonl"
   format: "jsonl"
-  # Subagents (Agent tool) write their own transcript next to the session; the sidecar
-  # metadata names the Agent tool_use that spawned them.
+  # Subagents write their own transcript next to the session. The sidecar metadata names
+  # the Agent tool_use that spawned them; subagents forked by a Skill have no such ID, but
+  # the Skill's tool result carries their agentId.
   child_traces:
     path_glob: "{dir}/{stem}/subagents/*.jsonl"
     sidecar_suffix: ".meta.json"
     parent_call_id_field: "toolUseId"
+    child_id_field: "agentId"
+    result_child_id_field: "toolUseResult.agentId"
+    sidecar_name_field: "name || agentType || description"
 
 extraction:
   session:

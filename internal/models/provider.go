@@ -37,6 +37,15 @@ type ChildTraceConfig struct {
 	SidecarSuffix string `json:"sidecar_suffix" yaml:"sidecar_suffix"`
 	// ParentCallIDField is the dot-path in the sidecar holding the spawning call ID.
 	ParentCallIDField string `json:"parent_call_id_field" yaml:"parent_call_id_field"`
+	// ChildIDField is the dot-path, in the child trace's events, of the child's own ID.
+	ChildIDField string `json:"child_id_field,omitempty" yaml:"child_id_field,omitempty"`
+	// ResultChildIDField is the dot-path, in a tool result event, naming the child trace that
+	// the call answered by that event spawned. It links children whose sidecar has no
+	// parent call ID (e.g. subagents forked by a skill).
+	ResultChildIDField string `json:"result_child_id_field,omitempty" yaml:"result_child_id_field,omitempty"`
+	// SidecarNameField names a child with no linked spawning call ("a || b" picks the first
+	// non-empty field of the sidecar).
+	SidecarNameField string `json:"sidecar_name_field,omitempty" yaml:"sidecar_name_field,omitempty"`
 }
 
 // ExtractionConfig specifies how to retrieve session IDs, filter events, and map fields.

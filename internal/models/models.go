@@ -76,7 +76,29 @@ type CallNode struct {
 	Output       interface{}            `json:"output,omitempty"`
 	ErrorMessage string                 `json:"error_message,omitempty"`
 	Anomalies    []AnomalyRecord        `json:"anomalies,omitempty"`
+	// ParentLink records how a call from a child (subagent) trace was linked to its spawner.
+	// Empty for calls of the main trace.
+	ParentLink ParentLink `json:"parent_link,omitempty"`
 }
+
+// IsInferredPlaceholder reports whether the node stands in for an unrecorded spawning call.
+func (n *CallNode) IsInferredPlaceholder() bool {
+	return n.ParentLink == ParentLinkInferred && n.ParentID == ""
+}
+
+// ParentLink describes the evidence that attributes a child trace to its spawning call.
+type ParentLink string
+
+const (
+	// ParentLinkSidecar: the child trace's metadata names the spawning call ID.
+	ParentLinkSidecar ParentLink = "sidecar"
+	// ParentLinkResult: the spawning call's result names the child trace.
+	ParentLinkResult ParentLink = "result"
+	// ParentLinkInferred: no record links the child trace to a call. Its calls are placed
+	// under a placeholder subagent node in the turn active when the child trace started,
+	// which is a best guess rather than recorded fact.
+	ParentLinkInferred ParentLink = "inferred"
+)
 
 // ExecutionTurn represents a conversational turn initiated by a user prompt.
 type ExecutionTurn struct {
@@ -98,7 +120,10 @@ type CallerDependency struct {
 	FailCount    int          `json:"fail_count"`
 	IsFallback   bool               `json:"is_fallback"`
 	FallbackTo   string             `json:"fallback_to,omitempty"`
-	Children     []CallerDependency `json:"children,omitempty"`
+	// Inferred marks a caller -> callee relation that no record states, e.g. a subagent whose
+	// spawning call is not recorded and was placed under the agent by time.
+	Inferred bool               `json:"inferred,omitempty"`
+	Children []CallerDependency `json:"children,omitempty"`
 }
 
 // CallEdgeType represents edge semantics in the DAG.

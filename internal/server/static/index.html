@@ -494,7 +494,7 @@
     </div>
   </div>
 
-  <script type="application/json" id="provider-rules">[{"id":"antigravity","name":"Google Antigravity","extraction":{"session":{"id_jsonpath":"session_id","path_regex":"brain/([a-zA-Z0-9_-]+)/.*transcript\\.jsonl"},"events":{"tool_call_filter":"type == 'PLANNER_RESPONSE' \u0026\u0026 tool_calls != null","subagent_spawn_filter":"tool_calls[?name == 'invoke_subagent']"},"fields":{"call_id":"tool_call.id || step_index","parent_id":"parent_call_id || conversation_id","timestamp":"created_at","duration_ms":"duration_ms","call_type":"tool_call.type","tool_name":"tool_call.name","mcp_server":"tool_call.mcp_server || null","arguments":"tool_call.args || tool_call.arguments","status":"status","output":"tool_call.output","error_message":"tool_call.error"},"turns":{"filter":"type == 'USER_INPUT'","prompt_field":"content","timestamp_field":"created_at","prompt_tag":"USER_REQUEST"},"results":{"correlation":"previous_step","step_index_field":"step_index","output_field":"content","status_field":"status"},"scopes":[{"tool_name":"view_file","kind":"skill","name_field":"AbsolutePath","name_regex":"/skills/([^/]+)/SKILL\\.md$"},{"tool_name":"skill_*","kind":"skill","name_regex":"^skill_(.+)$"},{"tool_name":"invoke_subagent","kind":"subagent","name_field":"Role || TypeName"}]},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"],"known_fallbacks":[{"original_tool":"mcp_*","fallback_tool":"run_command","description":"MCP tool failed or unauthenticated; model fell back to raw shell execution."}]}},{"id":"claude-code","name":"Claude Code","extraction":{"session":{"id_jsonpath":"sessionId","path_regex":"projects/[^/]+/([^/]+)\\.jsonl$"},"events":{"tool_call_filter":"type == 'assistant'","tool_calls_path":"message.content","tool_call_item_filter":"type == 'tool_use'"},"fields":{"call_id":"id","timestamp":"timestamp","tool_name":"name","mcp_server_regex":"^mcp__(.+?)__","arguments":"input"},"turns":{"filter":"type == 'user' \u0026\u0026 toolUseResult == null \u0026\u0026 isMeta != true \u0026\u0026 isCompactSummary != true \u0026\u0026 origin.kind != 'task-notification'","prompt_field":"message.content","timestamp_field":"timestamp","prompt_tag":"command-name"},"results":{"correlation":"call_id","filter":"type == 'user'","items_path":"message.content","item_filter":"type == 'tool_result'","call_id_field":"tool_use_id","output_field":"content","error_flag_field":"is_error","timestamp_field":"timestamp"},"scopes":[{"tool_name":"Skill","kind":"skill","name_field":"skill"},{"tool_name":"Agent","kind":"subagent","name_field":"subagent_type || description","enter_scope":false},{"tool_name":"Task","kind":"subagent","name_field":"subagent_type || description","enter_scope":false}]},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"],"known_fallbacks":[{"original_tool":"mcp__*","fallback_tool":"Bash","description":"MCP tool failed or unauthenticated; Claude Code silently fell back to raw Bash execution."},{"original_tool":"mcp__*","fallback_tool":"WebFetch","description":"MCP tool failed; Claude Code fell back to fetching the resource over plain HTTP."}]},"child_traces":{"path_glob":"{dir}/{stem}/subagents/*.jsonl","sidecar_suffix":".meta.json","parent_call_id_field":"toolUseId"}},{"id":"cursor","name":"Cursor Composer","extraction":{"session":{"id_jsonpath":"composer_id","path_regex":"([^/]+)\\.jsonl"},"events":{"tool_call_filter":"type == 'tool_call' || event == 'tool_executed'","subagent_spawn_filter":"tool_calls[?name == 'subagent']"},"fields":{"call_id":"id","parent_id":"parent_id","timestamp":"timestamp","duration_ms":"duration_ms","call_type":"type","tool_name":"tool","mcp_server":"server","arguments":"args","status":"status","output":"result","error_message":"error"},"turns":{},"results":{}},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"],"known_fallbacks":[{"original_tool":"mcp_*","fallback_tool":"terminal_cmd","description":"Cursor Composer MCP failed; agent silently attempted terminal execution."}]}},{"id":"generic-jsonl","name":"Generic JSONL Agent Trace","extraction":{"session":{"id_jsonpath":"session_id"},"events":{"tool_call_filter":"event_type == 'tool_call' || event_type == 'skill_call'","subagent_spawn_filter":"event_type == 'subagent_call'"},"fields":{"call_id":"id","parent_id":"parent_id","timestamp":"timestamp","duration_ms":"duration_ms","call_type":"type","tool_name":"name","mcp_server":"mcp_server","arguments":"params","status":"status","output":"result","error_message":"error"},"turns":{},"results":{}},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|401|auth_error"]}}]</script>
+  <script type="application/json" id="provider-rules">[{"id":"antigravity","name":"Google Antigravity","extraction":{"session":{"id_jsonpath":"session_id","path_regex":"brain/([a-zA-Z0-9_-]+)/.*transcript\\.jsonl"},"events":{"tool_call_filter":"type == 'PLANNER_RESPONSE' \u0026\u0026 tool_calls != null","subagent_spawn_filter":"tool_calls[?name == 'invoke_subagent']"},"fields":{"call_id":"tool_call.id || step_index","parent_id":"parent_call_id || conversation_id","timestamp":"created_at","duration_ms":"duration_ms","call_type":"tool_call.type","tool_name":"tool_call.name","mcp_server":"tool_call.mcp_server || null","arguments":"tool_call.args || tool_call.arguments","status":"status","output":"tool_call.output","error_message":"tool_call.error"},"turns":{"filter":"type == 'USER_INPUT'","prompt_field":"content","timestamp_field":"created_at","prompt_tag":"USER_REQUEST"},"results":{"correlation":"previous_step","step_index_field":"step_index","output_field":"content","status_field":"status"},"scopes":[{"tool_name":"view_file","kind":"skill","name_field":"AbsolutePath","name_regex":"/skills/([^/]+)/SKILL\\.md$"},{"tool_name":"skill_*","kind":"skill","name_regex":"^skill_(.+)$"},{"tool_name":"invoke_subagent","kind":"subagent","name_field":"Role || TypeName"}]},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"],"known_fallbacks":[{"original_tool":"mcp_*","fallback_tool":"run_command","description":"MCP tool failed or unauthenticated; model fell back to raw shell execution."}]}},{"id":"claude-code","name":"Claude Code","extraction":{"session":{"id_jsonpath":"sessionId","path_regex":"projects/[^/]+/([^/]+)\\.jsonl$"},"events":{"tool_call_filter":"type == 'assistant'","tool_calls_path":"message.content","tool_call_item_filter":"type == 'tool_use'"},"fields":{"call_id":"id","timestamp":"timestamp","tool_name":"name","mcp_server_regex":"^mcp__(.+?)__","arguments":"input"},"turns":{"filter":"type == 'user' \u0026\u0026 toolUseResult == null \u0026\u0026 isMeta != true \u0026\u0026 isCompactSummary != true \u0026\u0026 origin.kind != 'task-notification'","prompt_field":"message.content","timestamp_field":"timestamp","prompt_tag":"command-name"},"results":{"correlation":"call_id","filter":"type == 'user'","items_path":"message.content","item_filter":"type == 'tool_result'","call_id_field":"tool_use_id","output_field":"content","error_flag_field":"is_error","timestamp_field":"timestamp"},"scopes":[{"tool_name":"Skill","kind":"skill","name_field":"skill"},{"tool_name":"Agent","kind":"subagent","name_field":"subagent_type || description","enter_scope":false},{"tool_name":"Task","kind":"subagent","name_field":"subagent_type || description","enter_scope":false}]},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"],"known_fallbacks":[{"original_tool":"mcp__*","fallback_tool":"Bash","description":"MCP tool failed or unauthenticated; Claude Code silently fell back to raw Bash execution."},{"original_tool":"mcp__*","fallback_tool":"WebFetch","description":"MCP tool failed; Claude Code fell back to fetching the resource over plain HTTP."}]},"child_traces":{"path_glob":"{dir}/{stem}/subagents/*.jsonl","sidecar_suffix":".meta.json","parent_call_id_field":"toolUseId","child_id_field":"agentId","result_child_id_field":"toolUseResult.agentId","sidecar_name_field":"name || agentType || description"}},{"id":"cursor","name":"Cursor Composer","extraction":{"session":{"id_jsonpath":"composer_id","path_regex":"([^/]+)\\.jsonl"},"events":{"tool_call_filter":"type == 'tool_call' || event == 'tool_executed'","subagent_spawn_filter":"tool_calls[?name == 'subagent']"},"fields":{"call_id":"id","parent_id":"parent_id","timestamp":"timestamp","duration_ms":"duration_ms","call_type":"type","tool_name":"tool","mcp_server":"server","arguments":"args","status":"status","output":"result","error_message":"error"},"turns":{},"results":{}},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"],"known_fallbacks":[{"original_tool":"mcp_*","fallback_tool":"terminal_cmd","description":"Cursor Composer MCP failed; agent silently attempted terminal execution."}]}},{"id":"generic-jsonl","name":"Generic JSONL Agent Trace","extraction":{"session":{"id_jsonpath":"session_id"},"events":{"tool_call_filter":"event_type == 'tool_call' || event_type == 'skill_call'","subagent_spawn_filter":"event_type == 'subagent_call'"},"fields":{"call_id":"id","parent_id":"parent_id","timestamp":"timestamp","duration_ms":"duration_ms","call_type":"type","tool_name":"name","mcp_server":"mcp_server","arguments":"params","status":"status","output":"result","error_message":"error"},"turns":{},"results":{}},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|401|auth_error"]}}]</script>
   <script>
     let currentNodes = [];
     let currentTurns = [];
@@ -752,6 +752,8 @@
       const turns = [];
       const stepNodeMap = {};
       const callNodeMap = {};
+      const childLinks = {}; // child trace ID -> spawning call ID, from tool results
+      const childCfg = provider.child_traces || {};
       const tracker = { defaultScope: defaultScope || 'Agent', active: defaultScope || 'Agent' };
       let currentTurnIndex = 0;
       let currentTurnTime = new Date().toISOString();
@@ -856,18 +858,25 @@
             const arr = resolveField(item, resCfg.items_path);
             items = Array.isArray(arr) ? arr.filter(r => r && typeof r === 'object' && matchesFilter(r, resCfg.item_filter)) : [];
           }
+          const answered = [];
           items.forEach(r => {
             const node = callNodeMap[String(resolveField(r, resCfg.call_id_field))];
+            if (node) answered.push(node.id);
             if (node && applyResult(node, r, true) && resCfg.timestamp_field && !node.duration_ms) {
               const end = Date.parse(resolveField(item, resCfg.timestamp_field));
               const start = Date.parse(node.timestamp);
               if (end > start) node.duration_ms = end - start;
             }
           });
+          // Mirrors Assembler.recordChildLink: only an event answering exactly one call links a child
+          const childId = childCfg.result_child_id_field ? resolveField(item, childCfg.result_child_id_field) : undefined;
+          if (answered.length === 1 && typeof childId === 'string' && childId && !(childId in childLinks)) {
+            childLinks[childId] = answered[0];
+          }
         }
       });
 
-      return { nodes, turns };
+      return { nodes, turns, childLinks };
     }
 
     function parseEvents(text) {
@@ -918,37 +927,120 @@
         let meta;
         try { meta = JSON.parse(sidecar.text); } catch (e) { return; }
         const parentId = resolveField(meta, cfg.parent_call_id_field);
-        if (typeof parentId === 'string' && parentId) children.push({ file: f, parentId });
+        children.push({
+          file: f,
+          sidecarPath: sidecar.path,
+          parentId: typeof parentId === 'string' ? parentId : '',
+          childId: childTraceId(f.text, cfg.child_id_field),
+          name: firstString(meta, cfg.sidecar_name_field)
+        });
       });
       return children;
     }
 
-    // Mirrors collector.attachChildTraces: subagent calls are nested under the spawning call.
-    function attachChildTraces(provider, mainPath, files, nodes, turns) {
+    function childTraceId(text, field) {
+      if (!field) return '';
+      const lines = text.split('\n');
+      for (let i = 0; i < lines.length && i < 100; i++) {
+        try {
+          const id = resolveField(JSON.parse(lines[i]), field);
+          if (typeof id === 'string' && id) return id;
+        } catch (e) {}
+      }
+      return '';
+    }
+
+    function firstString(obj, expr) {
+      for (const key of (expr || '').split('||')) {
+        const v = key.trim() && resolveField(obj, key.trim());
+        if (typeof v === 'string' && v) return v;
+      }
+      return '';
+    }
+
+    // Mirrors collector.TurnAt: the last turn that started at or before ts.
+    function turnAt(turns, ts) {
+      let index = 0;
+      turns.forEach((t, i) => { if (i === 0 || Date.parse(t.timestamp) <= ts) index = t.index; });
+      return index;
+    }
+
+    // Mirrors collector.attachChildTraces: subagent calls are nested under the spawning call,
+    // found through the child's sidecar or the tool result naming the child. Children that no
+    // record links to a call are placed by time under a placeholder marked parent_link 'inferred'.
+    function attachChildTraces(provider, mainPath, files, nodes, turns, links) {
       const byId = {};
       nodes.forEach(n => { byId[n.id] = n; });
       const turnByIndex = {};
       turns.forEach(t => { turnByIndex[t.index] = t; });
+      links = Object.assign({}, links);
+
+      const add = (childNodes, childLinks) => {
+        childNodes.forEach(n => {
+          if (byId[n.id]) return; // a forked child replays its parent's context, including the spawning call
+          byId[n.id] = n;
+          nodes.push(n);
+          if (turnByIndex[n.turn_index]) turnByIndex[n.turn_index].nodes.push(n);
+        });
+        Object.entries(childLinks).forEach(([k, v]) => { if (!(k in links)) links[k] = v; });
+      };
+      const ingest = (child, parent, link) => {
+        const scope = parent.scope_name || ('Subagent: ' + parent.name);
+        const result = assembleTrace(parseEvents(child.file.text), provider, scope);
+        result.nodes.forEach(n => {
+          n.turn_index = parent.turn_index;
+          if (!n.parent_id) n.parent_id = parent.id;
+          n.parent_link = link;
+        });
+        return result;
+      };
+      const resolve = (child) => {
+        if (child.parentId) return byId[child.parentId] ? { parent: byId[child.parentId], link: 'sidecar' } : null;
+        const callId = child.childId && links[child.childId];
+        return callId && byId[callId] ? { parent: byId[callId], link: 'result' } : null;
+      };
+      const unlinked = (child) => !child.parentId && !(child.childId && links[child.childId]);
 
       let pending = findChildTraces(provider.child_traces, mainPath, files);
       const stitched = [];
       while (pending.length > 0) {
-        const next = [];
+        let next = [];
+        let progressed = false;
         pending.forEach(child => {
-          const parent = byId[child.parentId];
-          if (!parent) { next.push(child); return; }
-          const scope = parent.scope_name || ('Subagent: ' + parent.name);
-          assembleTrace(parseEvents(child.file.text), provider, scope).nodes.forEach(n => {
-            n.turn_index = parent.turn_index;
-            if (!n.parent_id) n.parent_id = parent.id;
-            byId[n.id] = n;
-            nodes.push(n);
-            if (turnByIndex[n.turn_index]) turnByIndex[n.turn_index].nodes.push(n);
-          });
+          const found = resolve(child);
+          if (!found) { next.push(child); return; }
+          const result = ingest(child, found.parent, found.link);
+          add(result.nodes, result.childLinks);
           stitched.push(child.file.path);
+          progressed = true;
         });
-        if (next.length === pending.length) break; // the rest belong to calls not in this session
         pending = next;
+        if (progressed) continue;
+
+        next = [];
+        pending.forEach(child => {
+          if (!unlinked(child)) { next.push(child); return; } // linked to a call not in this session
+          const base = child.file.path.slice(child.file.path.lastIndexOf('/') + 1);
+          const key = child.childId || base.replace(/\.[^.]*$/, '');
+          const placeholder = {
+            id: 'inferred-subagent-' + key, name: 'Subagent', type: 'subagent', mcp_server: null,
+            parent_id: '', parent_link: 'inferred', turn_index: 0, caller_scope: 'Agent',
+            scope_name: 'Subagent: ' + (child.name || key), timestamp: null, status: 'success',
+            arguments: { child_trace: base, note: 'No spawning call is recorded for this subagent; it is placed in the turn active when its trace started.' },
+            output: null, errorMessage: null, anomalies: []
+          };
+          const result = ingest(child, placeholder, 'inferred');
+          if (result.nodes.length === 0) return;
+          const start = Math.min(...result.nodes.map(n => Date.parse(n.timestamp)).filter(t => !isNaN(t)));
+          placeholder.timestamp = isFinite(start) ? new Date(start).toISOString() : result.nodes[0].timestamp;
+          placeholder.turn_index = turnAt(turns, Date.parse(placeholder.timestamp));
+          result.nodes.forEach(n => { n.turn_index = placeholder.turn_index; });
+          add([placeholder, ...result.nodes], result.childLinks);
+          stitched.push(child.file.path);
+          progressed = true;
+        });
+        pending = next;
+        if (!progressed) break; // the rest belong to calls not present in this session
       }
       return stitched;
     }
@@ -965,8 +1057,7 @@
         if (!cfg) return;
         files.forEach(f => findChildTraces(cfg, f.path, files).forEach(c => {
           childPaths.add(c.file.path);
-          const ext = c.file.path.includes('.') ? c.file.path.slice(c.file.path.lastIndexOf('.')) : '';
-          childPaths.add(c.file.path.slice(0, c.file.path.length - ext.length) + (cfg.sidecar_suffix || ''));
+          childPaths.add(c.sidecarPath);
         }));
       });
       const candidates = files.filter(f => !childPaths.has(f.path));
@@ -986,7 +1077,7 @@
       currentProvider = best ? best.provider : null;
       const nodes = best ? best.result.nodes : [];
       const turns = best ? best.result.turns : [];
-      currentSubagentTraces = best && main ? attachChildTraces(best.provider, main.path, files, nodes, turns) : [];
+      currentSubagentTraces = best && main ? attachChildTraces(best.provider, main.path, files, nodes, turns, best.result.childLinks) : [];
 
       analyzeAnomalies(nodes, turns, currentProvider);
       computeDependencies(nodes);
@@ -1121,6 +1212,7 @@
         }
 
         const dep = depMap[key];
+        if (node.parent_link === 'inferred' && !node.parent_id) dep.inferred = true;
         dep.call_count++;
         if (node.status === 'success') dep.success_count++;
         else if (node.status === 'failed') dep.fail_count++;
@@ -1297,6 +1389,7 @@
           </td>
           <td class="callee-cell" style="font-weight:600; color:#fff;">
             ${escapeHtml(d.callee)}
+            ${d.inferred ? `<span class="badge badge-warning" title="No record names the spawning call; placed by time">inferred</span>` : ''}
             ${d.mcp_server ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem;">(server: ${escapeHtml(d.mcp_server)})</span>` : ''}
             ${hasChildren ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem; margin-left:0.5rem;">[${d.children.length} nested call(s)]</span>` : ''}
           </td>
@@ -1434,7 +1527,8 @@
         <div class="node-row ${node.id === selectedNodeId ? 'selected' : ''}" onclick='openDrawerById(${escapeHtml(JSON.stringify(node.id))})'>
           <span style="color:${node.status === 'failed' ? 'var(--danger)' : 'var(--success)'}">${node.status === 'failed' ? '✗' : '✓'}</span>
           <span class="badge ${typeBadgeClass}">${node.type.replace('_', ' ')}</span>
-          <span class="node-title">${escapeHtml(node.name)}</span>
+          <span class="node-title">${escapeHtml(node.parent_link === 'inferred' && !node.parent_id ? node.scope_name : node.name)}</span>
+          ${node.parent_link === 'inferred' ? `<span class="badge badge-warning" title="No record names the spawning call; placed by time">inferred</span>` : ''}
           ${node.mcp_server ? `<span style="color:var(--text-muted); font-size:0.75rem;">(${escapeHtml(node.mcp_server)})</span>` : ''}
           ${anomBadges}
           <span class="node-meta">${new Date(node.timestamp).toLocaleTimeString()}</span>
@@ -1502,7 +1596,13 @@
         <span class="badge ${node.status === 'failed' ? 'badge-danger' : 'badge-success'}">${node.status}</span>
         ${node.caller_scope ? `<span class="badge badge-skill">${escapeHtml(node.caller_scope)}</span>` : ''}
       `;
-      document.getElementById('drawerMeta').textContent = `ID: ${node.id} | Turn: ${node.turn_index || 1} | Time: ${node.timestamp}`;
+      const linkText = {
+        sidecar: 'sidecar (the subagent\'s metadata names the spawning call)',
+        result: 'result (the spawning call\'s result names the subagent)',
+        inferred: 'INFERRED (no record names the spawning call; placed in the turn active when the subagent started)'
+      }[node.parent_link];
+      document.getElementById('drawerMeta').textContent = `ID: ${node.id} | Turn: ${node.turn_index || 1} | Time: ${node.timestamp}`
+        + (node.parent_id ? ` | Parent: ${node.parent_id}` : '') + (linkText ? ` | Parent link: ${linkText}` : '');
       document.getElementById('drawerArgs').textContent = JSON.stringify(node.arguments, null, 2);
       document.getElementById('drawerOutput').textContent = node.output ? String(node.output) : '(no output captured)';
 
