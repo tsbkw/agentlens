@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -222,5 +223,25 @@ func TestFallbackTransitionsArePerActor(t *testing.T) {
 	}
 	if len(fallbacks) != 1 || fallbacks[0].SourceID != "mcp" || fallbacks[0].TargetID != "bash" {
 		t.Errorf("Expected a single mcp -> bash fallback edge, got %+v", fallbacks)
+	}
+}
+
+func TestOrderedNodesKeepInputOrderForTies(t *testing.T) {
+	now := time.Now()
+	nodes := []models.CallNode{
+		{ID: "z", Name: "Read", Timestamp: now},
+		{ID: "a", Name: "Grep", Timestamp: now},
+		{ID: "m", Name: "Bash", Timestamp: now},
+		{ID: "first", Name: "Glob", Timestamp: now.Add(-time.Second)},
+	}
+	for i := 0; i < 20; i++ {
+		g := NewGraphBuilder().Build("s", "test", nodes)
+		var got []string
+		for _, n := range g.OrderedNodes() {
+			got = append(got, n.ID)
+		}
+		if strings.Join(got, ",") != "first,z,a,m" {
+			t.Fatalf("Expected chronological order with input order for ties, got %v", got)
+		}
 	}
 }

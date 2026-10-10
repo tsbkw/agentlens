@@ -247,7 +247,7 @@ func (a *App) CmdInspect(callID string) error {
 			continue
 		}
 
-		for _, node := range g.Nodes {
+		for _, node := range g.OrderedNodes() {
 			if node.ID == callID || strings.HasPrefix(node.ID, callID) {
 				RenderNodeInspect(os.Stdout, node)
 				return nil
