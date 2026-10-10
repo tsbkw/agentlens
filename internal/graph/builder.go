@@ -176,7 +176,7 @@ func (b *GraphBuilder) BuildWithTurns(
 				}
 
 				if lastFailedNode != nil {
-					b.AddEdge(lastFailedNode.ID, callNode.ID, models.EdgeTypeFallbackTo)
+					b.AddEdge(lastFailedNode.ID, callNode.ID, transitionAfterFailure(lastFailedNode, callNode))
 					lastFailedNode = nil
 				}
 
@@ -207,7 +207,7 @@ func (b *GraphBuilder) BuildWithTurns(
 		for _, node := range sortedNodes {
 			if prevNode != nil {
 				if prevNode.Status == models.StatusFailed {
-					b.AddEdge(prevNode.ID, node.ID, models.EdgeTypeFallbackTo)
+					b.AddEdge(prevNode.ID, node.ID, transitionAfterFailure(prevNode, node))
 				}
 			}
 			prevNode = node
@@ -430,6 +430,45 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 	}
 
 	return result
+}
+
+// transitionAfterFailure classifies the edge from a failed call to the call that follows it:
+// re-running the same tool is a retry, switching to another tool is a fallback candidate.
+func transitionAfterFailure(failed, next *models.CallNode) models.CallEdgeType {
+	if failed.Name == next.Name {
+		return models.EdgeTypeRetries
+	}
+	return models.EdgeTypeFallbackTo
+}
+
+// ApplyConfirmedFallbacks resets the fallback flags of the dependency tree and sets them only
+// for the given (source node ID -> target node ID) transitions, e.g. those confirmed by the
+// anomaly detector.
+func (g *Graph) ApplyConfirmedFallbacks(confirmed map[string]string) {
+	type depKey struct{ Caller, Callee string }
+	marks := make(map[depKey]string)
+	for srcID, tgtID := range confirmed {
+		src, tgt := g.Nodes[srcID], g.Nodes[tgtID]
+		if src == nil || tgt == nil {
+			continue
+		}
+		caller := src.CallerScope
+		if caller == "" {
+			caller = "Agent (Main Planner)"
+		}
+		marks[depKey{Caller: caller, Callee: src.Name}] = tgt.Name
+	}
+
+	var walk func(deps []models.CallerDependency)
+	walk = func(deps []models.CallerDependency) {
+		for i := range deps {
+			fallbackTo, ok := marks[depKey{Caller: deps[i].Caller, Callee: deps[i].Callee}]
+			deps[i].IsFallback = ok
+			deps[i].FallbackTo = fallbackTo
+			walk(deps[i].Children)
+		}
+	}
+	walk(g.Dependencies)
 }
 
 func sanitizeID(name string) string {

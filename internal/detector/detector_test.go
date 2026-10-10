@@ -188,3 +188,68 @@ func TestComplexIncidentResponseAnomalyDetection(t *testing.T) {
 		t.Errorf("Expected dependencies to be computed, got 0")
 	}
 }
+
+func TestAuthCheckerIgnoresSuccessfulSystemToolOutput(t *testing.T) {
+	provider, err := providers.LoadProviderFromFile(filepath.Join("..", "..", "examples", "providers", "claude_code.yaml"))
+	if err != nil {
+		t.Fatalf("Failed to load Claude Code provider: %v", err)
+	}
+	now := time.Now()
+
+	nodes := []models.CallNode{
+		// Reading source code that mentions HTTP 401 is not an auth failure
+		{ID: "read", Name: "Bash", Type: models.NodeTypeSystemTool, Timestamp: now, Status: models.StatusSuccess,
+			Output: `if resp.StatusCode == 401 { return ErrUnauthorized }`},
+		// An MCP tool may report an auth error inside a successful response
+		{ID: "mcp", Name: "mcp__notion__fetch", Type: models.NodeTypeMCPTool, Timestamp: now.Add(time.Second), Status: models.StatusSuccess,
+			Output: `{"error":"401 Unauthorized"}`},
+		// A failed system tool is still checked
+		{ID: "gh", Name: "Bash", Type: models.NodeTypeSystemTool, Timestamp: now.Add(2 * time.Second), Status: models.StatusFailed,
+			Output: "HTTP 401: Bad credentials"},
+	}
+	g := graph.NewGraphBuilder().Build("s", "claude-code", nodes)
+	records := NewAuthChecker(provider).Check(g)
+
+	flagged := make(map[string]bool)
+	for _, r := range records {
+		flagged[r.NodeID] = true
+	}
+	if flagged["read"] {
+		t.Errorf("Successful Bash output must not be flagged as an auth failure")
+	}
+	if !flagged["mcp"] || !flagged["gh"] {
+		t.Errorf("Expected MCP and failed Bash calls to be flagged, got %v", flagged)
+	}
+}
+
+func TestDependencyFallbackFlagsRequireConfirmation(t *testing.T) {
+	provider, err := providers.LoadProviderFromFile(filepath.Join("..", "..", "examples", "providers", "claude_code.yaml"))
+	if err != nil {
+		t.Fatalf("Failed to load Claude Code provider: %v", err)
+	}
+	now := time.Now()
+
+	nodes := []models.CallNode{
+		// A failed Edit followed by Read is ordinary iteration, not a silent fallback
+		{ID: "edit", Name: "Edit", Type: models.NodeTypeSystemTool, CallerScope: "Agent", Timestamp: now, Status: models.StatusFailed},
+		{ID: "read", Name: "Read", Type: models.NodeTypeSystemTool, CallerScope: "Agent", Timestamp: now.Add(time.Second), Status: models.StatusSuccess},
+		// A failed MCP call followed by Bash is
+		{ID: "mcp", Name: "mcp__github__create_issue", Type: models.NodeTypeMCPTool, CallerScope: "Agent", Timestamp: now.Add(2 * time.Second), Status: models.StatusFailed},
+		{ID: "bash", Name: "Bash", Type: models.NodeTypeSystemTool, CallerScope: "Agent", Timestamp: now.Add(3 * time.Second), Status: models.StatusSuccess},
+	}
+	g := graph.NewGraphBuilder().Build("s", "claude-code", nodes)
+	NewDetector(provider).Analyze(g)
+
+	for _, dep := range g.Dependencies {
+		switch dep.Callee {
+		case "Edit":
+			if dep.IsFallback {
+				t.Errorf("Edit must not be reported as a silent fallback")
+			}
+		case "mcp__github__create_issue":
+			if !dep.IsFallback || dep.FallbackTo != "Bash" {
+				t.Errorf("Expected confirmed fallback to Bash, got %v %q", dep.IsFallback, dep.FallbackTo)
+			}
+		}
+	}
+}
