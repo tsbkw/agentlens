@@ -89,6 +89,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Declarative tool call extraction from nested content blocks (`tool_calls_path`, `tool_call_item_filter`), `||` filters, and `mcp_server_regex` (PR #12)
 - [x] Declarative turn detection and ID-based tool result correlation (`tool_use` ↔ `tool_result`) (PR #13)
 - [x] Declarative Skill / Subagent scope rules (remove hard-coded Antigravity tool names from core layers) (PR #14)
+- [x] Shared incremental session assembler so `agentlens watch` follows the same declarative turn / result / scope rules (PR #15)
 - [ ] CLI / Web server / watcher `--provider` selection with a built-in Claude Code definition
 - [ ] Stitch Claude Code subagent transcripts (`<session>/subagents/agent-*.jsonl`) into the call graph
 - [ ] Claude Code trace support in the browser viewer (GitHub Pages) and docs

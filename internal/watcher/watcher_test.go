@@ -79,3 +79,48 @@ func TestWatcherLiveStreaming(t *testing.T) {
 		t.Errorf("Expected active scope Skill: test-skill in output, got: %s", outStr)
 	}
 }
+
+func TestWatcherClaudeCode(t *testing.T) {
+	provider, err := providers.LoadProviderFromFile(filepath.Join("..", "..", "examples", "providers", "claude_code.yaml"))
+	if err != nil {
+		t.Fatalf("Failed to load Claude Code provider: %v", err)
+	}
+
+	sample, err := os.ReadFile(filepath.Join("..", "..", "examples", "traces", "sample_claude_code_session.jsonl"))
+	if err != nil {
+		t.Fatalf("Failed to read sample: %v", err)
+	}
+	logPath := filepath.Join(t.TempDir(), "session.jsonl")
+	if err := os.WriteFile(logPath, sample, 0o600); err != nil {
+		t.Fatalf("Failed to write log: %v", err)
+	}
+
+	w := NewWatcher(provider, logPath)
+	w.PollInterval = 20 * time.Millisecond
+	w.FromStart = true
+
+	var buf bytes.Buffer
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if err := w.Watch(ctx, &buf); err != nil {
+		t.Fatalf("Watch returned error: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{
+		"Triage the failing deploy",
+		"[Skill: incident-triage]",
+		"[Subagent: Explore]",
+		"[MCP:github]",
+		"FAILED: mcp__github__create_issue",
+		"Authentication Expired",
+		"Silent Fallback Detected",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Expected %q in watch output, got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "task-notification") {
+		t.Errorf("Task notifications must not be shown as user prompts")
+	}
+}
