@@ -97,5 +97,5 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 
 ### Phase 10: Claude Code Follow-ups
 - [x] Deterministic graph, dependency tree and anomaly ordering across runs (PR #20)
-- [ ] `agentlens watch` follows subagent transcripts as they are written
+- [x] `agentlens watch` follows subagent transcripts as they are written (PR #21)
 - [ ] Subagent stitching in the browser viewer (multi-file / folder input)
