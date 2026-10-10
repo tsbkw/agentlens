@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"os"
 	"os/signal"
@@ -18,25 +17,70 @@ import (
 	"github.com/tsbkw/agentlens/internal/watcher"
 )
 
-//go:embed default_antigravity.yaml
-var defaultAntigravityYAML []byte
-
 // App coordinates CLI commands.
 type App struct {
-	ActiveProvider *providers.LoadedProvider
+	// Builtins are the provider definitions embedded in the binary, default first.
+	Builtins []*providers.LoadedProvider
+	// Selected is the provider chosen via --provider / AGENTLENS_PROVIDER; nil means auto-detect.
+	Selected *providers.LoadedProvider
 }
 
-// NewApp initializes the App with the default Antigravity provider.
+// NewApp initializes the App with the built-in provider definitions.
 func NewApp() (*App, error) {
-	loaded, err := providers.LoadProviderFromBytes(defaultAntigravityYAML)
+	builtins, err := providers.LoadBuiltinProviders()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load default provider: %w", err)
+		return nil, fmt.Errorf("failed to load built-in providers: %w", err)
 	}
-	return &App{ActiveProvider: loaded}, nil
+	return &App{Builtins: builtins}, nil
+}
+
+// candidates returns the providers to search: the selected one, or every built-in.
+func (a *App) candidates() []*providers.LoadedProvider {
+	if a.Selected != nil {
+		return []*providers.LoadedProvider{a.Selected}
+	}
+	return a.Builtins
+}
+
+// extractProviderFlag removes --provider/-p from args and returns the remaining args and its value.
+func extractProviderFlag(args []string) ([]string, string, error) {
+	var rest []string
+	spec := ""
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--provider" || arg == "-p":
+			if i+1 >= len(args) {
+				return nil, "", fmt.Errorf("%s requires a value (provider ID or YAML path)", arg)
+			}
+			spec = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--provider="):
+			spec = strings.TrimPrefix(arg, "--provider=")
+		default:
+			rest = append(rest, arg)
+		}
+	}
+	return rest, spec, nil
 }
 
 // Run executes the given command line arguments.
 func (a *App) Run(args []string) error {
+	args, spec, err := extractProviderFlag(args)
+	if err != nil {
+		return err
+	}
+	if spec == "" {
+		spec = os.Getenv("AGENTLENS_PROVIDER")
+	}
+	if spec != "" && spec != "auto" {
+		selected, err := providers.ResolveProvider(spec, a.Builtins)
+		if err != nil {
+			return err
+		}
+		a.Selected = selected
+	}
+
 	if len(args) < 2 {
 		a.PrintHelp()
 		return nil
@@ -82,7 +126,7 @@ func (a *App) Run(args []string) error {
 		return a.CmdInspect(args[2])
 	case "ui":
 		port := 8000
-		srv := server.NewServer(port, a.ActiveProvider)
+		srv := server.NewServer(port, a.candidates()...)
 		return srv.Start()
 	default:
 		return fmt.Errorf("unknown command: %s", command)
@@ -91,8 +135,7 @@ func (a *App) Run(args []string) error {
 
 // CmdList lists all discovered sessions.
 func (a *App) CmdList() error {
-	col := collector.NewCollector(a.ActiveProvider)
-	sessions, err := col.DiscoverSessions()
+	sessions, err := collector.DiscoverAllSessions(a.candidates())
 	if err != nil {
 		return fmt.Errorf("failed to discover sessions: %w", err)
 	}
@@ -101,106 +144,108 @@ func (a *App) CmdList() error {
 	return nil
 }
 
-func (a *App) resolveSessionOrFile(target string) (*collector.SessionInfo, error) {
+// providerByID returns the candidate provider with the given ID.
+func (a *App) providerByID(id string) *providers.LoadedProvider {
+	for _, p := range a.candidates() {
+		if p.Definition.Provider.ID == id {
+			return p
+		}
+	}
+	return nil
+}
+
+// resolveSessionOrFile maps a session ID (prefix) or trace file path to a session and its provider.
+func (a *App) resolveSessionOrFile(target string) (*collector.SessionInfo, *providers.LoadedProvider, error) {
 	if fi, err := os.Stat(target); err == nil && !fi.IsDir() {
+		provider := a.Selected
+		if provider == nil {
+			provider = collector.DetectProvider(target, a.Builtins)
+		}
+		if provider == nil {
+			return nil, nil, fmt.Errorf("could not detect the trace format of %q; pass --provider <id|path.yaml>", target)
+		}
 		return &collector.SessionInfo{
 			SessionID:  filepath.Base(target),
 			FilePath:   target,
-			ProviderID: a.ActiveProvider.Definition.Provider.ID,
+			ProviderID: provider.Definition.Provider.ID,
 			ModTime:    fi.ModTime(),
 			SizeBytes:  fi.Size(),
-		}, nil
+		}, provider, nil
 	}
 
-	col := collector.NewCollector(a.ActiveProvider)
-	sessions, err := col.DiscoverSessions()
+	sessions, err := collector.DiscoverAllSessions(a.candidates())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if target == "" {
 		if len(sessions) == 0 {
-			return nil, fmt.Errorf("no agent sessions found. Run `agentlens list` to view available sessions")
+			return nil, nil, fmt.Errorf("no agent sessions found. Run `agentlens list` to view available sessions")
 		}
-		return &sessions[0], nil
+		return &sessions[0], a.providerByID(sessions[0].ProviderID), nil
 	}
 
 	for _, s := range sessions {
 		if s.SessionID == target || strings.HasPrefix(s.SessionID, target) {
-			return &s, nil
+			return &s, a.providerByID(s.ProviderID), nil
 		}
 	}
 
-	return nil, fmt.Errorf("session or file %q not found. Run `agentlens list` to view available sessions", target)
+	return nil, nil, fmt.Errorf("session or file %q not found. Run `agentlens list` to view available sessions", target)
+}
+
+// analyzeSession ingests a session and returns its call graph with anomalies attached.
+func analyzeSession(session *collector.SessionInfo, provider *providers.LoadedProvider) (*graph.Graph, error) {
+	data, err := collector.NewCollector(provider).IngestSessionFile(session.FilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ingest session trace: %w", err)
+	}
+
+	g := graph.NewGraphBuilder().BuildWithTurns(session.SessionID, provider.Definition.Provider.ID, data.Turns, data.Nodes)
+	detector.NewDetector(provider).Analyze(g)
+	return g, nil
 }
 
 // CmdGraph visualizes the caller -> callee call graph for a session.
 func (a *App) CmdGraph(targetID string) error {
-	matchedSession, err := a.resolveSessionOrFile(targetID)
+	session, provider, err := a.resolveSessionOrFile(targetID)
 	if err != nil {
 		return err
 	}
-
-	col := collector.NewCollector(a.ActiveProvider)
-	data, err := col.IngestSessionFile(matchedSession.FilePath)
+	g, err := analyzeSession(session, provider)
 	if err != nil {
-		return fmt.Errorf("failed to ingest session trace: %w", err)
+		return err
 	}
-
-	builder := graph.NewGraphBuilder()
-	g := builder.BuildWithTurns(matchedSession.SessionID, a.ActiveProvider.Definition.Provider.ID, data.Turns, data.Nodes)
-
-	// Run anomaly detection
-	det := detector.NewDetector(a.ActiveProvider)
-	det.Analyze(g)
-
 	RenderCallGraph(os.Stdout, g)
 	return nil
 }
 
 // CmdTrace visualizes the chronological turn-by-turn execution trace.
 func (a *App) CmdTrace(targetID string) error {
-	matchedSession, err := a.resolveSessionOrFile(targetID)
+	session, provider, err := a.resolveSessionOrFile(targetID)
 	if err != nil {
 		return err
 	}
-
-	col := collector.NewCollector(a.ActiveProvider)
-	data, err := col.IngestSessionFile(matchedSession.FilePath)
+	g, err := analyzeSession(session, provider)
 	if err != nil {
-		return fmt.Errorf("failed to ingest session trace: %w", err)
+		return err
 	}
-
-	builder := graph.NewGraphBuilder()
-	g := builder.BuildWithTurns(matchedSession.SessionID, a.ActiveProvider.Definition.Provider.ID, data.Turns, data.Nodes)
-
-	// Run anomaly detection
-	det := detector.NewDetector(a.ActiveProvider)
-	det.Analyze(g)
-
 	RenderExecutionTrace(os.Stdout, g)
 	return nil
 }
 
 // CmdInspect displays detailed diagnostic information for a specific node ID.
 func (a *App) CmdInspect(callID string) error {
-	col := collector.NewCollector(a.ActiveProvider)
-	sessions, err := col.DiscoverSessions()
+	sessions, err := collector.DiscoverAllSessions(a.candidates())
 	if err != nil {
 		return err
 	}
 
-	for _, s := range sessions {
-		data, err := col.IngestSessionFile(s.FilePath)
+	for i := range sessions {
+		g, err := analyzeSession(&sessions[i], a.providerByID(sessions[i].ProviderID))
 		if err != nil {
 			continue
 		}
-
-		builder := graph.NewGraphBuilder()
-		g := builder.BuildWithTurns(s.SessionID, a.ActiveProvider.Definition.Provider.ID, data.Turns, data.Nodes)
-
-		det := detector.NewDetector(a.ActiveProvider)
-		det.Analyze(g)
 
 		for _, node := range g.Nodes {
 			if node.ID == callID || strings.HasPrefix(node.ID, callID) {
@@ -215,12 +260,12 @@ func (a *App) CmdInspect(callID string) error {
 
 // CmdWatch tails an active session's trace file in real time.
 func (a *App) CmdWatch(targetID string) error {
-	matchedSession, err := a.resolveSessionOrFile(targetID)
+	matchedSession, provider, err := a.resolveSessionOrFile(targetID)
 	if err != nil {
 		return err
 	}
 
-	w := watcher.NewWatcher(a.ActiveProvider, matchedSession.FilePath)
+	w := watcher.NewWatcher(provider, matchedSession.FilePath)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -231,10 +276,10 @@ func (a *App) PrintHelp() {
 	fmt.Print(`AgentLens 🔍 — Generative AI Call Graph Visualizer (v0.1.0)
 
 Usage:
-  agentlens <command> [arguments]
+  agentlens [--provider <id|path.yaml>] <command> [arguments]
 
 Available Commands:
-  list                 List recorded AI interaction sessions (Antigravity/Gemini default)
+  list                 List recorded AI interaction sessions from all supported agents
   graph <session-id>   Render Caller ➔ Callee call graph tracing where Skills/MCPs were called
   trace <session-id>   Render turn-by-turn chronological execution trace tree
   watch [session-id]   Live stream tool calls, results & anomaly alerts from active session
@@ -242,6 +287,11 @@ Available Commands:
   ui                   Launch local Web UI dashboard
   version              Print version of agentlens
   help                 Print this help message
+
+Global Flags:
+  -p, --provider       Trace format: a built-in ID (antigravity, claude-code, cursor,
+                       generic-jsonl), a provider YAML file, or "auto" (default).
+                       Also settable via the AGENTLENS_PROVIDER environment variable.
 
 Online Web Viewer:
   https://tsbkw.github.io/agentlens

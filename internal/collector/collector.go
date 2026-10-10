@@ -263,3 +263,19 @@ func expandHomeDir(path string) string {
 	}
 	return path
 }
+
+// DiscoverAllSessions discovers sessions for every provider, most recently modified first.
+func DiscoverAllSessions(candidates []*providers.LoadedProvider) ([]SessionInfo, error) {
+	var all []SessionInfo
+	for _, p := range candidates {
+		sessions, err := NewCollector(p).DiscoverSessions()
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, sessions...)
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		return all[i].ModTime.After(all[j].ModTime)
+	})
+	return all, nil
+}
