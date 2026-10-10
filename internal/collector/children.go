@@ -11,21 +11,16 @@ import (
 	"github.com/tsbkw/agentlens/internal/providers"
 )
 
-// childTrace is a subagent trace file linked to the call that spawned it.
-type childTrace struct {
-	path         string
-	parentCallID string
+// ChildTrace is a subagent trace file linked to the call that spawned it.
+type ChildTrace struct {
+	Path         string
+	ParentCallID string
 }
 
 // attachChildTraces ingests the subagent trace files of filePath and appends their calls to
 // data, nested under the spawning call (ParentID) and scope, recursively for nested subagents.
 func (c *Collector) attachChildTraces(filePath string, data *SessionData) error {
-	cfg := c.Provider.Definition.Source.ChildTraces
-	if cfg == nil || cfg.PathGlob == "" {
-		return nil
-	}
-
-	children, err := findChildTraces(cfg, filePath)
+	children, err := FindChildTraces(c.Provider, filePath)
 	if err != nil || len(children) == 0 {
 		return err
 	}
@@ -42,14 +37,14 @@ func (c *Collector) attachChildTraces(filePath string, data *SessionData) error 
 	// Resolve children whose spawning call is known; repeat to reach nested subagents
 	pending := children
 	for len(pending) > 0 {
-		var next []childTrace
+		var next []ChildTrace
 		for _, child := range pending {
-			parent, ok := byID[child.parentCallID]
+			parent, ok := byID[child.ParentCallID]
 			if !ok {
 				next = append(next, child)
 				continue
 			}
-			nodes, err := c.ingestChild(child.path, parent)
+			nodes, err := c.ingestChild(child.Path, parent)
 			if err != nil {
 				return err
 			}
@@ -77,18 +72,31 @@ func (c *Collector) ingestChild(path string, parent models.CallNode) ([]models.C
 	}
 	defer file.Close()
 
-	scope := parent.ScopeName
-	if scope == "" {
-		scope = "Subagent: " + parent.Name
-	}
-
-	asm := NewAssembler(c.Provider, path)
-	asm.SetDefaultScope(scope)
+	asm := NewChildAssembler(c.Provider, path, parent)
 	if err := feedJSONL(asm, file); err != nil {
 		return nil, err
 	}
 
 	nodes := asm.Finish().Nodes
+	AttributeToParent(nodes, parent)
+	return nodes, nil
+}
+
+// NewChildAssembler creates an Assembler for a subagent trace whose own calls are attributed
+// to the scope of the spawning call.
+func NewChildAssembler(provider *providers.LoadedProvider, path string, parent models.CallNode) *Assembler {
+	scope := parent.ScopeName
+	if scope == "" {
+		scope = "Subagent: " + parent.Name
+	}
+	asm := NewAssembler(provider, path)
+	asm.SetDefaultScope(scope)
+	return asm
+}
+
+// AttributeToParent places the calls of a subagent trace in the session and turn of the
+// spawning call, nesting the subagent's top-level calls under it.
+func AttributeToParent(nodes []models.CallNode, parent models.CallNode) {
 	for i := range nodes {
 		nodes[i].SessionID = parent.SessionID
 		nodes[i].TurnIndex = parent.TurnIndex
@@ -96,10 +104,16 @@ func (c *Collector) ingestChild(path string, parent models.CallNode) ([]models.C
 			nodes[i].ParentID = parent.ID
 		}
 	}
-	return nodes, nil
 }
 
-func findChildTraces(cfg *models.ChildTraceConfig, filePath string) ([]childTrace, error) {
+// FindChildTraces lists the subagent trace files of the trace at filePath, as configured by
+// the provider's source.child_traces. It returns nothing when the provider has no such rule.
+func FindChildTraces(provider *providers.LoadedProvider, filePath string) ([]ChildTrace, error) {
+	cfg := provider.Definition.Source.ChildTraces
+	if cfg == nil || cfg.PathGlob == "" {
+		return nil, nil
+	}
+
 	dir := filepath.Dir(filePath)
 	stem := strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
 	pattern := strings.NewReplacer("{dir}", dir, "{stem}", stem).Replace(cfg.PathGlob)
@@ -109,7 +123,7 @@ func findChildTraces(cfg *models.ChildTraceConfig, filePath string) ([]childTrac
 		return nil, fmt.Errorf("invalid child_traces.path_glob %q: %w", cfg.PathGlob, err)
 	}
 
-	var children []childTrace
+	var children []ChildTrace
 	for _, path := range matches {
 		sidecar := strings.TrimSuffix(path, filepath.Ext(path)) + cfg.SidecarSuffix
 		raw, err := os.ReadFile(sidecar)
@@ -121,7 +135,7 @@ func findChildTraces(cfg *models.ChildTraceConfig, filePath string) ([]childTrac
 			continue
 		}
 		if id, ok := providers.ResolveField(meta, cfg.ParentCallIDField).(string); ok && id != "" {
-			children = append(children, childTrace{path: path, parentCallID: id})
+			children = append(children, ChildTrace{Path: path, ParentCallID: id})
 		}
 	}
 	return children, nil

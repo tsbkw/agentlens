@@ -113,7 +113,7 @@ agentlens trace ~/.claude/projects/-Users-me-repo/5b0c8f2e-....jsonl
 agentlens --provider claude-code watch      # follow the most recent Claude Code session
 ```
 
-- `Skill` calls open a **Skill** scope; `Agent` / `Task` calls are shown as **Subagents**. Each subagent's own transcript (`<session-id>/subagents/agent-*.jsonl`) is stitched under the call that spawned it.
+- `Skill` calls open a **Skill** scope; `Agent` / `Task` calls are shown as **Subagents**. Each subagent's own transcript (`<session-id>/subagents/agent-*.jsonl`) is stitched under the call that spawned it. `agentlens watch` follows these files too, as soon as a subagent starts, and prints their calls indented with `↳`.
 - `mcp__<server>__<tool>` calls are classified as **MCP** tools of `<server>`.
 - `tool_result` blocks are matched to their `tool_use` by ID, so outputs, `is_error` failures and durations are recorded. A failed MCP call followed by `Bash` / `WebFetch` is flagged as a **silent fallback**.
 - Try it on the bundled sample: `agentlens graph examples/traces/sample_claude_code_session.jsonl`.
