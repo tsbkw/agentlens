@@ -202,3 +202,25 @@ func TestSameToolAfterFailureIsRetry(t *testing.T) {
 		}
 	}
 }
+
+func TestFallbackTransitionsArePerActor(t *testing.T) {
+	now := time.Now()
+	// A subagent call interleaves between the main agent's failed MCP call and its Bash fallback
+	nodes := []models.CallNode{
+		{ID: "agent", Name: "Agent", Timestamp: now, Status: models.StatusSuccess},
+		{ID: "mcp", Name: "mcp__github__create_issue", Timestamp: now.Add(1 * time.Second), Status: models.StatusFailed},
+		{ID: "sub", Name: "Read", ParentID: "agent", Timestamp: now.Add(2 * time.Second), Status: models.StatusSuccess},
+		{ID: "bash", Name: "Bash", Timestamp: now.Add(3 * time.Second), Status: models.StatusSuccess},
+	}
+	g := NewGraphBuilder().Build("s", "test", nodes)
+
+	var fallbacks []models.CallEdge
+	for _, e := range g.Edges {
+		if e.Type == models.EdgeTypeFallbackTo {
+			fallbacks = append(fallbacks, e)
+		}
+	}
+	if len(fallbacks) != 1 || fallbacks[0].SourceID != "mcp" || fallbacks[0].TargetID != "bash" {
+		t.Errorf("Expected a single mcp -> bash fallback edge, got %+v", fallbacks)
+	}
+}

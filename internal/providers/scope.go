@@ -20,22 +20,25 @@ type CompiledScopeRule struct {
 // ScopeTracker attributes each tool call to its caller scope (Agent, Skill or Subagent)
 // by applying the provider's declarative scope rules in call order.
 type ScopeTracker struct {
-	rules  []CompiledScopeRule
-	Active string
+	rules []CompiledScopeRule
+	// Default is the scope of calls made directly by the traced agent (DefaultScope unless
+	// the trace belongs to a subagent).
+	Default string
+	Active  string
 }
 
 // NewScopeTracker creates a ScopeTracker starting in the default Agent scope.
 func NewScopeTracker(provider *LoadedProvider) *ScopeTracker {
-	t := &ScopeTracker{Active: DefaultScope}
+	t := &ScopeTracker{Default: DefaultScope, Active: DefaultScope}
 	if provider != nil {
 		t.rules = provider.ScopeRules
 	}
 	return t
 }
 
-// Reset returns to the default Agent scope, e.g. at the start of a new user turn.
+// Reset returns to the default scope, e.g. at the start of a new user turn.
 func (t *ScopeTracker) Reset() {
-	t.Active = DefaultScope
+	t.Active = t.Default
 }
 
 // Apply sets the node's CallerScope and, when a scope rule matches, its Type and ScopeName.
@@ -59,8 +62,8 @@ func (t *ScopeTracker) Apply(node *models.CallNode) {
 			node.Type = models.NodeTypeSubagent
 			// A subagent that takes over the flow is spawned by the enclosing agent, not by a skill
 			if enter && strings.HasPrefix(t.Active, "Skill:") {
-				t.Active = DefaultScope
-				caller = DefaultScope
+				t.Active = t.Default
+				caller = t.Default
 			}
 			if name != "" {
 				node.ScopeName = "Subagent: " + name

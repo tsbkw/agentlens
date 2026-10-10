@@ -34,11 +34,22 @@ func (ld *LoopDetector) Check(g *graph.Graph) []models.AnomalyRecord {
 		return records
 	}
 
-	consecutiveFailures := 0
-	var lastFailedTool string
-	var failingNodeIDs []string
+	// Track streaks per actor: calls sharing a ParentID (e.g. one subagent) form one sequence
+	type streak struct {
+		consecutiveFailures int
+		lastFailedTool      string
+		failingNodeIDs      []string
+	}
+	streaks := make(map[string]*streak)
 
 	for _, node := range sortedNodes {
+		st := streaks[node.ParentID]
+		if st == nil {
+			st = &streak{}
+			streaks[node.ParentID] = st
+		}
+		consecutiveFailures, lastFailedTool, failingNodeIDs := st.consecutiveFailures, st.lastFailedTool, st.failingNodeIDs
+
 		if node.Status == models.StatusFailed || node.Status == models.StatusTimeout {
 			if node.Name == lastFailedTool || lastFailedTool == "" {
 				consecutiveFailures++
@@ -71,6 +82,8 @@ func (ld *LoopDetector) Check(g *graph.Graph) []models.AnomalyRecord {
 			lastFailedTool = ""
 			failingNodeIDs = nil
 		}
+
+		st.consecutiveFailures, st.lastFailedTool, st.failingNodeIDs = consecutiveFailures, lastFailedTool, failingNodeIDs
 	}
 
 	return records

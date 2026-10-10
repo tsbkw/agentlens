@@ -131,7 +131,9 @@ func (b *GraphBuilder) BuildWithTurns(
 
 			scopeNodeMap := make(map[string]string)
 			turnCalls := nodesByTurn[turn.Index]
-			var lastFailedNode *models.CallNode
+			// Fallback transitions are tracked per actor: calls of a subagent (sharing a
+			// ParentID) can interleave in time with the calls of the agent that spawned it.
+			lastFailedByActor := make(map[string]*models.CallNode)
 
 			for _, callNode := range turnCalls {
 				if callNode.ParentID != "" && b.nodes[callNode.ParentID] != nil {
@@ -175,13 +177,13 @@ func (b *GraphBuilder) BuildWithTurns(
 					b.AddEdge(parentTarget, callNode.ID, models.EdgeTypeCalls)
 				}
 
-				if lastFailedNode != nil {
-					b.AddEdge(lastFailedNode.ID, callNode.ID, transitionAfterFailure(lastFailedNode, callNode))
-					lastFailedNode = nil
+				if lastFailed := lastFailedByActor[callNode.ParentID]; lastFailed != nil {
+					b.AddEdge(lastFailed.ID, callNode.ID, transitionAfterFailure(lastFailed, callNode))
+					delete(lastFailedByActor, callNode.ParentID)
 				}
 
 				if callNode.Status == models.StatusFailed {
-					lastFailedNode = callNode
+					lastFailedByActor[callNode.ParentID] = callNode
 				}
 			}
 		}
@@ -202,15 +204,15 @@ func (b *GraphBuilder) BuildWithTurns(
 			}
 		}
 
-		// 2. Sequential fallback transition linking
-		var prevNode *models.CallNode
+		// 2. Sequential fallback transition linking (per actor, see BuildWithTurns)
+		prevByActor := make(map[string]*models.CallNode)
 		for _, node := range sortedNodes {
-			if prevNode != nil {
+			if prevNode := prevByActor[node.ParentID]; prevNode != nil {
 				if prevNode.Status == models.StatusFailed {
 					b.AddEdge(prevNode.ID, node.ID, transitionAfterFailure(prevNode, node))
 				}
 			}
-			prevNode = node
+			prevByActor[node.ParentID] = node
 		}
 
 		// Roots are nodes without parents

@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -122,12 +123,13 @@ func TestIngestClaudeCodeSample(t *testing.T) {
 	if !strings.HasPrefix(data.Turns[0].Prompt, "Triage the failing deploy") {
 		t.Errorf("Unexpected first prompt %q", data.Turns[0].Prompt)
 	}
-	if len(data.Turns[0].Nodes) != 3 || len(data.Turns[1].Nodes) != 3 {
-		t.Errorf("Expected 3 nodes per turn, got %d and %d", len(data.Turns[0].Nodes), len(data.Turns[1].Nodes))
+	// Turn 1: Skill, Bash, Agent + 2 calls stitched from the subagent transcript
+	if len(data.Turns[0].Nodes) != 5 || len(data.Turns[1].Nodes) != 3 {
+		t.Errorf("Expected 5 and 3 nodes per turn, got %d and %d", len(data.Turns[0].Nodes), len(data.Turns[1].Nodes))
 	}
 
-	if len(data.Nodes) != 6 {
-		t.Fatalf("Expected 6 tool call nodes, got %d", len(data.Nodes))
+	if len(data.Nodes) != 8 {
+		t.Fatalf("Expected 8 tool call nodes, got %d", len(data.Nodes))
 	}
 
 	byID := make(map[string]models.CallNode)
@@ -188,5 +190,57 @@ func TestIngestClaudeCodeSampleScopes(t *testing.T) {
 		if callers[id] != scope {
 			t.Errorf("%s: expected caller scope %q, got %q", id, scope, callers[id])
 		}
+	}
+}
+
+func TestIngestClaudeCodeSubagentTranscripts(t *testing.T) {
+	loaded, err := providers.LoadProviderFromFile(filepath.Join("..", "..", "examples", "providers", "claude_code.yaml"))
+	if err != nil {
+		t.Fatalf("Failed to load Claude Code provider: %v", err)
+	}
+	data, err := NewCollector(loaded).IngestSessionFile(filepath.Join("..", "..", "examples", "traces", "sample_claude_code_session.jsonl"))
+	if err != nil {
+		t.Fatalf("Failed to ingest Claude Code sample: %v", err)
+	}
+
+	byID := make(map[string]models.CallNode)
+	for _, n := range data.Nodes {
+		byID[n.ID] = n
+	}
+
+	for _, id := range []string{"toolu_sub_bash_01", "toolu_sub_read_01"} {
+		n, ok := byID[id]
+		if !ok {
+			t.Fatalf("Expected subagent call %s to be stitched into the session", id)
+		}
+		if n.ParentID != "toolu_agent_01" {
+			t.Errorf("%s: expected ParentID toolu_agent_01, got %q", id, n.ParentID)
+		}
+		if n.CallerScope != "Subagent: Explore" {
+			t.Errorf("%s: expected caller scope 'Subagent: Explore', got %q", id, n.CallerScope)
+		}
+		if n.TurnIndex != byID["toolu_agent_01"].TurnIndex {
+			t.Errorf("%s: expected the spawning call's turn %d, got %d", id, byID["toolu_agent_01"].TurnIndex, n.TurnIndex)
+		}
+		if n.SessionID != data.SessionID {
+			t.Errorf("%s: expected session %q, got %q", id, data.SessionID, n.SessionID)
+		}
+		if n.Output == nil {
+			t.Errorf("%s: expected its tool_result to be correlated within the subagent transcript", id)
+		}
+	}
+
+	// IngestSessionReader has no file system context, so it does not stitch children
+	file, err := os.Open(filepath.Join("..", "..", "examples", "traces", "sample_claude_code_session.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	nodes, err := NewCollector(loaded).IngestReader(file, "sample.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 6 {
+		t.Errorf("Expected 6 main-thread nodes from a plain reader, got %d", len(nodes))
 	}
 }

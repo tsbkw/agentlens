@@ -107,7 +107,14 @@ func (c *Collector) IngestSessionFile(filePath string) (*SessionData, error) {
 	}
 	defer file.Close()
 
-	return c.IngestSessionReader(file, filePath)
+	data, err := c.IngestSessionReader(file, filePath)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.attachChildTraces(filePath, data); err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 // IngestReader parses JSONL events from an io.Reader stream into CallNodes.
@@ -121,11 +128,19 @@ func (c *Collector) IngestReader(reader io.Reader, filePath string) ([]models.Ca
 
 // IngestSessionReader parses JSONL events into full SessionData.
 func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*SessionData, error) {
+	asm := NewAssembler(c.Provider, filePath)
+	if err := feedJSONL(asm, reader); err != nil {
+		return nil, err
+	}
+	return asm.Finish(), nil
+}
+
+// feedJSONL decodes JSONL events from reader into asm, skipping blank and malformed lines.
+func feedJSONL(asm *Assembler, reader io.Reader) error {
 	scanner := bufio.NewScanner(reader)
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, 10*1024*1024)
 
-	asm := NewAssembler(c.Provider, filePath)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -138,15 +153,14 @@ func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*Ses
 		}
 
 		if _, err := asm.Feed(payload); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading trace stream: %w", err)
+		return fmt.Errorf("error reading trace stream: %w", err)
 	}
-
-	return asm.Finish(), nil
+	return nil
 }
 
 // extractTurn reports whether payload starts a new user turn and returns its prompt and timestamp.
