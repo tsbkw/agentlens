@@ -20,11 +20,42 @@ type Graph struct {
 	Children     map[string][]string          `json:"children"`
 	Parents      map[string][]string          `json:"parents"`
 	Dependencies []models.CallerDependency   `json:"dependencies"`
+
+	// order lists node IDs in insertion order, used to break timestamp ties deterministically.
+	order []string
+}
+
+// OrderedNodes returns all nodes sorted chronologically. Nodes sharing a timestamp (e.g. tool
+// calls issued in one model response) keep the order in which they were added to the graph.
+func (g *Graph) OrderedNodes() []*models.CallNode {
+	nodes := make([]*models.CallNode, 0, len(g.Nodes))
+	seen := make(map[string]bool, len(g.Nodes))
+	for _, id := range g.order {
+		if n := g.Nodes[id]; n != nil && !seen[id] {
+			nodes = append(nodes, n)
+			seen[id] = true
+		}
+	}
+	// Graphs not produced by the builder have no recorded order; fall back to ID order.
+	var rest []*models.CallNode
+	for id, n := range g.Nodes {
+		if !seen[id] {
+			rest = append(rest, n)
+		}
+	}
+	sort.Slice(rest, func(i, j int) bool { return rest[i].ID < rest[j].ID })
+	nodes = append(nodes, rest...)
+
+	sort.SliceStable(nodes, func(i, j int) bool {
+		return nodes[i].Timestamp.Before(nodes[j].Timestamp)
+	})
+	return nodes
 }
 
 // GraphBuilder constructs a clean hierarchical Graph from turns and call nodes.
 type GraphBuilder struct {
 	nodes        map[string]*models.CallNode
+	order        []string
 	edges        []models.CallEdge
 	children     map[string][]string
 	parents      map[string][]string
@@ -46,6 +77,9 @@ func NewGraphBuilder() *GraphBuilder {
 
 // AddNode registers a node in the graph.
 func (b *GraphBuilder) AddNode(node models.CallNode) {
+	if _, exists := b.nodes[node.ID]; !exists {
+		b.order = append(b.order, node.ID)
+	}
 	b.nodes[node.ID] = &node
 }
 
@@ -82,29 +116,14 @@ func (b *GraphBuilder) BuildWithTurns(
 		b.AddNode(n)
 	}
 
-	// Group nodes by Turn
-	nodesByTurn := make(map[int][]*models.CallNode)
-	for _, n := range b.nodes {
-		nodesByTurn[n.TurnIndex] = append(nodesByTurn[n.TurnIndex], n)
-	}
-
-	for turnIdx := range nodesByTurn {
-		sort.Slice(nodesByTurn[turnIdx], func(i, j int) bool {
-			return nodesByTurn[turnIdx][i].Timestamp.Before(nodesByTurn[turnIdx][j].Timestamp)
-		})
-	}
+	// Call nodes in chronological order; ties keep their input order
+	sortedNodes := b.sortedNodes()
 
 	// If turns are provided, organize hierarchically by turn and scope
 	if len(turns) > 0 {
 		nodesByTurn := make(map[int][]*models.CallNode)
-		for _, n := range b.nodes {
+		for _, n := range sortedNodes {
 			nodesByTurn[n.TurnIndex] = append(nodesByTurn[n.TurnIndex], n)
-		}
-
-		for turnIdx := range nodesByTurn {
-			sort.Slice(nodesByTurn[turnIdx], func(i, j int) bool {
-				return nodesByTurn[turnIdx][i].Timestamp.Before(nodesByTurn[turnIdx][j].Timestamp)
-			})
 		}
 
 		for _, turn := range turns {
@@ -130,6 +149,8 @@ func (b *GraphBuilder) BuildWithTurns(
 			b.roots = append(b.roots, turnNodeID)
 
 			scopeNodeMap := make(map[string]string)
+			// Skills invoked after a subagent scope opened are nested under the latest one
+			lastSubagentScopeID := ""
 			turnCalls := nodesByTurn[turn.Index]
 			// Fallback transitions are tracked per actor: calls of a subagent (sharing a
 			// ParentID) can interleave in time with the calls of the agent that spawned it.
@@ -161,16 +182,14 @@ func (b *GraphBuilder) BuildWithTurns(
 							}
 							b.AddNode(scopeNode)
 							scopeParentID := turnNodeID
-							if strings.HasPrefix(callerScope, "Skill:") {
-								for prevScope, prevID := range scopeNodeMap {
-									if strings.HasPrefix(prevScope, "Subagent") {
-										scopeParentID = prevID
-										break
-									}
-								}
+							if strings.HasPrefix(callerScope, "Skill:") && lastSubagentScopeID != "" {
+								scopeParentID = lastSubagentScopeID
 							}
 							b.AddEdge(scopeParentID, scopeID, models.EdgeTypeCalls)
 							scopeNodeMap[callerScope] = scopeID
+							if scopeType == models.NodeTypeSubagent {
+								lastSubagentScopeID = scopeID
+							}
 						}
 						parentTarget = scopeID
 					}
@@ -189,14 +208,6 @@ func (b *GraphBuilder) BuildWithTurns(
 		}
 	} else {
 		// When no turns are provided (e.g. synthetic test cases or raw streams)
-		sortedNodes := make([]*models.CallNode, 0, len(rawNodes))
-		for _, n := range rawNodes {
-			sortedNodes = append(sortedNodes, b.nodes[n.ID])
-		}
-		sort.Slice(sortedNodes, func(i, j int) bool {
-			return sortedNodes[i].Timestamp.Before(sortedNodes[j].Timestamp)
-		})
-
 		// 1. Explicit parent-child hierarchy
 		for _, node := range sortedNodes {
 			if node.ParentID != "" && b.nodes[node.ParentID] != nil {
@@ -236,7 +247,20 @@ func (b *GraphBuilder) BuildWithTurns(
 		Children:     b.children,
 		Parents:      b.parents,
 		Dependencies: b.dependencies,
+		order:        b.order,
 	}
+}
+
+// sortedNodes returns the registered nodes chronologically, keeping insertion order for ties.
+func (b *GraphBuilder) sortedNodes() []*models.CallNode {
+	nodes := make([]*models.CallNode, 0, len(b.order))
+	for _, id := range b.order {
+		nodes = append(nodes, b.nodes[id])
+	}
+	sort.SliceStable(nodes, func(i, j int) bool {
+		return nodes[i].Timestamp.Before(nodes[j].Timestamp)
+	})
+	return nodes
 }
 
 func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.CallerDependency {
@@ -246,6 +270,7 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 	}
 
 	depMap := make(map[depKey]*models.CallerDependency)
+	var depOrder []depKey // first-seen order, so map iteration never decides the output order
 	scopeParentMap := make(map[string]string)
 
 	for _, node := range nodes {
@@ -280,6 +305,7 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 				MCPServer:  node.MCPServer,
 			}
 			depMap[key] = dep
+			depOrder = append(depOrder, key)
 		}
 
 		dep.CallCount++
@@ -311,8 +337,12 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 
 	// Group dependencies by Caller
 	callerDeps := make(map[string][]*models.CallerDependency)
-	for key, dep := range depMap {
-		callerDeps[key.Caller] = append(callerDeps[key.Caller], dep)
+	var callerOrder []string
+	for _, key := range depOrder {
+		if _, exists := callerDeps[key.Caller]; !exists {
+			callerOrder = append(callerOrder, key.Caller)
+		}
+		callerDeps[key.Caller] = append(callerDeps[key.Caller], depMap[key])
 	}
 
 	for c := range callerDeps {
@@ -345,7 +375,7 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 	}
 
 	allCallees := make(map[string]bool)
-	for key := range depMap {
+	for _, key := range depOrder {
 		allCallees[key.Callee] = true
 	}
 
@@ -353,7 +383,7 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 	seenRoot := make(map[string]bool)
 
 	// Primary root: Agent (Main Planner) or Agent
-	for c := range callerDeps {
+	for _, c := range callerOrder {
 		if strings.HasPrefix(c, "Agent") {
 			if !seenRoot[c] {
 				rootCallers = append(rootCallers, c)
@@ -363,7 +393,7 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 	}
 
 	// Other callers that are not callees of anyone
-	for c := range callerDeps {
+	for _, c := range callerOrder {
 		if !seenRoot[c] && !allCallees[c] {
 			rootCallers = append(rootCallers, c)
 			seenRoot[c] = true
@@ -371,11 +401,9 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 	}
 
 	sort.Slice(rootCallers, func(i, j int) bool {
-		if strings.HasPrefix(rootCallers[i], "Agent") {
-			return true
-		}
-		if strings.HasPrefix(rootCallers[j], "Agent") {
-			return false
+		iAgent, jAgent := strings.HasPrefix(rootCallers[i], "Agent"), strings.HasPrefix(rootCallers[j], "Agent")
+		if iAgent != jAgent {
+			return iAgent
 		}
 		return rootCallers[i] < rootCallers[j]
 	})
@@ -390,7 +418,8 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 	}
 
 	// If there are orphaned caller scopes that were not attached (e.g. synthetic test nodes)
-	for caller, deps := range callerDeps {
+	for _, caller := range callerOrder {
+		deps := callerDeps[caller]
 		if !visitedScopes[caller] && !seenRoot[caller] {
 			var targetRoot string
 			for _, r := range rootCallers {

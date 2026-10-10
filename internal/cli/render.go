@@ -81,7 +81,7 @@ func RenderCallGraph(w io.Writer, g *graph.Graph) {
 
 	// Anomaly highlights
 	var allAnomalies []models.AnomalyRecord
-	for _, n := range g.Nodes {
+	for _, n := range g.OrderedNodes() {
 		allAnomalies = append(allAnomalies, n.Anomalies...)
 	}
 

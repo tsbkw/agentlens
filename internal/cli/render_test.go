@@ -2,13 +2,16 @@ package cli
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/tsbkw/agentlens/internal/collector"
+	"github.com/tsbkw/agentlens/internal/detector"
 	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/models"
+	"github.com/tsbkw/agentlens/internal/providers"
 )
 
 func TestRenderSessionList(t *testing.T) {
@@ -69,5 +72,48 @@ func TestRenderCallGraphAndInspect(t *testing.T) {
 	}
 	if !strings.Contains(inspectOut, "github") {
 		t.Errorf("Expected server name in inspect output, got: %s", inspectOut)
+	}
+}
+
+func TestRenderCallGraphIsDeterministic(t *testing.T) {
+	provider, err := providers.LoadProviderFromFile(filepath.Join("..", "..", "examples", "providers", "claude_code.yaml"))
+	if err != nil {
+		t.Fatalf("Failed to load provider: %v", err)
+	}
+
+	// Parallel tool calls from one model response share a timestamp; several fail with auth errors.
+	now := time.Now()
+	var nodes []models.CallNode
+	for _, name := range []string{"mcp__slack__post", "mcp__github__issue", "mcp__jira__get", "mcp__notion__fetch"} {
+		nodes = append(nodes, models.CallNode{
+			ID: "id-" + name, SessionID: "s", TurnIndex: 1, Type: models.NodeTypeMCPTool, Name: name,
+			Timestamp: now, Status: models.StatusFailed, ErrorMessage: "401 Unauthorized",
+		})
+	}
+	turns := []models.ExecutionTurn{{Index: 1, Prompt: "go", Timestamp: now}}
+
+	render := func() string {
+		g := graph.NewGraphBuilder().BuildWithTurns("s", "claude_code", turns, nodes)
+		detector.NewDetector(provider).Analyze(g)
+		var buf bytes.Buffer
+		RenderCallGraph(&buf, g)
+		return buf.String()
+	}
+
+	first := render()
+	for i := 0; i < 20; i++ {
+		if out := render(); out != first {
+			t.Fatalf("Output changed between runs:\n--- first\n%s\n--- run %d\n%s", first, i, out)
+		}
+	}
+
+	// Anomalies follow the input order of calls sharing a timestamp
+	last := -1
+	for _, n := range nodes {
+		idx := strings.Index(first, "Authentication Expired or Failed: "+n.Name)
+		if idx < 0 || idx < last {
+			t.Fatalf("Expected auth anomaly for %s after the previous one, got output:\n%s", n.Name, first)
+		}
+		last = idx
 	}
 }

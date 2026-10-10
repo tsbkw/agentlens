@@ -94,3 +94,8 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Reduce anomaly false positives on real sessions: same-tool retries, unconfirmed fallbacks, auth patterns in successful system tool output (PR #17)
 - [x] Stitch Claude Code subagent transcripts (`<session>/subagents/agent-*.jsonl`) into the call graph (PR #18)
 - [x] Claude Code trace support in the browser viewer (GitHub Pages) and docs (PR #19)
+
+### Phase 10: Claude Code Follow-ups
+- [x] Deterministic graph, dependency tree and anomaly ordering across runs (PR #20)
+- [ ] `agentlens watch` follows subagent transcripts as they are written
+- [ ] Subagent stitching in the browser viewer (multi-file / folder input)

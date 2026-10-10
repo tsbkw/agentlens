@@ -23,7 +23,7 @@ func NewAuthChecker(provider *providers.LoadedProvider) *AuthChecker {
 func (c *AuthChecker) Check(g *graph.Graph) []models.AnomalyRecord {
 	var records []models.AnomalyRecord
 
-	for _, node := range g.Nodes {
+	for _, node := range g.OrderedNodes() {
 		var contentToCheck []string
 		if node.ErrorMessage != "" {
 			contentToCheck = append(contentToCheck, node.ErrorMessage)

@@ -2,7 +2,6 @@ package detector
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/models"
@@ -22,13 +21,7 @@ func NewLoopDetector() *LoopDetector {
 func (ld *LoopDetector) Check(g *graph.Graph) []models.AnomalyRecord {
 	var records []models.AnomalyRecord
 
-	sortedNodes := make([]*models.CallNode, 0, len(g.Nodes))
-	for _, n := range g.Nodes {
-		sortedNodes = append(sortedNodes, n)
-	}
-	sort.Slice(sortedNodes, func(i, j int) bool {
-		return sortedNodes[i].Timestamp.Before(sortedNodes[j].Timestamp)
-	})
+	sortedNodes := g.OrderedNodes()
 
 	if len(sortedNodes) < ld.Threshold {
 		return records
