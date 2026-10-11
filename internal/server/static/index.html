@@ -672,6 +672,19 @@
     let currentSubagentTraces = [];
     let currentSourceLabel = '';
 
+    // 850ms, 2.3s, 1m05s (textutil.FormatDuration)
+    function formatDuration(ms) {
+      if (ms < 1000) return `${ms}ms`;
+      if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+      return `${Math.floor(ms / 60000)}m${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}s`;
+    }
+
+    // Keeps the end of a path-like name, which is the part that tells names apart
+    function tail(value, max) {
+      const str = String(value == null ? '' : value);
+      return str.length > max ? '…' + str.slice(-max) : str;
+    }
+
     function escapeHtml(value) {
       return String(value == null ? '' : value)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -1237,6 +1250,19 @@
 
     // Mirrors internal/detector: auth expiry, confirmed silent fallbacks and retry loops.
     let confirmedFallbacks = {};
+    // The line around a match, cut to about max characters with the match kept visible
+    // (detector.matchContext)
+    function matchContext(text, index, length, max) {
+      const start = text.lastIndexOf('\n', index - 1) + 1;
+      let end = text.indexOf('\n', index + length);
+      if (end < 0) end = text.length;
+      let line = text.slice(start, end);
+      const cut = index - start - Math.floor(max / 3);
+      if (cut > 0 && line.length > max) line = '…' + line.slice(cut);
+      if (line.length > max) line = line.slice(0, max) + '…';
+      return line.split(/\s+/).filter(Boolean).join(' ');
+    }
+
     function analyzeAnomalies(nodes, turns, provider) {
       currentAnomalies = [];
       confirmedFallbacks = {};
@@ -1251,14 +1277,15 @@
         const parts = [node.errorMessage || ''];
         if (node.output != null && isFailed(node)) parts.push(textContent(node.output));
         const outStr = parts.join(' ').trim();
-        if (outStr && authRegexes.some(re => re.test(outStr))) {
+        const authMatch = authRegexes.map(re => re.exec(outStr)).find(Boolean);
+        if (outStr && authMatch) {
           record(node, {
             id: `auth-${node.id}`,
             type: 'auth_expired',
             severity: 'critical',
             nodeId: node.id,
             title: `Authentication Expired: ${node.name}`,
-            description: `Tool encountered authentication failure. Output matched expired credential patterns.`,
+            description: `Tool reported an authentication failure: "${matchContext(outStr, authMatch.index, authMatch[0].length, 120)}".`,
             recommendation: `Check and renew OAuth tokens or credentials for ${node.mcp_server || node.name}.`
           });
         }
@@ -1691,7 +1718,7 @@
           ${node.parent_link === 'inferred' ? `<span class="badge badge-warning" title="No record names the spawning call; placed by time">inferred</span>` : ''}
           ${node.mcp_server ? `<span style="color:var(--text-muted); font-size:0.75rem;">(${escapeHtml(node.mcp_server)})</span>` : ''}
           ${anomBadges}
-          <span class="node-meta">${new Date(node.timestamp).toLocaleTimeString()}</span>
+          <span class="node-meta">${node.duration_ms > 0 ? formatDuration(node.duration_ms) + ' · ' : ''}${new Date(node.timestamp).toLocaleTimeString()}</span>
         </div>
       `;
     }
@@ -1761,7 +1788,7 @@
         result: 'result (the spawning call\'s result names the subagent)',
         inferred: 'INFERRED (no record names the spawning call; placed in the turn active when the subagent started)'
       }[node.parent_link];
-      document.getElementById('drawerMeta').textContent = `ID: ${node.id} | Turn: ${node.turn_index || 1} | Time: ${node.timestamp}`
+      document.getElementById('drawerMeta').textContent = `ID: ${node.id} | Turn: ${node.turn_index || 1} | Time: ${node.timestamp}${node.duration_ms > 0 ? ` | Duration: ${formatDuration(node.duration_ms)}` : ''}`
         + (node.parent_id ? ` | Parent: ${node.parent_id}` : '') + (linkText ? ` | Parent link: ${linkText}` : '');
       document.getElementById('drawerArgs').textContent = JSON.stringify(node.arguments, null, 2);
       document.getElementById('drawerOutput').textContent = node.output ? String(node.output) : '(no output captured)';
@@ -1888,7 +1915,7 @@
           <tbody>${sessions.map(r => `
             <tr class="session-row" data-session="${escapeHtml(r.key)}" data-project="${escapeHtml(r.project || '')}" title="${escapeHtml(r.key)}">
               <td class="mono">${escapeHtml(String(r.key).slice(0, 8))}</td>
-              <td>${escapeHtml(r.project || '')}</td>
+              <td title="${escapeHtml(r.project || '')}">${escapeHtml(tail(r.project, 36))}</td>
               <td>${isSetTime(r.last_call) ? escapeHtml(formatTime(r.last_call)) : ''}</td>
               ${countCells(r)}
             </tr>`).join('')}</tbody>

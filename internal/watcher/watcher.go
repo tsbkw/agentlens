@@ -10,25 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tsbkw/agentlens/internal/ansi"
 	"github.com/tsbkw/agentlens/internal/collector"
 	"github.com/tsbkw/agentlens/internal/detector"
 	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/models"
 	"github.com/tsbkw/agentlens/internal/providers"
 	"github.com/tsbkw/agentlens/internal/textutil"
-)
-
-// ANSI colors
-const (
-	colorReset   = "\033[0m"
-	colorBold    = "\033[1m"
-	colorDim     = "\033[2m"
-	colorRed     = "\033[31m"
-	colorGreen   = "\033[32m"
-	colorYellow  = "\033[33m"
-	colorBlue    = "\033[34m"
-	colorMagenta = "\033[35m"
-	colorCyan    = "\033[36m"
 )
 
 // Watcher provides live stream monitoring of an active agent trace file. When the provider
@@ -161,8 +149,8 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 		}
 	}
 
-	fmt.Fprintf(out, "%s👀 Live watching trace: %s%s\n", colorBold, w.FilePath, colorReset)
-	fmt.Fprintf(out, "%sStreaming tool calls and anomaly alerts. Press Ctrl+C to exit.%s\n\n", colorDim, colorReset)
+	fmt.Fprintf(out, "%s👀 Live watching trace: %s%s\n", ansi.Bold, w.FilePath, ansi.Reset)
+	fmt.Fprintf(out, "%sStreaming tool calls and anomaly alerts. Press Ctrl+C to exit.%s\n\n", ansi.Dim, ansi.Reset)
 
 	for {
 		select {
@@ -257,7 +245,7 @@ func (s *session) discoverChildren() bool {
 				parent = collector.InferredParent(child, "", s.sources[0].asm.CurrentTurn(), time.Now())
 				link = models.ParentLinkInferred
 				fmt.Fprintf(s.out, "  ↳ %s[%s] spawning call not recorded; attributed to the current turn (inferred)%s\n",
-					colorYellow, parent.ScopeName, colorReset)
+					ansi.Yellow, parent.ScopeName, ansi.Reset)
 			default:
 				continue // the spawning call, or the result naming it, has not been read yet
 			}
@@ -285,7 +273,7 @@ func (s *session) relink(src *tailSource, parent models.CallNode, link models.Pa
 	src.parent = &parent
 	src.link = link
 	fmt.Fprintf(s.out, "  ↳ %s[%s] linked to its spawning call %s (%s); earlier calls moved from %s%s\n",
-		colorCyan, collector.ChildScope(parent), parent.Name, link, placeholder, colorReset)
+		ansi.Cyan, collector.ChildScope(parent), parent.Name, link, placeholder, ansi.Reset)
 }
 
 // knownElsewhere reports whether a call ID already belongs to another followed source.
@@ -337,13 +325,13 @@ func (s *session) handleLine(src *tailSource, line string) {
 		indent = "  ↳ "
 	}
 	if src.link == models.ParentLinkInferred {
-		linkNote = fmt.Sprintf(" %s(inferred parent)%s", colorDim, colorReset)
+		linkNote = fmt.Sprintf(" %s(inferred parent)%s", ansi.Dim, ansi.Reset)
 	}
 
 	// A subagent's own prompt is the spawning call's input, not a user turn
 	if res.TurnStarted && src.parent == nil {
 		timeStr := time.Now().Format("15:04:05")
-		fmt.Fprintf(out, "\n%s[%s] 💬 %sUSER PROMPT:%s %s\n", colorCyan, timeStr, colorBold, colorReset, res.Prompt)
+		fmt.Fprintf(out, "\n%s[%s] 💬 %sUSER PROMPT:%s %s\n", ansi.Cyan, timeStr, ansi.Bold, ansi.Reset, res.Prompt)
 	}
 
 	for _, idx := range res.NewCalls {
@@ -358,9 +346,9 @@ func (s *session) handleLine(src *tailSource, line string) {
 		}
 		timeStr := node.Timestamp.Format("15:04:05")
 		typeBadge := formatTypeBadge(node.Type, node.MCPServer)
-		scopeStr := fmt.Sprintf("%s[%s]%s", colorDim, scope, colorReset)
+		scopeStr := fmt.Sprintf("%s[%s]%s", ansi.Dim, scope, ansi.Reset)
 		fmt.Fprintf(out, "%s[%s] %s %s ➔ %s%s%s%s\n",
-			indent, timeStr, scopeStr, typeBadge, colorBold, node.Name, colorReset, linkNote,
+			indent, timeStr, scopeStr, typeBadge, ansi.Bold, node.Name, ansi.Reset, linkNote,
 		)
 	}
 
@@ -384,21 +372,21 @@ func (s *session) handleLine(src *tailSource, line string) {
 		if node.Status == models.StatusFailed {
 			timeStr := time.Now().Format("15:04:05")
 			fmt.Fprintf(out, "%s  %s[%s] ✗ FAILED: %s (Error: %v)%s\n",
-				indent, colorRed, timeStr, node.Name, failureText(node), colorReset,
+				indent, ansi.Red, timeStr, node.Name, failureText(node), ansi.Reset,
 			)
 		}
 
 		for _, a := range anomalies.Anomalies {
 			if a.NodeID == node.ID || a.RelatedNodeID == node.ID {
-				sevColor := colorYellow
+				sevColor := ansi.Yellow
 				if a.Severity == models.SeverityCritical {
-					sevColor = colorRed
+					sevColor = ansi.Red
 				}
 				fmt.Fprintf(out, "%s  %s🚨 %s: %s%s\n",
-					indent, sevColor, a.Title, a.Description, colorReset,
+					indent, sevColor, a.Title, a.Description, ansi.Reset,
 				)
 				if a.Recommendation != "" {
-					fmt.Fprintf(out, "%s    %s💡 %s%s\n", indent, colorCyan, a.Recommendation, colorReset)
+					fmt.Fprintf(out, "%s    %s💡 %s%s\n", indent, ansi.Cyan, a.Recommendation, ansi.Reset)
 				}
 			}
 		}
@@ -422,12 +410,12 @@ func formatTypeBadge(t models.CallNodeType, mcpServer string) string {
 		if mcpServer != "" {
 			srv = ":" + mcpServer
 		}
-		return fmt.Sprintf("%s[MCP%s]%s", colorCyan, srv, colorReset)
+		return fmt.Sprintf("%s[MCP%s]%s", ansi.Cyan, srv, ansi.Reset)
 	case models.NodeTypeSkill:
-		return fmt.Sprintf("%s[Skill]%s", colorGreen, colorReset)
+		return fmt.Sprintf("%s[Skill]%s", ansi.Green, ansi.Reset)
 	case models.NodeTypeSubagent:
-		return fmt.Sprintf("%s[Subagent]%s", colorMagenta, colorReset)
+		return fmt.Sprintf("%s[Subagent]%s", ansi.Magenta, ansi.Reset)
 	default:
-		return fmt.Sprintf("%s[System]%s", colorDim, colorReset)
+		return fmt.Sprintf("%s[System]%s", ansi.Dim, ansi.Reset)
 	}
 }

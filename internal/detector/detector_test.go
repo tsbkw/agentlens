@@ -351,3 +351,18 @@ func TestDeniedAndAuxiliaryCallsInAttemptSequences(t *testing.T) {
 		t.Errorf("Expected 5 failed and 2 denied calls, got %+v", m)
 	}
 }
+
+func TestMatchContextQuotesTheErrorLine(t *testing.T) {
+	text := "stdout line\nError: HTTP 401: Bad credentials (https://api.example.com/graphql)\nmore"
+	loc := []int{strings.Index(text, "401"), strings.Index(text, "401") + 3}
+	if got := matchContext(text, loc, 120); got != "Error: HTTP 401: Bad credentials (https://api.example.com/graphql)" {
+		t.Errorf("matchContext = %q", got)
+	}
+
+	long := strings.Repeat("x", 300) + " 401 Unauthorized " + strings.Repeat("y", 300)
+	i := strings.Index(long, "401")
+	got := matchContext(long, []int{i, i + 3}, 60)
+	if !strings.Contains(got, "401 Unauthorized") || !strings.HasPrefix(got, "…") || !strings.HasSuffix(got, "…") || len([]rune(got)) > 63 {
+		t.Errorf("matchContext must keep the match in a short window, got %q", got)
+	}
+}
