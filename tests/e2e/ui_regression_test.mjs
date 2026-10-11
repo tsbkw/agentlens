@@ -442,6 +442,32 @@ async function runTestSuite() {
   console.log('  ✓ Refusals are denied, bookkeeping calls are skipped, fallbacks and loops match the Go detector');
 
   // -------------------------------------------------------------
+  // Test 7f: Fallback confidence from the substitutes catalog and shared identifiers
+  // -------------------------------------------------------------
+  console.log('\nTest 7f: Fallback confidence...');
+  await page.click('#resetBtn');
+  const conf = await page.evaluate(() => {
+    const call = (id, name, input, ts) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input }] }, timestamp: ts });
+    const fail = (id, ts) => ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'Error: 502 Bad Gateway', is_error: true }] }, toolUseResult: 'Error', timestamp: ts });
+    const ok = (id, ts) => ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] }, toolUseResult: { stdout: 'ok' }, timestamp: ts });
+    processTraceText([
+      { type: 'user', message: { content: 'go' }, timestamp: '2026-10-07T10:00:00Z' },
+      call('a', 'mcp__github__get_issue', { owner: 'acme', repo: 'widgets', issue_number: 42 }, '2026-10-07T10:00:01Z'), fail('a', '2026-10-07T10:00:02Z'),
+      call('b', 'Bash', { command: 'gh issue view 42 -R acme/widgets' }, '2026-10-07T10:00:03Z'), ok('b', '2026-10-07T10:00:04Z'),
+      call('c', 'mcp__warehouse__describe_table', { dataset: 'sales_eu', table: 'orders_2026' }, '2026-10-07T10:00:05Z'), fail('c', '2026-10-07T10:00:06Z'),
+      call('d', 'Bash', { command: 'dbcli describe sales_eu.orders_2026' }, '2026-10-07T10:00:07Z'), ok('d', '2026-10-07T10:00:08Z'),
+      call('e', 'mcp__warehouse__list_jobs', { project: 'nightly' }, '2026-10-07T10:00:09Z'), fail('e', '2026-10-07T10:00:10Z'),
+      call('f', 'Bash', { command: 'go test ./...' }, '2026-10-07T10:00:11Z'), ok('f', '2026-10-07T10:00:12Z')
+    ].map(l => JSON.stringify(l)).join('\n'));
+    const fb = currentAnomalies.filter(a => a.type === 'silent_fallback').map(a => `${a.relatedNodeId}->${a.nodeId}:${a.confidence}`);
+    const lowRow = [...document.querySelectorAll('.fallback-alert-row')].some(r => r.textContent.includes('Possible Fallback (low confidence)'));
+    return { fb, lowRow };
+  });
+  if (JSON.stringify(conf.fb) !== JSON.stringify(['a->b:high', 'c->d:high', 'e->f:low'])) throw new Error(`Unexpected fallback confidence ${conf.fb}`);
+  if (!conf.lowRow) throw new Error('Expected the low-confidence fallback to be labelled in the dependency view');
+  console.log('  ✓ catalog CLI and shared identifiers give high confidence, an unrelated next call stays low');
+
+  // -------------------------------------------------------------
   // Test 7b: Trace content is rendered as text, not HTML
   // -------------------------------------------------------------
   console.log('\nTest 7b: HTML escaping of trace content...');

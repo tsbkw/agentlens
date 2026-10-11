@@ -54,11 +54,7 @@ func (d *Detector) Analyze(g *graph.Graph) *DetectionResult {
 	}
 
 	// Only fallbacks confirmed above are reported as such in the dependency tree
-	confirmed := make(map[string]string)
-	for _, anom := range fallbackAnomalies {
-		confirmed[anom.RelatedNodeID] = anom.NodeID
-	}
-	g.ApplyConfirmedFallbacks(confirmed)
+	g.ApplyConfirmedFallbacks(fallbackAnomalies)
 
 	return &DetectionResult{
 		SessionID: g.SessionID,

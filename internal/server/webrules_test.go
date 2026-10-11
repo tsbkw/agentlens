@@ -7,13 +7,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tsbkw/agentlens/internal/detector"
 	"github.com/tsbkw/agentlens/internal/models"
 	"github.com/tsbkw/agentlens/internal/providers"
 )
 
 const (
-	rulesOpenTag  = `<script type="application/json" id="provider-rules">`
-	rulesCloseTag = `</script>`
+	rulesOpenTag   = `<script type="application/json" id="provider-rules">`
+	catalogOpenTag = `<script type="application/json" id="substitute-catalog">`
+	rulesCloseTag  = `</script>`
 )
 
 // webProviderRule is the subset of a provider definition the browser viewer needs.
@@ -47,10 +49,19 @@ func TestWebProviderRules(t *testing.T) {
 			ChildTraces:  p.Definition.Source.ChildTraces,
 		})
 	}
+	syncEmbeddedJSON(t, rulesOpenTag, rules)
+	// The provider-independent substitutes catalog (rules/substitutes.yaml)
+	syncEmbeddedJSON(t, catalogOpenTag, detector.DefaultSubstitutes)
+}
+
+// syncEmbeddedJSON checks, or with UPDATE_WEB_RULES=1 rewrites, the JSON payload of the
+// <script> block opened by openTag in every web page.
+func syncEmbeddedJSON(t *testing.T, openTag string, payload interface{}) {
+	t.Helper()
 	// json.Marshal escapes <, > and &, so the payload cannot close the script element
-	want, err := json.Marshal(rules)
+	want, err := json.Marshal(payload)
 	if err != nil {
-		t.Fatalf("Failed to marshal rules: %v", err)
+		t.Fatalf("Failed to marshal payload: %v", err)
 	}
 
 	for _, page := range webPages {
@@ -59,14 +70,14 @@ func TestWebProviderRules(t *testing.T) {
 			t.Fatalf("Failed to read %s: %v", page, err)
 		}
 		html := string(raw)
-		start := strings.Index(html, rulesOpenTag)
+		start := strings.Index(html, openTag)
 		if start < 0 {
-			t.Fatalf("%s: missing %s block", page, rulesOpenTag)
+			t.Fatalf("%s: missing %s block", page, openTag)
 		}
-		start += len(rulesOpenTag)
+		start += len(openTag)
 		end := strings.Index(html[start:], rulesCloseTag)
 		if end < 0 {
-			t.Fatalf("%s: unterminated provider-rules block", page)
+			t.Fatalf("%s: unterminated %s block", page, openTag)
 		}
 		end += start
 
@@ -78,7 +89,7 @@ func TestWebProviderRules(t *testing.T) {
 			continue
 		}
 		if html[start:end] != string(want) {
-			t.Errorf("%s: embedded provider rules are out of date; run `UPDATE_WEB_RULES=1 go test ./internal/server/ -run TestWebProviderRules`", page)
+			t.Errorf("%s: embedded %s data is out of date; run `UPDATE_WEB_RULES=1 go test ./internal/server/ -run TestWebProviderRules`", page, openTag)
 		}
 	}
 }

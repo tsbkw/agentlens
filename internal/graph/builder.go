@@ -487,13 +487,18 @@ func transitionAfterFailure(failed, next *models.CallNode) models.CallEdgeType {
 }
 
 // ApplyConfirmedFallbacks resets the fallback flags of the dependency tree and sets them only
-// for the given (source node ID -> target node ID) transitions, e.g. those confirmed by the
-// anomaly detector.
-func (g *Graph) ApplyConfirmedFallbacks(confirmed map[string]string) {
+// for the given silent-fallback anomalies (RelatedNodeID -> NodeID), e.g. those confirmed by
+// the anomaly detector. When one caller -> callee row has several, a high-confidence one
+// wins, then the first in order.
+func (g *Graph) ApplyConfirmedFallbacks(fallbacks []models.AnomalyRecord) {
 	type depKey struct{ Caller, Callee string }
-	marks := make(map[depKey]string)
-	for srcID, tgtID := range confirmed {
-		src, tgt := g.Nodes[srcID], g.Nodes[tgtID]
+	type mark struct {
+		to         string
+		confidence models.Confidence
+	}
+	marks := make(map[depKey]mark)
+	for _, f := range fallbacks {
+		src, tgt := g.Nodes[f.RelatedNodeID], g.Nodes[f.NodeID]
 		if src == nil || tgt == nil {
 			continue
 		}
@@ -501,15 +506,19 @@ func (g *Graph) ApplyConfirmedFallbacks(confirmed map[string]string) {
 		if caller == "" {
 			caller = "Agent (Main Planner)"
 		}
-		marks[depKey{Caller: caller, Callee: src.Name}] = tgt.Name
+		key := depKey{Caller: caller, Callee: src.Name}
+		if prev, exists := marks[key]; !exists || (prev.confidence != models.ConfidenceHigh && f.Confidence == models.ConfidenceHigh) {
+			marks[key] = mark{to: tgt.Name, confidence: f.Confidence}
+		}
 	}
 
 	var walk func(deps []models.CallerDependency)
 	walk = func(deps []models.CallerDependency) {
 		for i := range deps {
-			fallbackTo, ok := marks[depKey{Caller: deps[i].Caller, Callee: deps[i].Callee}]
+			m, ok := marks[depKey{Caller: deps[i].Caller, Callee: deps[i].Callee}]
 			deps[i].IsFallback = ok
-			deps[i].FallbackTo = fallbackTo
+			deps[i].FallbackTo = m.to
+			deps[i].FallbackConfidence = m.confidence
 			walk(deps[i].Children)
 		}
 	}

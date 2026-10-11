@@ -175,9 +175,12 @@ func renderDependencyTree(w io.Writer, dep models.CallerDependency, prefix strin
 	)
 
 	if dep.IsFallback {
-		fallbackPrefix := childPrefix
-		fmt.Fprintf(w, "%s%s⚠️  SILENT FALLBACK ➔ %s%s%s\n",
-			fallbackPrefix, colorYellow, colorBold, dep.FallbackTo, colorReset,
+		label := "SILENT FALLBACK"
+		if dep.FallbackConfidence == models.ConfidenceLow {
+			label = "POSSIBLE FALLBACK (low confidence)"
+		}
+		fmt.Fprintf(w, "%s%s⚠️  %s ➔ %s%s%s\n",
+			childPrefix, colorYellow, label, colorBold, dep.FallbackTo, colorReset,
 		)
 	}
 

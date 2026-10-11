@@ -113,10 +113,7 @@ extraction:
 anomaly_rules:
   auth_failure_regex:
     - "(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"
-  known_fallbacks:
-    - original_tool: "mcp__*"
-      fallback_tool: "Bash"
-      description: "MCP tool failed or unauthenticated; Claude Code silently fell back to raw Bash execution."
-    - original_tool: "mcp__*"
-      fallback_tool: "WebFetch"
-      description: "MCP tool failed; Claude Code fell back to fetching the resource over plain HTTP."
+  # Failed MCP / Skill calls followed by a shell or HTTP call are detected by the core for
+  # every provider (with rules/substitutes.yaml raising confidence). List only pairs that are
+  # specific to this agent here.
+  known_fallbacks: []

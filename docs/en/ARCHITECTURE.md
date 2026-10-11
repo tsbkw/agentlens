@@ -137,6 +137,13 @@ type CallNode struct {
 
 `Status` is `denied` when the call never ran because the user or a permission policy refused it (`results.denied_regex`); it is not a failure. `Auxiliary` marks agent bookkeeping such as tool discovery, task tracking or planning (`extraction.auxiliary_tools`). Neither denied nor auxiliary calls take part in fallback and retry-loop detection: "MCP failed → tool search → shell" is still a fallback from the MCP call to the shell call.
 
+A silent fallback is reported when a failed MCP or Skill call is followed by a system tool (shell, HTTP fetch, file access) for any provider; `anomaly_rules.known_fallbacks` adds provider-specific pairs. Each one carries a `confidence`:
+
+- `high`: the substitute reaches the same public service — it runs that service's CLI or calls its host, as listed in the provider-independent catalog `rules/substitutes.yaml` (e.g. GitHub → `gh`) — or reuses at least two identifiers of the failed call (repository, table, IDs).
+- `low`: only the order of calls suggests it. It is shown as "Possible Silent Fallback" and is a lead to check, not a finding.
+
+The catalog only lists widely used public services. Organization-specific tools are not added to it; their fallbacks are still rated by shared identifiers.
+
 `ParentLink` is set on calls stitched from a child (subagent) trace and records the evidence for their placement:
 
 | Value | Evidence | Certainty |
