@@ -59,10 +59,11 @@ func RenderCallGraph(w io.Writer, g *graph.Graph) {
 	// Print summary metrics
 	metrics := g.ComputeMetrics()
 	fmt.Fprintln(w, strings.Repeat("─", 65))
-	fmt.Fprintf(w, "%sSummary:%s Nodes: %d | Edges: %d | MCP Calls: %d | Skill Calls: %d | System Calls: %d | Failed: %d | Denied: %d\n",
+	fmt.Fprintf(w, "%sSummary:%s Nodes: %d | Edges: %d | MCP Calls: %d | Skill Calls: %d | System Calls: %d | Failed: %d | Denied: %d | Depth: %d | Tool time: %s\n",
 		ansi.Bold, ansi.Reset,
 		metrics.TotalNodes, metrics.TotalEdges,
 		metrics.MCPToolCalls, metrics.SkillCalls, metrics.SystemCalls, metrics.FailedCalls, metrics.DeniedCalls,
+		metrics.MaxDepth, textutil.FormatDuration(metrics.TotalDuration.Milliseconds()),
 	)
 
 	// Anomaly highlights

@@ -23,12 +23,12 @@ sequenceDiagram
     AI->>FS: Emits trace / transcript events
     Def->>Col: Supplies parsing rules & paths
     FS->>Col: Reads raw JSONL / event stream
-    Col->>GB: Emits NormalizedTraceEvents
+    Col->>GB: Emits CallNodes and ExecutionTurns (from RawTraceEvents)
     GB->>GB: Assembles CallGraph (Nodes & Edges)
     GB->>Det: Evaluates Graph structure & outputs
     Det->>GB: Annotates Graph with Anomaly Badges
     GB->>CLI: Renders terminal tree & inspection
-    GB->>Web: Serves via local embedded API & SPA
+    GB->>Web: Serves the period report and raw trace files; the page re-runs the pipeline in JS
 ```
 
 ---
@@ -39,60 +39,43 @@ sequenceDiagram
 agentlens/
 ├── .github/
 │   ├── workflows/
-│   │   ├── ci.yml                 # Go test, lint, and build verification
-│   │   └── deploy-pages.yml       # Automated build & deploy to GitHub Pages
+│   │   ├── ci.yml                 # go test / go vet / build, then the E2E suite
+│   │   └── deploy-pages.yml       # Publishes web/ to GitHub Pages as is
 │   ├── ISSUE_TEMPLATE/
-│   │   ├── bug_report.md
-│   │   └── feature_request.md
 │   └── pull_request_template.md
-├── cmd/
-│   └── agentlens/
-│       └── main.go                # CLI entrypoint (Cobra / Lipgloss)
-├── docs/
-│   ├── en/
-│   │   ├── ARCHITECTURE.md
-│   │   ├── CONTRIBUTING.md
-│   │   ├── ROADMAP.md
-│   │   └── SPECIFICATION.md
-│   └── ja/
-│       ├── ARCHITECTURE.md
-│       ├── CONTRIBUTING.md
-│       ├── ROADMAP.md
-│       └── SPECIFICATION.md
+├── cmd/agentlens/main.go          # CLI entrypoint (standard library only)
+├── docs/{en,ja}/                  # ARCHITECTURE, CONTRIBUTING, ROADMAP, SPECIFICATION
 ├── examples/
-│   └── providers/
-│       ├── antigravity.yaml
-│       └── generic_jsonl.yaml
+│   ├── providers/                 # Built-in provider definitions, embedded into the binary
+│   │   ├── antigravity.yaml
+│   │   ├── claude_code.yaml
+│   │   ├── cursor.yaml
+│   │   ├── generic_jsonl.yaml
+│   │   └── embed.go
+│   └── traces/                    # Sample sessions used by the docs, tests and the UI
 ├── internal/
-│   ├── collector/                 # Ingestion, file watching (fsnotify), streams
-│   │   ├── collector.go
-│   │   └── tailer.go
-│   ├── detector/                  # Anomaly, fallback, auth check algorithms
-│   │   ├── auth_checker.go
-│   │   ├── fallback_detector.go
-│   │   └── loop_detector.go
-│   ├── graph/                     # Graph building, DAG representation & metrics
-│   │   ├── builder.go
-│   │   └── metrics.go
-│   ├── models/                    # Core data models (Trace, Node, Edge, Anomaly)
-│   │   ├── anomaly.go
-│   │   ├── graph.go
-│   │   ├── provider.go
-│   │   └── trace.go
-│   ├── providers/                 # Provider definition parser & loader
-│   │   ├── loader.go
-│   │   └── parser.go
-│   └── server/                    # Local HTTP API & embedded UI server
-│       └── server.go
-├── schemas/
-│   └── provider_definition.schema.json
-├── web/                           # Web UI SPA (dist embedded into Go + GitHub Pages)
-│   ├── index.html
-│   └── src/
+│   ├── ansi/                      # Terminal colors (off when piped or NO_COLOR is set)
+│   ├── cli/                       # Commands (app.go), terminal rendering, report command
+│   ├── collector/                 # Session discovery, provider detection, assembler, child traces
+│   ├── detector/                  # Auth, fallback and retry-loop checks; substitutes catalog
+│   ├── graph/                     # Graph builder, dependencies, metrics
+│   ├── models/                    # Core data models (nodes, edges, anomalies, provider config)
+│   ├── providers/                 # Provider YAML loading, field expressions, scope tracking
+│   ├── report/                    # Period aggregation shared by `report` and `/api/report`
+│   ├── server/                    # Local HTTP API; static/index.html is the embedded UI
+│   ├── textutil/                  # Truncation and formatting helpers
+│   └── watcher/                   # `agentlens watch`: poll-based live tail
+├── rules/substitutes.yaml         # Public services and the CLIs / hosts that replace them
+├── schemas/provider_definition.schema.json
+├── tests/e2e/                     # Puppeteer regression suite for the web UI
+├── web/index.html                 # The web UI (single file, no build step)
 ├── go.mod
-├── go.sum
 ├── README.md
 └── README.ja.md
+```
+
+---
+
 ```
 
 ---
@@ -120,19 +103,22 @@ type CallNode struct {
     ID           string                 `json:"id"`
     SessionID    string                 `json:"session_id"`
     ParentID     string                 `json:"parent_id,omitempty"`
+    TurnIndex    int                    `json:"turn_index"`
+    CallerScope  string                 `json:"caller_scope,omitempty"` // "Agent", "Skill: <name>", "Subagent: <name>"
+    ScopeName    string                 `json:"scope_name,omitempty"`   // Scope this call opens, e.g. "Skill: <name>"
     Type         CallNodeType           `json:"type"`
     Name         string                 `json:"name"`
     MCPServer    string                 `json:"mcp_server,omitempty"`
     Timestamp    time.Time              `json:"timestamp"`
-    DurationMs   int64                  `json:"duration_ms"`
-    Status       string                 `json:"status"` // "success", "failed", "timeout", "denied"
+    DurationMs   int64                  `json:"duration_ms,omitempty"`
+    Status       CallStatus             `json:"status"` // "success", "failed", "timeout", "denied", "unknown"
     Arguments    map[string]interface{} `json:"arguments,omitempty"`
     Output       interface{}            `json:"output,omitempty"`
     ErrorMessage string                 `json:"error_message,omitempty"`
     Anomalies    []AnomalyRecord        `json:"anomalies,omitempty"`
-    ParentLink   string                 `json:"parent_link,omitempty"` // "sidecar", "result", "inferred"
+    ParentLink   ParentLink             `json:"parent_link,omitempty"` // "sidecar", "result", "inferred"
     Auxiliary    bool                   `json:"auxiliary,omitempty"`
-}
+}}
 ```
 
 `Status` is `denied` when the call never ran because the user or a permission policy refused it (`results.denied_regex`); it is not a failure. `Auxiliary` marks agent bookkeeping such as tool discovery, task tracking or planning (`extraction.auxiliary_tools`). Neither denied nor auxiliary calls take part in fallback and retry-loop detection: "MCP failed → tool search → shell" is still a fallback from the MCP call to the shell call.
@@ -177,9 +163,7 @@ type AnomalyType string
 const (
     AnomalySilentFallback AnomalyType = "silent_fallback"
     AnomalyAuthExpired    AnomalyType = "auth_expired"
-    AnomalyProxyRouting   AnomalyType = "proxy_routing"
     AnomalyRetryLoop      AnomalyType = "retry_loop"
-    AnomalyLatencySpike   AnomalyType = "latency_spike"
 )
 
 type AnomalyRecord struct {
@@ -191,17 +175,19 @@ type AnomalyRecord struct {
     Title          string      `json:"title"`
     Description    string      `json:"description"`
     Recommendation string      `json:"recommendation,omitempty"`
-}
+    Confidence     Confidence  `json:"confidence,omitempty"` // silent fallbacks: "high" or "low"
+    Evidence       string      `json:"evidence,omitempty"`   // what the confidence rests on
+}}
 ```
 
 ---
 
 ## 4. Web UI Dual-Hosting Architecture
 
-AgentLens's Web UI is built as a portable Single Page Application (SPA):
+AgentLens's Web UI is one hand-written page, `web/index.html`, with no build step:
 1. **GitHub Pages Deployment**:
-   - Built statically via `.github/workflows/deploy-pages.yml` and hosted at `https://tsbkw.github.io/agentlens`.
+   - `.github/workflows/deploy-pages.yml` publishes `web/` as is to `https://tsbkw.github.io/agentlens`.
    - 100% private: users can drag and drop trace files directly onto the browser window. Log parsing and graph rendering execute client-side via JavaScript without transmitting data to any server.
 2. **Local Embedded Server**:
-   - The compiled static files in `web/` are embedded inside the Go binary using Go 1.16+ `//go:embed web/dist/*`.
+   - `internal/server/static/index.html` is a copy of `web/index.html`, embedded with `//go:embed static/index.html`. `TestEmbeddedUIMatchesPagesUI` fails when the two differ, so a UI change is copied over before committing.
    - Running `agentlens ui` spins up a local HTTP server on `127.0.0.1:8000`, which also serves the period report and raw session files to the page's local sessions dashboard.

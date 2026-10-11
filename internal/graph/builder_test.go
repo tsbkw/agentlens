@@ -257,3 +257,21 @@ func TestTurnLabelKeepsMultiByteCharactersIntact(t *testing.T) {
 		t.Fatalf("Expected a valid truncated label, got %q", label)
 	}
 }
+
+func TestComputeMetricsDepthAndToolTime(t *testing.T) {
+	now := time.Now()
+	turns := []models.ExecutionTurn{{Index: 1, Prompt: "go", Timestamp: now}}
+	nodes := []models.CallNode{
+		{ID: "skill", TurnIndex: 1, Type: models.NodeTypeSkill, Name: "Skill", ScopeName: "Skill: deploy", Timestamp: now, Status: models.StatusSuccess, DurationMs: 300},
+		{ID: "bash", TurnIndex: 1, Type: models.NodeTypeSystemTool, Name: "Bash", CallerScope: "Skill: deploy", Timestamp: now.Add(time.Second), Status: models.StatusSuccess, DurationMs: 1200},
+	}
+	g := NewGraphBuilder().BuildWithTurns("s", "p", turns, nodes)
+	m := g.ComputeMetrics()
+	// turn -> scope node -> Bash
+	if m.MaxDepth != 2 {
+		t.Errorf("MaxDepth = %d, want 2", m.MaxDepth)
+	}
+	if m.TotalDuration != 1500*time.Millisecond {
+		t.Errorf("TotalDuration = %v, want 1.5s", m.TotalDuration)
+	}
+}
