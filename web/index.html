@@ -8,6 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
+      color-scheme: dark;
       --bg: #0d1117;
       --card-bg: #161b22;
       --card-alt: #1c2128;
@@ -25,6 +26,8 @@
       --system: #58a6ff;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* Elements scrolled into view land below the sticky header, not under it */
+    html { scroll-padding-top: 72px; }
     body {
       background-color: var(--bg);
       color: var(--text);
@@ -35,8 +38,10 @@
     }
     header {
       border-bottom: 1px solid var(--border);
-      padding: 0.75rem 2rem;
+      padding: 0.75rem 1rem;
       display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
       justify-content: space-between;
       align-items: center;
       background-color: var(--card-bg);
@@ -54,8 +59,12 @@
     }
     .nav-links {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: 1rem;
+      gap: 0.5rem 1rem;
+    }
+    @media (min-width: 768px) {
+      header { padding: 0.75rem 2rem; }
     }
     .btn {
       padding: 0.4rem 0.8rem;
@@ -281,11 +290,15 @@
       font-size: 0.8rem;
       color: var(--text-muted);
     }
+    .callee-table-wrap { overflow-x: auto; }
     .callee-table {
       width: 100%;
       border-collapse: collapse;
       font-size: 0.85rem;
     }
+    .callee-type { white-space: nowrap; }
+    .callee-name { word-break: break-all; }
+    .callee-counts { white-space: nowrap; text-align: right; }
     .callee-row {
       border-bottom: 1px solid rgba(48, 54, 61, 0.5);
       transition: background 0.15s;
@@ -301,10 +314,10 @@
       color: var(--warning);
       font-size: 0.8rem;
       padding: 0.35rem 1.25rem 0.5rem 3.5rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
     }
+    .turn-card.collapsed .turn-body { display: none; }
+    .alerts-more { align-self: flex-start; }
+    .drop-error { color: var(--danger); margin-top: 0.75rem; font-size: 0.9rem; }
 
     /* Turn-by-Turn Trace View */
     .trace-container {
@@ -376,8 +389,7 @@
 
     /* Inspector Drawer */
     .drawer {
-      width: 480px;
-      min-width: 380px;
+      width: min(480px, 100vw);
       background-color: var(--card-bg);
       border-left: 1px solid var(--border);
       padding: 1.5rem;
@@ -387,8 +399,8 @@
       overflow-y: auto;
       position: fixed;
       right: 0;
-      top: 56px;
-      height: calc(100vh - 56px);
+      top: 0;
+      height: 100vh;
       z-index: 1000;
       box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
     }
@@ -465,7 +477,10 @@
           <h2>Drop an Antigravity, Claude Code or JSONL trace log here</h2>
           <p>Drop a <code>transcript.jsonl</code> or <code>~/.claude/projects/&lt;project&gt;/&lt;session&gt;.jsonl</code> file, or click to select. The format is detected automatically.</p>
           <p>To include Claude Code subagents, drop the <code>&lt;session&gt;.jsonl</code> file together with its <code>&lt;session&gt;/</code> folder, or select it with the <code>subagents/agent-*.jsonl</code> and <code>.meta.json</code> files.</p>
+          <p><button type="button" class="btn" id="pickFolderBtn">Select a session folder…</button></p>
+          <div class="drop-error" id="dropError" style="display:none"></div>
           <input type="file" id="fileInput" style="display:none" accept=".jsonl,.json,.txt" multiple>
+          <input type="file" id="dirInput" style="display:none" webkitdirectory multiple>
         </div>
       </div>
 
@@ -495,6 +510,10 @@
             <div class="stat-value" style="color:var(--danger)" id="statFailedCalls">0</div>
           </div>
           <div class="stat-card">
+            <div class="stat-label">Denied</div>
+            <div class="stat-value" style="color:var(--warning)" id="statDeniedCalls">0</div>
+          </div>
+          <div class="stat-card">
             <div class="stat-label">Anomalies</div>
             <div class="stat-value" style="color:var(--warning)" id="statAnomalies">0</div>
           </div>
@@ -509,8 +528,8 @@
             <button class="tab-btn active" id="tabDepsBtn">Caller ➔ Callee Graph</button>
             <button class="tab-btn" id="tabTraceBtn">Turn Execution Trace</button>
           </div>
-          <input type="text" id="searchInput" class="search-input" placeholder="Search tool name, MCP server, arguments...">
-          <select id="filterSelect" class="filter-select">
+          <input type="text" id="searchInput" class="search-input" placeholder="Search tool name, MCP server, arguments..." aria-label="Search calls">
+          <select id="filterSelect" class="filter-select" aria-label="Filter calls">
             <option value="all">All Tools</option>
             <option value="mcp">MCP Only</option>
             <option value="skill">Skills Only</option>
@@ -570,6 +589,8 @@
     // Elements
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('fileInput');
+    const dirInput = document.getElementById('dirInput');
+    const dropError = document.getElementById('dropError');
     const dropzoneSection = document.getElementById('dropzoneSection');
     const graphSection = document.getElementById('graphSection');
     const loadSampleBtn = document.getElementById('loadSampleBtn');
@@ -593,10 +614,21 @@
       dropzone.classList.remove('dragover');
       collectDroppedFiles(e.dataTransfer).then(files => { if (files.length > 0) parseFiles(files); });
     });
-    fileInput.addEventListener('change', (e) => {
+    const pickedFiles = (e) => {
       const files = Array.from(e.target.files).map(f => ({ path: normalizePath(f.webkitRelativePath || f.name), file: f }));
       if (files.length > 0) parseFiles(files);
-      fileInput.value = '';
+      e.target.value = '';
+    };
+    fileInput.addEventListener('change', pickedFiles);
+    dirInput.addEventListener('change', pickedFiles);
+    document.getElementById('pickFolderBtn').addEventListener('click', (e) => { e.stopPropagation(); dirInput.click(); });
+    // Keyboard: Escape closes the drawer; Enter or Space activates clickable rows
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && drawer.classList.contains('open')) { drawer.classList.remove('open'); return; }
+      if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.getAttribute && e.target.getAttribute('role') === 'button' && e.target.tagName !== 'BUTTON') {
+        e.preventDefault();
+        e.target.click();
+      }
     });
 
     loadSampleBtn.addEventListener('click', () => loadSampleTrace());
@@ -1229,9 +1261,15 @@
 
     // Detects the provider of the main trace among the loaded files and assembles the session,
     // including subagent traces when the provider declares child_traces.
+    function showDropError(message) {
+      dropError.textContent = message;
+      dropError.style.display = 'block';
+      graphSection.style.display = 'none';
+      dropzoneSection.style.display = 'block';
+    }
+
     // label names where the files came from, such as a local session
     function processTraceFiles(files, label = '') {
-      currentSourceLabel = label;
       files = files.map(f => ({ path: normalizePath(f.path), text: f.text }));
 
       // Files that are another file's child trace (or sidecar) are not session candidates
@@ -1245,18 +1283,36 @@
         }));
       });
       const candidates = files.filter(f => !childPaths.has(f.path));
+      if (candidates.length === 0 && files.length === 0) {
+        showDropError('No trace files found. Drop a .jsonl, .json or .txt trace log.');
+        return;
+      }
       // With several sessions dropped, the largest one is shown
       const main = (candidates.length > 0 ? candidates : files)
         .reduce((a, b) => (b.text.length > a.text.length ? b : a), files[0]);
       const events = main ? parseEvents(main.text) : [];
 
-      // Pick the provider whose rules recognise the most calls and turns (collector.DetectProvider)
+      // Pick the provider whose rules recognise the most calls and turns (collector.DetectProvider);
+      // a file no provider recognises is reported, not shown as an empty graph
       let best = null;
       PROVIDER_RULES.forEach(provider => {
         const result = assembleTrace(events, provider);
         const score = result.nodes.length + result.turns.length;
-        if (!best || score > best.score) best = { provider, result, score };
+        if (score > 0 && (!best || score > best.score)) best = { provider, result, score };
       });
+      if (!best) {
+        showDropError(`No tool calls or prompts recognised in ${main.path.slice(main.path.lastIndexOf('/') + 1)}. Supported formats: ${PROVIDER_RULES.map(p => p.name).join(', ')}.`);
+        return;
+      }
+      dropError.style.display = 'none';
+      const ignored = candidates.length - 1;
+      currentSourceLabel = `${label || main.path.slice(main.path.lastIndexOf('/') + 1)}${ignored > 0 ? ` (${ignored} other session file(s) ignored)` : ''}`;
+
+      // A new session starts with a clean view
+      searchInput.value = '';
+      filterSelect.value = 'all';
+      selectedNodeId = null;
+      drawer.classList.remove('open');
 
       currentProvider = best ? best.provider : null;
       const nodes = best ? best.result.nodes : [];
@@ -1478,6 +1534,9 @@
             call_count: 0,
             success_count: 0,
             fail_count: 0,
+            denied_count: 0,
+            anomaly_count: 0,
+            search_text: '',
             is_fallback: false,
             fallback_to: "",
             example_node: node,
@@ -1489,7 +1548,10 @@
         if (node.parent_link === 'inferred' && !node.parent_id) dep.inferred = true;
         dep.call_count++;
         if (node.status === 'success') dep.success_count++;
-        else if (node.status === 'failed') dep.fail_count++;
+        else if (node.status === 'failed' || node.status === 'timeout') dep.fail_count++;
+        else if (node.status === 'denied') dep.denied_count++;
+        dep.anomaly_count += node.anomalies.length;
+        if (dep.search_text.length < 4000) dep.search_text += ' ' + argStrings(node.arguments).join(' ').toLowerCase();
 
         // Only fallbacks confirmed by analyzeAnomalies are flagged
         const fallback = confirmedFallbacks[key];
@@ -1588,27 +1650,50 @@
       document.getElementById('statMcpCalls').textContent = currentNodes.filter(n => n.type === 'mcp_tool').length;
       document.getElementById('statSkillCalls').textContent = currentNodes.filter(n => n.type === 'skill').length;
       document.getElementById('statSystemCalls').textContent = currentNodes.filter(n => n.type === 'system_tool').length;
-      document.getElementById('statFailedCalls').textContent = currentNodes.filter(n => n.status === 'failed').length;
+      document.getElementById('statFailedCalls').textContent = currentNodes.filter(n => n.status === 'failed' || n.status === 'timeout').length;
+      document.getElementById('statDeniedCalls').textContent = currentNodes.filter(n => n.status === 'denied').length;
       document.getElementById('statAnomalies').textContent = currentAnomalies.length;
 
-      // Render alert banner
+      renderAlerts(false);
+
+      refreshViews();
+    }
+
+    const ALERTS_SHOWN = 5;
+
+    // Alert cards: one per distinct finding (type and title, like the CLI), the first few by
+    // default with a button for the rest
+    function renderAlerts(showAll) {
       const alertsContainer = document.getElementById('alertsContainer');
       alertsContainer.innerHTML = '';
-      currentAnomalies.forEach((a) => {
+      const groups = [];
+      const index = {};
+      currentAnomalies.forEach(a => {
+        const key = `${a.type}\u0000${a.title}`;
+        if (index[key] === undefined) { index[key] = groups.length; groups.push({ first: a, count: 0 }); }
+        groups[index[key]].count++;
+      });
+      groups.slice(0, showAll ? groups.length : ALERTS_SHOWN).forEach(({ first: a, count }) => {
         const alertEl = document.createElement('div');
         alertEl.className = `alert-card ${a.severity === 'critical' ? 'alert-critical' : 'alert-warning'}`;
         alertEl.innerHTML = `
           <div style="font-size:1.5rem">${a.severity === 'critical' ? '🚨' : '⚠️'}</div>
           <div>
-            <div class="alert-title">${escapeHtml(a.title)}</div>
+            <div class="alert-title">${escapeHtml(a.title)}${count > 1 ? ` <span style="color:var(--text-muted); font-weight:normal">×${count}</span>` : ''}</div>
             <div class="alert-desc">${escapeHtml(a.description)}</div>
             <div class="alert-rec">💡 ${escapeHtml(a.recommendation)}</div>
           </div>
         `;
         alertsContainer.appendChild(alertEl);
       });
-
-      refreshViews();
+      if (!showAll && groups.length > ALERTS_SHOWN) {
+        const more = document.createElement('button');
+        more.className = 'btn alerts-more';
+        more.id = 'alertsMoreBtn';
+        more.textContent = `Show all ${groups.length} alerts`;
+        more.addEventListener('click', () => renderAlerts(true));
+        alertsContainer.appendChild(more);
+      }
     }
 
     function refreshViews() {
@@ -1631,9 +1716,10 @@
       else if (d.callee_type === 'skill') calleeTypeBadge = 'badge-skill';
       else if (d.callee_type === 'subagent') calleeTypeBadge = 'badge-subagent';
 
-      const statusText = d.fail_count > 0 
-        ? `${d.call_count} calls (<span style="color:var(--success)">✓ ${d.success_count}</span> | <span style="color:var(--danger)">✗ ${d.fail_count}</span>)`
-        : `${d.call_count} calls (<span style="color:var(--success)">✓ ${d.success_count}</span>)`;
+      const counts = [`<span style="color:var(--success)">✓ ${d.success_count}</span>`];
+      if (d.fail_count > 0) counts.push(`<span style="color:var(--danger)">✗ ${d.fail_count}</span>`);
+      if (d.denied_count > 0) counts.push(`<span style="color:var(--warning)">⊘ ${d.denied_count}</span>`);
+      const statusText = `${d.call_count} calls (${counts.join(' | ')})`;
 
       const hasChildren = d.children && d.children.length > 0;
       const indentGuide = depth > 0 ? `<span style="color:var(--border); margin-right:6px; font-family:monospace;">${'│  '.repeat(depth - 1)}└──</span>` : '';
@@ -1657,17 +1743,17 @@
       }
 
       return `
-        <tr class="callee-row" onclick='openDrawerByDep("${depId}")'>
-          <td class="callee-cell" style="width: 160px; padding-left: ${1.25 + depth * 1.25}rem;">
+        <tr class="callee-row" tabindex="0" role="button" onclick='openDrawerByDep("${depId}")'>
+          <td class="callee-cell callee-type" style="width: 160px; padding-left: ${1.25 + depth * 1.25}rem;">
             ${indentGuide}<span class="badge ${calleeTypeBadge}">${d.callee_type.replace('_', ' ')}</span>
           </td>
-          <td class="callee-cell" style="font-weight:600; color:#fff;">
+          <td class="callee-cell callee-name" style="font-weight:600; color:#fff;">
             ${escapeHtml(d.callee)}
             ${d.inferred ? `<span class="badge badge-warning" title="No record names the spawning call; placed by time">inferred</span>` : ''}
             ${d.mcp_server ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem;">(server: ${escapeHtml(d.mcp_server)})</span>` : ''}
             ${hasChildren ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem; margin-left:0.5rem;">[${d.children.length} nested call(s)]</span>` : ''}
           </td>
-          <td class="callee-cell" style="text-align:right;">
+          <td class="callee-cell callee-counts">
             ${statusText}
           </td>
         </tr>
@@ -1676,25 +1762,46 @@
       `;
     }
 
+    function depMatches(dep, query, filter) {
+      if (query && !dep.callee.toLowerCase().includes(query) && !dep.caller.toLowerCase().includes(query) &&
+          !(dep.mcp_server || '').toLowerCase().includes(query) && !(dep.search_text || '').includes(query)) return false;
+      if (filter === 'mcp' && dep.callee_type !== 'mcp_tool') return false;
+      if (filter === 'skill' && dep.callee_type !== 'skill') return false;
+      if (filter === 'failed' && dep.fail_count === 0) return false;
+      if (filter === 'anomalies' && !(dep.anomaly_count > 0 || dep.is_fallback)) return false;
+      return true;
+    }
+
+    // The dependency with the children that match (or have matching descendants), or null
+    function pruneDep(dep, query, filter) {
+      const children = (dep.children || []).map(c => pruneDep(c, query, filter)).filter(Boolean);
+      if (!depMatches(dep, query, filter) && children.length === 0) return null;
+      return { ...dep, children };
+    }
+
+    function nodeMatches(node, query, filter) {
+      if (query && !node.name.toLowerCase().includes(query) && !(node.mcp_server || '').toLowerCase().includes(query) &&
+          !(node.caller_scope || '').toLowerCase().includes(query) && !argStrings(node.arguments).join(' ').toLowerCase().includes(query)) return false;
+      if (filter === 'mcp' && node.type !== 'mcp_tool') return false;
+      if (filter === 'skill' && node.type !== 'skill') return false;
+      if (filter === 'failed' && node.status !== 'failed' && node.status !== 'timeout') return false;
+      if (filter === 'anomalies' && node.anomalies.length === 0) return false;
+      return true;
+    }
+
     function renderDependenciesView() {
       depsViewContainer.innerHTML = '';
       depRegistry = {};
       const query = searchInput.value.toLowerCase();
       const filter = filterSelect.value;
 
-      // Group dependencies by caller
+      // Group dependencies by caller; a row stays when it or any nested row matches
       const groups = {};
       currentDependencies.forEach((dep) => {
-        if (query && !dep.callee.toLowerCase().includes(query) && !dep.caller.toLowerCase().includes(query)) {
-          return;
-        }
-        if (filter === 'mcp' && dep.callee_type !== 'mcp_tool') return;
-        if (filter === 'skill' && dep.callee_type !== 'skill') return;
-        if (filter === 'failed' && dep.fail_count === 0) return;
-        if (filter === 'anomalies' && !dep.is_fallback && dep.fail_count === 0) return;
-
-        if (!groups[dep.caller]) groups[dep.caller] = [];
-        groups[dep.caller].push(dep);
+        const kept = pruneDep(dep, query, filter);
+        if (!kept) return;
+        if (!groups[kept.caller]) groups[kept.caller] = [];
+        groups[kept.caller].push(kept);
       });
 
       const callers = Object.keys(groups);
@@ -1728,11 +1835,11 @@
             </div>
             <div class="caller-stats">${deps.length} target tool(s) · ${totalCalls} total invocation(s)</div>
           </div>
-          <table class="callee-table">
+          <div class="callee-table-wrap"><table class="callee-table">
             <tbody>
               ${deps.map(d => renderDepRowHTML(d, 0)).join('')}
             </tbody>
-          </table>
+          </table></div>
         `;
         depsViewContainer.appendChild(card);
       });
@@ -1740,31 +1847,39 @@
 
     function renderTraceView() {
       traceViewContainer.innerHTML = '';
+      const query = searchInput.value.toLowerCase();
+      const filter = filterSelect.value;
+      const visible = nodes => nodes.filter(n => nodeMatches(n, query, filter));
       if (currentTurns.length === 0) {
         // Fallback flat list
         const card = document.createElement('div');
         card.className = 'turn-card';
-        card.innerHTML = `<div class="turn-body">${currentNodes.map(n => renderNodeRowHTML(n)).join('')}</div>`;
+        card.innerHTML = `<div class="turn-body">${visible(currentNodes).map(n => renderNodeRowHTML(n)).join('')}</div>`;
         traceViewContainer.appendChild(card);
         return;
       }
 
+      let shown = 0;
       currentTurns.forEach((turn) => {
+        const nodes = visible(turn.nodes);
+        if (nodes.length === 0 && (query || filter !== 'all')) return;
+        shown++;
         const card = document.createElement('div');
         card.className = 'turn-card';
 
         // Group nodes by caller_scope within turn
         const scopes = {};
-        turn.nodes.forEach(n => {
+        nodes.forEach(n => {
           const s = n.caller_scope || "Agent";
           if (!scopes[s]) scopes[s] = [];
           scopes[s].push(n);
         });
 
+        const when = turn.timestamp ? new Date(turn.timestamp).toLocaleString() : '';
         card.innerHTML = `
-          <div class="turn-header">
+          <div class="turn-header" title="Click to collapse or expand">
             <div class="turn-prompt">💬 Turn ${turn.index}: ${escapeHtml(turn.prompt || '(User prompt)')}</div>
-            <div class="turn-meta">${turn.nodes.length} tool call(s) · ${new Date(turn.timestamp).toLocaleTimeString()}</div>
+            <div class="turn-meta">${nodes.length}${nodes.length !== turn.nodes.length ? ` of ${turn.nodes.length}` : ''} tool call(s) · ${escapeHtml(when)}</div>
           </div>
           <div class="turn-body">
             ${Object.keys(scopes).map(scopeName => {
@@ -1782,8 +1897,12 @@
             }).join('')}
           </div>
         `;
+        card.querySelector('.turn-header').addEventListener('click', () => card.classList.toggle('collapsed'));
         traceViewContainer.appendChild(card);
       });
+      if (shown === 0) {
+        traceViewContainer.innerHTML = `<div style="text-align:center; color:var(--text-muted); padding:2rem;">No matching tool calls found.</div>`;
+      }
     }
 
     function renderNodeRowHTML(node) {
@@ -1798,8 +1917,8 @@
       });
 
       return `
-        <div class="node-row ${node.id === selectedNodeId ? 'selected' : ''}" onclick='openDrawerById(${escapeHtml(JSON.stringify(node.id))})'>
-          <span style="color:${node.status === 'failed' ? 'var(--danger)' : node.status === 'denied' ? 'var(--warning)' : 'var(--success)'}" title="${node.status}">${node.status === 'failed' ? '✗' : node.status === 'denied' ? '⊘' : '✓'}</span>
+        <div class="node-row ${node.id === selectedNodeId ? 'selected' : ''}" data-node-id="${escapeHtml(node.id)}" tabindex="0" role="button" onclick='openDrawerById(${escapeHtml(JSON.stringify(node.id))})'>
+          <span style="color:${statusColor(node.status)}" title="${node.status}">${statusMark(node.status)}</span>
           <span class="badge ${typeBadgeClass}">${node.type.replace('_', ' ')}</span>
           <span class="node-title">${escapeHtml(node.parent_link === 'inferred' && !node.parent_id ? node.scope_name : node.name)}</span>
           ${node.parent_link === 'inferred' ? `<span class="badge badge-warning" title="No record names the spawning call; placed by time">inferred</span>` : ''}
@@ -1808,6 +1927,16 @@
           <span class="node-meta">${node.duration_ms > 0 ? formatDuration(node.duration_ms) + ' · ' : ''}${new Date(node.timestamp).toLocaleTimeString()}</span>
         </div>
       `;
+    }
+
+    function statusMark(status) {
+      return { failed: '✗', timeout: '⏱', denied: '⊘' }[status] || '✓';
+    }
+    function statusColor(status) {
+      return status === 'failed' ? 'var(--danger)' : (status === 'timeout' || status === 'denied') ? 'var(--warning)' : 'var(--success)';
+    }
+    function statusBadge(status) {
+      return status === 'failed' ? 'badge-danger' : (status === 'timeout' || status === 'denied') ? 'badge-warning' : 'badge-success';
     }
 
     function openDrawerById(nodeId) {
@@ -1860,14 +1989,14 @@
 
     function openDrawer(node) {
       selectedNodeId = node.id;
-      document.querySelectorAll('.node-row').forEach(r => r.classList.remove('selected'));
+      document.querySelectorAll('.node-row').forEach(r => r.classList.toggle('selected', r.dataset.nodeId === node.id));
       drawer.classList.add('open');
       drawer.scrollTop = 0;
 
       document.getElementById('drawerTitle').textContent = node.name;
       document.getElementById('drawerBadges').innerHTML = `
         <span class="badge ${node.type === 'mcp_tool' ? 'badge-mcp' : 'badge-system'}">${node.type}</span>
-        <span class="badge ${node.status === 'failed' ? 'badge-danger' : node.status === 'denied' ? 'badge-warning' : 'badge-success'}">${node.status}</span>
+        <span class="badge ${statusBadge(node.status)}">${node.status}</span>
         ${node.caller_scope ? `<span class="badge badge-skill">${escapeHtml(node.caller_scope)}</span>` : ''}
       `;
       const linkText = {
@@ -1875,10 +2004,14 @@
         result: 'result (the spawning call\'s result names the subagent)',
         inferred: 'INFERRED (no record names the spawning call; placed in the turn active when the subagent started)'
       }[node.parent_link];
-      document.getElementById('drawerMeta').textContent = `ID: ${node.id} | Turn: ${node.turn_index || 1} | Time: ${node.timestamp}${node.duration_ms > 0 ? ` | Duration: ${formatDuration(node.duration_ms)}` : ''}`
+      const when = node.timestamp ? `${new Date(node.timestamp).toLocaleString()} (${node.timestamp})` : 'unknown';
+      document.getElementById('drawerMeta').textContent = `ID: ${node.id} | Turn: ${node.turn_index} | Time: ${when}${node.duration_ms > 0 ? ` | Duration: ${formatDuration(node.duration_ms)}` : ''}`
         + (node.parent_id ? ` | Parent: ${node.parent_id}` : '') + (linkText ? ` | Parent link: ${linkText}` : '');
       document.getElementById('drawerArgs').textContent = JSON.stringify(node.arguments, null, 2);
-      document.getElementById('drawerOutput').textContent = node.output ? String(node.output) : '(no output captured)';
+      const outputText = node.output == null ? '(no output captured)'
+        : typeof node.output === 'string' ? node.output : JSON.stringify(node.output, null, 2);
+      document.getElementById('drawerOutput').textContent = node.errorMessage && node.errorMessage !== outputText
+        ? `Error: ${node.errorMessage}\n\n${outputText}` : outputText;
 
       const anomSection = document.getElementById('drawerAnomaliesSection');
       const anomList = document.getElementById('drawerAnomaliesList');
@@ -1904,6 +2037,8 @@
     const reportPeriod = document.getElementById('reportPeriod');
     const reportRange = document.getElementById('reportRange');
     const reportStatus = document.getElementById('reportStatus');
+    let reportWindowLabel = '';
+    let reportRequest = 0; // the latest request; earlier responses are dropped
 
     async function fetchJSON(url) {
       const res = await fetch(url);
@@ -1929,11 +2064,16 @@
     }
 
     async function loadLocalReport() {
+      const request = ++reportRequest;
       reportStatus.textContent = 'Analyzing local sessions…';
+      reportForm.querySelector('button[type=submit]').disabled = true;
       try {
-        renderLocalReport(await fetchJSON('api/report?' + reportQuery()));
+        const report = await fetchJSON('api/report?' + reportQuery());
+        if (request === reportRequest) renderLocalReport(report);
       } catch (e) {
-        reportStatus.textContent = `Could not load the report: ${e.message}`;
+        if (request === reportRequest) reportStatus.textContent = `Could not load the report: ${e.message}`;
+      } finally {
+        if (request === reportRequest) reportForm.querySelector('button[type=submit]').disabled = false;
       }
     }
 
@@ -1974,13 +2114,14 @@
       const w = report.window || {};
       const since = isSetTime(w.since) ? formatTime(w.since) : 'the beginning';
       const until = isSetTime(w.until) ? formatTime(w.until) : 'now';
-      reportStatus.textContent = `${since} → ${until} · click a session to open its call graph`;
+      reportWindowLabel = `${since} → ${until} · click a session to open its call graph`;
+      reportStatus.textContent = reportWindowLabel;
 
       const t = report.total || {};
       const stat = (label, value, color) =>
         `<div class="stat-card"><div class="stat-label">${label}</div><div class="stat-value"${color ? ` style="color:var(${color})"` : ''}>${Number(value) || 0}</div></div>`;
       document.getElementById('reportStats').innerHTML =
-        stat('Sessions', report.sessions) + stat('Calls', t.calls) + stat('Failed', t.failed, '--danger') +
+        stat('Sessions', report.sessions) + stat('Calls', t.calls) + stat('Failed', t.failed, '--danger') + stat('Denied', t.denied, '--warning') +
         stat('Auth Expired', t.auth_expired, '--danger') + stat('Silent Fallbacks', t.silent_fallbacks, '--warning') +
         stat('Possible Fallbacks', t.possible_fallbacks) + stat('Retry Loops', t.retry_loops, '--warning');
 
@@ -2000,7 +2141,7 @@
         <div class="report-table-wrap"><table class="report-table">
           <thead><tr><th>Session</th><th>Project</th><th>Last call</th>${COUNT_HEADERS}</tr></thead>
           <tbody>${sessions.map(r => `
-            <tr class="session-row" data-session="${escapeHtml(r.key)}" data-project="${escapeHtml(r.project || '')}" title="${escapeHtml(r.key)}">
+            <tr class="session-row" tabindex="0" role="button" data-session="${escapeHtml(r.key)}" data-project="${escapeHtml(r.project || '')}" title="${escapeHtml(r.key)}">
               <td class="mono">${escapeHtml(String(r.key).slice(0, 8))}</td>
               <td title="${escapeHtml(r.project || '')}">${escapeHtml(tail(r.project, 36))}</td>
               <td>${isSetTime(r.last_call) ? escapeHtml(formatTime(r.last_call)) : ''}</td>
@@ -2009,16 +2150,21 @@
         </table></div>`;
     }
 
+    let openingSession = '';
     async function openLocalSession(id, project) {
-      reportStatus.textContent = 'Loading session…';
+      if (openingSession) return; // one at a time: a second click while loading is ignored
+      openingSession = id;
+      reportStatus.textContent = `Loading session ${id.slice(0, 8)}…`;
       let files;
       try {
         files = await fetchJSON(`api/sessions/${encodeURIComponent(id)}/files`);
       } catch (e) {
         reportStatus.textContent = `Could not load session ${id}: ${e.message}`;
+        openingSession = '';
         return;
       }
-      reportStatus.textContent = '';
+      openingSession = '';
+      reportStatus.textContent = reportWindowLabel;
       processTraceFiles(files, `Session ${id}${project ? ` · ${project}` : ''}`);
     }
 

@@ -181,6 +181,9 @@ func renderDependencyTree(w io.Writer, dep models.CallerDependency, prefix strin
 			ansi.Green, dep.SuccessCount, ansi.Reset,
 		)
 	}
+	if dep.DeniedCount > 0 {
+		statusStr += fmt.Sprintf(" %s⊘ %d denied%s", ansi.Yellow, dep.DeniedCount, ansi.Reset)
+	}
 
 	inferredNote := ""
 	if dep.Inferred {

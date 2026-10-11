@@ -25,7 +25,7 @@ const (
 	StatusTimeout CallStatus = "timeout"
 	// StatusDenied: the call never ran because the user or a permission policy refused it.
 	// It is not a tool failure, so it never starts a fallback or a retry loop.
-	StatusDenied CallStatus = "denied"
+	StatusDenied  CallStatus = "denied"
 	StatusUnknown CallStatus = "unknown"
 )
 
@@ -131,16 +131,17 @@ type ExecutionTurn struct {
 
 // CallerDependency summarizes who calls what across the session.
 type CallerDependency struct {
-	Caller       string       `json:"caller"`       // e.g. "Agent", "Skill: quota-aware-task-runner"
-	CallerType   CallNodeType `json:"caller_type"`  // agent, skill, subagent
-	Callee       string       `json:"callee"`       // e.g. "mcp_github_create_issue", "run_command"
-	CalleeType   CallNodeType `json:"callee_type"`  // mcp_tool, skill, system_tool
+	Caller       string       `json:"caller"`      // e.g. "Agent", "Skill: quota-aware-task-runner"
+	CallerType   CallNodeType `json:"caller_type"` // agent, skill, subagent
+	Callee       string       `json:"callee"`      // e.g. "mcp_github_create_issue", "run_command"
+	CalleeType   CallNodeType `json:"callee_type"` // mcp_tool, skill, system_tool
 	MCPServer    string       `json:"mcp_server,omitempty"`
 	CallCount    int          `json:"call_count"`
 	SuccessCount int          `json:"success_count"`
-	FailCount    int          `json:"fail_count"`
-	IsFallback   bool               `json:"is_fallback"`
-	FallbackTo   string             `json:"fallback_to,omitempty"`
+	FailCount    int          `json:"fail_count"` // failed or timed out
+	DeniedCount  int          `json:"denied_count,omitempty"`
+	IsFallback   bool         `json:"is_fallback"`
+	FallbackTo   string       `json:"fallback_to,omitempty"`
 	// FallbackConfidence qualifies IsFallback ("high" or "low").
 	FallbackConfidence Confidence `json:"fallback_confidence,omitempty"`
 	// Inferred marks a caller -> callee relation that no record states, e.g. a subagent whose

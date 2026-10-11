@@ -325,10 +325,13 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 			dep.Inferred = true
 		}
 		dep.CallCount++
-		if node.Status == models.StatusSuccess {
+		switch node.Status {
+		case models.StatusSuccess:
 			dep.SuccessCount++
-		} else if node.Status == models.StatusFailed {
+		case models.StatusFailed, models.StatusTimeout:
 			dep.FailCount++
+		case models.StatusDenied:
+			dep.DeniedCount++
 		}
 	}
 
@@ -598,7 +601,7 @@ func (g *Graph) ComputeMetrics() GraphMetrics {
 		}
 
 		switch node.Status {
-		case models.StatusFailed:
+		case models.StatusFailed, models.StatusTimeout:
 			m.FailedCalls++
 		case models.StatusDenied:
 			m.DeniedCalls++
