@@ -489,6 +489,80 @@ async function runTestSuite() {
   console.log('  ✓ Prompts and tool names are escaped');
 
   // -------------------------------------------------------------
+  // Test 8: Local sessions dashboard (agentlens ui API, mocked)
+  // -------------------------------------------------------------
+  console.log('\nTest 8: Local sessions dashboard...');
+  const hiddenOnFile = await page.$eval('#localSection', el => getComputedStyle(el).display === 'none');
+  if (!hiddenOnFile) throw new Error('Expected the local sessions section to stay hidden without the API');
+
+  const tracesDir = path.resolve(__dirname, '../../examples/traces');
+  const sessionFiles = [
+    'sample_claude_code_session.jsonl',
+    'sample_claude_code_session/subagents/agent-a1b2c3d4e5f60718.jsonl',
+    'sample_claude_code_session/subagents/agent-a1b2c3d4e5f60718.meta.json'
+  ].map(rel => ({ path: '/' + rel, text: fs.readFileSync(path.join(tracesDir, rel), 'utf8') }));
+  const counts = { calls: 7, failed: 1, denied: 0, auth_expired: 1, silent_fallbacks: 1, possible_fallbacks: 0, retry_loops: 0 };
+  const reportJSON = {
+    window: { since: '2026-10-01T00:00:00+09:00', until: '0001-01-01T00:00:00Z' },
+    sessions: 1,
+    total: counts,
+    mcp_servers: [{ key: 'github', ...counts, calls: 1 }, { key: '<b id=pwned-server>slack</b>', calls: 1 }],
+    tools: [],
+    sessions_detail: [{ key: 'sample_claude_code_session', project: '-home-dev-backend-api', provider: 'claude-code', last_call: '2026-10-07T14:01:09.900Z', ...counts }]
+  };
+  const requests = [];
+  const local = await browser.newPage();
+  local.on('pageerror', err => uncaughtErrors.push(`[PageError] ${err.message}`));
+  await local.setRequestInterception(true);
+  local.on('request', req => {
+    const url = new URL(req.url());
+    if (url.origin !== 'http://localhost:8000') return req.abort();
+    requests.push(url.pathname + url.search);
+    if (url.pathname === '/api/report') {
+      return req.respond({ contentType: 'application/json', body: JSON.stringify({ ...reportJSON, window: { ...reportJSON.window, since: url.searchParams.get('since') === '30d' ? '2026-09-11T00:00:00+09:00' : reportJSON.window.since } }) });
+    }
+    if (url.pathname === '/api/sessions/sample_claude_code_session/files') {
+      return req.respond({ contentType: 'application/json', body: JSON.stringify(sessionFiles) });
+    }
+    return req.respond({ contentType: 'text/html; charset=utf-8', body: fs.readFileSync(htmlPath, 'utf8') });
+  });
+  await local.goto('http://localhost:8000/');
+  await local.waitForSelector('#reportSessions tr.session-row', { timeout: 5000 });
+  const dash = await local.evaluate(() => ({
+    sessions: document.querySelectorAll('#reportSessions tr.session-row').length,
+    servers: document.querySelectorAll('#reportServers tbody tr').length,
+    stats: document.getElementById('reportStats').textContent.replace(/\s+/g, ' '),
+    injected: document.querySelectorAll('#pwned-server').length,
+    status: document.getElementById('reportStatus').textContent
+  }));
+  if (dash.sessions !== 1 || dash.servers !== 2 || !dash.stats.includes('Auth Expired1') || dash.injected > 0 || !dash.status.includes('→ now')) {
+    throw new Error(`Unexpected dashboard ${JSON.stringify(dash)}`);
+  }
+  if (!requests.includes('/api/report?since=7d')) throw new Error(`Expected the last 7 days by default, got ${requests}`);
+
+  await local.select('#reportPeriod', '30d');
+  await local.type('#reportProject', 'backend');
+  await local.click('#reportForm button[type=submit]');
+  await local.waitForFunction(() => document.getElementById('reportStatus').textContent.includes('click a session'));
+  if (!requests.includes('/api/report?since=30d&project=backend')) throw new Error(`Expected the filtered report request, got ${requests}`);
+
+  await local.click('#reportSessions tr.session-row');
+  await local.waitForFunction(() => document.getElementById('sourceInfo').textContent !== '');
+  const opened = await local.evaluate(() => ({
+    source: document.getElementById('sourceInfo').textContent,
+    calls: document.getElementById('statTotalNodes').textContent
+  }));
+  if (!opened.source.startsWith('Session sample_claude_code_session · -home-dev-backend-api · Format: Claude Code') ||
+      !opened.source.includes('1 subagent transcript') || opened.calls !== '8') {
+    throw new Error(`Unexpected session view ${JSON.stringify(opened)}`);
+  }
+  await local.click('#resetBtn');
+  const back = await local.$eval('#localSection', el => getComputedStyle(el).display);
+  if (back !== 'flex') throw new Error('Expected the dashboard after going back');
+  await local.close();
+  console.log('  ✓ Report renders escaped, filters reach the API, a session opens with its subagent');
+
+  // -------------------------------------------------------------
   // Test 7: Console & Runtime Errors
   // -------------------------------------------------------------
   console.log('\nTest 7: Uncaught Errors Check...');

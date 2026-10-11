@@ -123,7 +123,7 @@ Detects execution anomalies and alerts the developer:
 - **`agentlens report`**: Aggregates calls and anomalies of all sessions over a period (`--since`, `--until`, `--project`, `--json`), ranked by MCP server, tool and session.
 
 #### 3.5.2 Web UI Dashboard (Embedded & GitHub Pages)
-- **Local Embedded Server**: Running `agentlens ui` serves the embedded pre-compiled SPA and opens the browser. The server listens on `127.0.0.1` only and rejects requests whose `Host` header is not `localhost` or a loopback IP, because its API returns full session transcripts.
+- **Local Embedded Server**: Running `agentlens ui` serves the embedded pre-compiled SPA at `http://localhost:8000`. On top of drag and drop, the page shows a local sessions dashboard. It filters by period and project, reports the same counts as `agentlens report` (`GET /api/report`) and opens a session's call graph from its raw trace files (`GET /api/sessions/<id>/files`). Those files are analyzed in the browser just like dropped ones. The server listens on `127.0.0.1` only and rejects requests whose `Host` header is not `localhost` or a loopback IP, because its API returns full session transcripts.
 - **Free GitHub Pages Hosting**: Statically hosted at `https://tsbkw.github.io/agentlens` with client-side drag-and-drop log visualization.
 - **Interactive Call Graph Viewer**: Node-edge canvas (zoom, pan, hierarchical layout).
 - **Timeline / Waterfall View**: Gantt-style chart showing tool durations and concurrency.

@@ -75,7 +75,8 @@ AgentLens provides two ways to experience the Web UI:
    - **Claude Code subagents**: drop the `<session-id>.jsonl` file together with its `<session-id>/` folder (or pick it with the `subagents/agent-*.jsonl` and `.meta.json` files) to stitch subagent transcripts into the graph.
 2. **Local Embedded Server (`agentlens ui`)**:
    - The Go binary bundles the compiled Web UI using Go's `embed` mechanism.
-   - Simply run `agentlens ui` to launch a local server and auto-open your default browser without needing internet access or Node.js.
+   - Run `agentlens ui` and open `http://localhost:8000`. No internet access or Node.js is needed. The server listens on `127.0.0.1` only.
+   - **Local sessions dashboard**: the page lists the sessions on this machine for a period (today, last 7/30/90 days or a custom range) and a project filter. It shows the same totals and per-MCP-server and per-session counts as `agentlens report`. Click a session to open its call graph, subagents included.
 
 ---
 
