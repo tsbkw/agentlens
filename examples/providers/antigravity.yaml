@@ -58,7 +58,7 @@ extraction:
       name_regex: "^skill_(.+)$"
     - tool_name: "invoke_subagent"
       kind: "subagent"
-      name_field: "Role || TypeName"
+      name_field: "Subagents.0.Role || Subagents.0.TypeName || Role || TypeName"
 
 anomaly_rules:
   auth_failure_regex:

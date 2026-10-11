@@ -57,6 +57,46 @@ func TestIngestReaderAntigravity(t *testing.T) {
 	}
 }
 
+func TestIngestParallelCallsAntigravity(t *testing.T) {
+	providerPath := filepath.Join("..", "..", "examples", "providers", "antigravity.yaml")
+	loaded, err := providers.LoadProviderFromFile(providerPath)
+	if err != nil {
+		t.Fatalf("Failed to load Antigravity provider: %v", err)
+	}
+
+	col := NewCollector(loaded)
+
+	// Step 1 calls two tools in parallel; Step 2 and 3 return their results in order
+	sampleJSONL := `
+{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-10-07T14:00:00Z","content":"<USER_REQUEST>List files and read readme</USER_REQUEST>"}
+{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-10-07T14:00:01Z","tool_calls":[{"name":"list_dir","args":{"Path":"."}},{"name":"view_file","args":{"AbsolutePath":"\"/project/skills/test-skill/SKILL.md\""}}]}
+{"step_index":2,"source":"MODEL","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:00:02Z","content":"file1.txt\nfile2.txt"}
+{"step_index":3,"source":"MODEL","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:00:03Z","content":"# Test Skill\nSkill documentation"}
+`
+
+	reader := strings.NewReader(strings.TrimSpace(sampleJSONL))
+	nodes, err := col.IngestReader(reader, "/home/user/.gemini/antigravity-cli/brain/sess-parallel/.system_generated/logs/transcript.jsonl")
+	if err != nil {
+		t.Fatalf("IngestReader failed: %v", err)
+	}
+
+	if len(nodes) != 2 {
+		t.Fatalf("Expected 2 CallNodes, got %d", len(nodes))
+	}
+
+	if nodes[0].Name != "list_dir" || nodes[0].Output != "file1.txt\nfile2.txt" {
+		t.Errorf("Expected list_dir with its own output, got name=%q output=%v", nodes[0].Name, nodes[0].Output)
+	}
+
+	if nodes[1].Name != "view_file" || nodes[1].Output != "# Test Skill\nSkill documentation" {
+		t.Errorf("Expected view_file with its own output, got name=%q output=%v", nodes[1].Name, nodes[1].Output)
+	}
+
+	if nodes[1].ScopeName != "Skill: test-skill" || nodes[1].Type != models.NodeTypeSkill {
+		t.Errorf("Expected view_file with quoted path to open Skill: test-skill scope, got type=%v scope=%q", nodes[1].Type, nodes[1].ScopeName)
+	}
+}
+
 func TestIngestComplexIncidentResponseSample(t *testing.T) {
 	providerPath := filepath.Join("..", "..", "examples", "providers", "antigravity.yaml")
 	loaded, err := providers.LoadProviderFromFile(providerPath)

@@ -3,6 +3,7 @@ package providers
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -119,6 +120,8 @@ func (p *TraceParser) buildNode(
 	callID := resolveString(callPayload, rootPayload, fields.CallID)
 	if callID == "" {
 		callID = fmt.Sprintf("call-%d-%d", fallbackTime.UnixNano(), index)
+	} else if index > 0 && ResolveField(callPayload, "id") == nil && ResolveField(callPayload, "tool_call.id") == nil {
+		callID = fmt.Sprintf("%s-%d", callID, index)
 	}
 
 	// Parent ID
@@ -302,7 +305,7 @@ func resolveValue(callMap, rootMap map[string]interface{}, expr string) interfac
 	return nil
 }
 
-// ResolveField traverses a nested map via dot-notation (e.g. "tool_call.name").
+// ResolveField traverses a nested map via dot-notation (e.g. "tool_call.name") and slices via numeric index (e.g. "Subagents.0.Role").
 func ResolveField(data map[string]interface{}, path string) interface{} {
 	if data == nil || path == "" {
 		return nil
@@ -311,11 +314,18 @@ func ResolveField(data map[string]interface{}, path string) interface{} {
 	var current interface{} = data
 
 	for _, part := range parts {
-		currMap, ok := current.(map[string]interface{})
-		if !ok {
+		switch v := current.(type) {
+		case map[string]interface{}:
+			current = v[part]
+		case []interface{}:
+			idx, err := strconv.Atoi(part)
+			if err != nil || idx < 0 || idx >= len(v) {
+				return nil
+			}
+			current = v[idx]
+		default:
 			return nil
 		}
-		current = currMap[part]
 		if current == nil {
 			return nil
 		}

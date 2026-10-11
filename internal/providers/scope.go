@@ -90,7 +90,7 @@ func (r CompiledScopeRule) match(node *models.CallNode) (string, bool) {
 		for _, key := range strings.Split(r.NameField, "||") {
 			if val := ResolveField(node.Arguments, strings.TrimSpace(key)); val != nil {
 				if str := fmt.Sprintf("%v", val); str != "" {
-					source = str
+					source = cleanScopeSource(str)
 					break
 				}
 			}
@@ -116,3 +116,12 @@ func matchToolName(pattern, name string) bool {
 	}
 	return pattern == name
 }
+
+func cleanScopeSource(s string) string {
+	s = strings.TrimSpace(s)
+	for len(s) >= 2 && ((s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'')) {
+		s = strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
+}
+

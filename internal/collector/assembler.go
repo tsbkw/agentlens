@@ -32,9 +32,10 @@ type Assembler struct {
 	turns       []models.ExecutionTurn
 	turnNodeIdx [][]int // per turn, indices into nodes (materialized in Finish)
 	turnNodes   []int
-	stepNodeMap map[int]int       // step index -> index in nodes
-	callNodeMap map[string]int    // call ID -> index in nodes
-	childLinks  map[string]string // child trace ID -> spawning call ID, from tool results
+	stepNodeMap      map[int]int       // step index -> index in nodes
+	pendingStepCalls []int             // indices of tool calls awaiting results
+	callNodeMap      map[string]int    // call ID -> index in nodes
+	childLinks       map[string]string // child trace ID -> spawning call ID, from tool results
 
 	currentTurnIndex int
 	currentPrompt    string
@@ -149,6 +150,7 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 		a.callNodeMap[nodes[i].ID] = idx
 		if stepIdx >= 0 {
 			a.stepNodeMap[stepIdx] = idx
+			a.pendingStepCalls = append(a.pendingStepCalls, idx)
 		}
 		res.NewCalls = append(res.NewCalls, idx)
 	}
@@ -160,9 +162,21 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 	switch resultCfg.Correlation {
 	case models.CorrelationPreviousStep:
 		if stepIdx > 0 {
-			if idx, exists := a.stepNodeMap[stepIdx-1]; exists && a.nodes[idx].Output == nil {
-				if applyResult(&a.nodes[idx], resultCfg, a.provider.DeniedRegex, payload, false) {
-					res.Results = append(res.Results, idx)
+			targetIdx := -1
+			for _, pIdx := range a.pendingStepCalls {
+				if a.nodes[pIdx].Output == nil {
+					targetIdx = pIdx
+					break
+				}
+			}
+			if targetIdx < 0 {
+				if idx, exists := a.stepNodeMap[stepIdx-1]; exists && a.nodes[idx].Output == nil {
+					targetIdx = idx
+				}
+			}
+			if targetIdx >= 0 {
+				if applyResult(&a.nodes[targetIdx], resultCfg, a.provider.DeniedRegex, payload, false) {
+					res.Results = append(res.Results, targetIdx)
 				}
 			}
 		}

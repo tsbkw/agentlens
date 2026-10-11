@@ -129,7 +129,8 @@ func (b *GraphBuilder) BuildWithTurns(
 
 		for _, turn := range turns {
 			turnNodeID := fmt.Sprintf("turn-%d", turn.Index)
-			turnLabel := textutil.Truncate(turn.Prompt, 60, "...")
+			firstLine := strings.TrimSpace(strings.Split(turn.Prompt, "\n")[0])
+			turnLabel := textutil.Truncate(firstLine, 60, "...")
 			if turnLabel == "" {
 				turnLabel = fmt.Sprintf("Turn %d", turn.Index)
 			}

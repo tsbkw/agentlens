@@ -121,7 +121,10 @@ func (a *App) CmdReport(args []string) error {
 		s := &sessions[i]
 		project := filepath.Base(filepath.Dir(s.FilePath))
 		// A trace last written before the window cannot hold calls in it
-		if s.ModTime.Before(opts.Window.Since) || (opts.Project != "" && !strings.Contains(project, opts.Project)) {
+		if s.ModTime.Before(opts.Window.Since) {
+			continue
+		}
+		if opts.Project != "" && project != "logs" && !strings.Contains(project, opts.Project) {
 			continue
 		}
 		provider := a.providerByID(s.ProviderID)
@@ -131,6 +134,20 @@ func (a *App) CmdReport(args []string) error {
 		data, err := collector.NewCollector(provider).IngestSessionFile(s.FilePath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "skipping %s: %v\n", s.FilePath, err)
+			continue
+		}
+		if project == "logs" {
+			for _, n := range data.Nodes {
+				if cwd, ok := n.Arguments["Cwd"].(string); ok && cwd != "" {
+					cwd = strings.Trim(cwd, "\"'")
+					if base := filepath.Base(cwd); base != "" && base != "." && base != "/" {
+						project = base
+						break
+					}
+				}
+			}
+		}
+		if opts.Project != "" && !strings.Contains(project, opts.Project) {
 			continue
 		}
 		g := graph.NewGraphBuilder().BuildWithTurns(s.SessionID, provider.Definition.Provider.ID, data.Turns, data.Nodes)
