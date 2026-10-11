@@ -93,9 +93,9 @@ agentlens graph <session-id | trace-file>
 agentlens trace <session-id | trace-file>
 
 # 特定ノードの引数、実行結果、異常診断の詳細を表示
-agentlens inspect <call-id>
+agentlens inspect <call-id> [session-id]   # セッション ID を渡すとそのセッションだけを探索
 
-# 内蔵Web UIダッシュボードを http://localhost:8000 で起動
+# 内蔵Web UIダッシュボードを http://localhost:8000 で起動（--port <n> で変更可）
 agentlens ui
 
 # 実行中のAIセッションをリアルタイム監視 (省略時は最新のセッション)

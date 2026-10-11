@@ -12,14 +12,14 @@ import (
 
 // Graph represents the compiled hierarchical DAG and caller-to-callee dependencies.
 type Graph struct {
-	SessionID    string                       `json:"session_id"`
-	Provider     string                       `json:"provider"`
-	Turns        []models.ExecutionTurn       `json:"turns,omitempty"`
-	Nodes        map[string]*models.CallNode  `json:"nodes"`
-	Edges        []models.CallEdge            `json:"edges"`
-	Roots        []string                     `json:"roots"`
-	Children     map[string][]string          `json:"children"`
-	Parents      map[string][]string          `json:"parents"`
+	SessionID    string                      `json:"session_id"`
+	Provider     string                      `json:"provider"`
+	Turns        []models.ExecutionTurn      `json:"turns,omitempty"`
+	Nodes        map[string]*models.CallNode `json:"nodes"`
+	Edges        []models.CallEdge           `json:"edges"`
+	Roots        []string                    `json:"roots"`
+	Children     map[string][]string         `json:"children"`
+	Parents      map[string][]string         `json:"parents"`
 	Dependencies []models.CallerDependency   `json:"dependencies"`
 
 	// order lists node IDs in insertion order, used to break timestamp ties deterministically.
@@ -62,11 +62,13 @@ type GraphBuilder struct {
 	parents      map[string][]string
 	roots        []string
 	dependencies []models.CallerDependency
+	edgeSet      map[models.CallEdge]bool // edges already added, so repeated transitions stay single
 }
 
 // NewGraphBuilder creates an empty GraphBuilder.
 func NewGraphBuilder() *GraphBuilder {
 	return &GraphBuilder{
+		edgeSet:      make(map[models.CallEdge]bool),
 		nodes:        make(map[string]*models.CallNode),
 		edges:        make([]models.CallEdge, 0),
 		children:     make(map[string][]string),
@@ -86,11 +88,11 @@ func (b *GraphBuilder) AddNode(node models.CallNode) {
 
 // AddEdge creates a directed relationship from source to target.
 func (b *GraphBuilder) AddEdge(sourceID, targetID string, edgeType models.CallEdgeType) {
-	for _, e := range b.edges {
-		if e.SourceID == sourceID && e.TargetID == targetID && e.Type == edgeType {
-			return
-		}
+	edge := models.CallEdge{SourceID: sourceID, TargetID: targetID, Type: edgeType}
+	if b.edgeSet[edge] {
+		return
 	}
+	b.edgeSet[edge] = true
 
 	b.edges = append(b.edges, models.CallEdge{
 		SourceID: sourceID,

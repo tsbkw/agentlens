@@ -121,13 +121,13 @@ Each silent fallback carries a `confidence` (`high` when the substitute reaches 
 - **`agentlens list`**: List recorded sessions and detected providers.
 - **`agentlens graph <session-id | file>`**: Render the Caller ➔ Callee call graph in the terminal with colored status indicators (green = success, red = error, yellow = fallback alert), a summary line and the list of anomalies.
 - **`agentlens trace <session-id | file>`**: Render the turn-by-turn execution tree with status, duration and anomaly badges.
-- **`agentlens inspect <call-id>`**: Display full details, arguments, outputs, and anomaly diagnostics for a specific node.
+- **`agentlens inspect <call-id> [session-id]`**: Display full details, arguments, outputs, and anomaly diagnostics for a specific node. Without a session, every discovered session is searched.
 - **`agentlens watch [session-id]`**: Live terminal monitor tailing an active session (the most recent one by default) and its subagents.
 - **`agentlens report`**: Aggregates calls and anomalies of all sessions over a period (`--since`, `--until`, `--project`, `--top`, `--json`), ranked by MCP server, tool and session.
 - `--provider <id | file.yaml>` selects the trace format (auto-detected by default). Colors follow `NO_COLOR` / `FORCE_COLOR` and are off when stdout is not a terminal.
 
 #### 3.5.2 Web UI Dashboard (Embedded & GitHub Pages)
-- **Local Embedded Server**: Running `agentlens ui` serves the embedded pre-compiled SPA at `http://localhost:8000`. On top of drag and drop, the page shows a local sessions dashboard. It filters by period and project, reports the same counts as `agentlens report` (`GET /api/report`) and opens a session's call graph from its raw trace files (`GET /api/sessions/<id>/files`). Those files are analyzed in the browser just like dropped ones. The server listens on `127.0.0.1` only and rejects requests whose `Host` header is not `localhost` or a loopback IP, because its API returns full session transcripts.
+- **Local Embedded Server**: Running `agentlens ui` (`--port <n>`, default 8000) serves the embedded page at `http://localhost:8000`. On top of drag and drop, the page shows a local sessions dashboard. It filters by period and project, reports the same counts as `agentlens report` (`GET /api/report`) and opens a session's call graph from its raw trace files (`GET /api/sessions/<id>/files`). Those files are analyzed in the browser just like dropped ones. The server listens on `127.0.0.1` only and rejects requests whose `Host` header is not `localhost` or a loopback IP, because its API returns full session transcripts.
 - **Free GitHub Pages Hosting**: Statically hosted at `https://tsbkw.github.io/agentlens` with client-side drag-and-drop log visualization.
 - **Caller ➔ Callee Graph**: One card per caller (agent, Skill or Subagent scope) listing each callee with its call, success and failure counts, nested scopes, and a fallback row where a failed call was substituted.
 - **Turn Execution Trace**: The calls of each user turn in order, with status, type, MCP server, duration and anomaly badges.

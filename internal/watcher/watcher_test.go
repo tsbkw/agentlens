@@ -430,3 +430,42 @@ func TestAssemblerRescope(t *testing.T) {
 		}
 	}
 }
+
+func TestWatcherReopensATruncatedFile(t *testing.T) {
+	provider, err := providers.LoadProviderFromFile(filepath.Join("..", "..", "examples", "providers", "antigravity.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(t.TempDir(), "transcript.jsonl")
+	first := `{"step_index":0,"type":"USER_INPUT","content":"<USER_REQUEST>First run</USER_REQUEST>"}` + "\n" +
+		`{"step_index":1,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T12:00:00Z","tool_calls":[{"id":"a","name":"view_file","args":{"AbsolutePath":"/a.txt"}}]}` + "\n"
+	if err := os.WriteFile(logPath, []byte(first), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w := NewWatcher(provider, logPath)
+	w.PollInterval = 20 * time.Millisecond
+	w.FromStart = true
+	var buf bytes.Buffer
+	ctx, cancel := context.WithTimeout(context.Background(), 900*time.Millisecond)
+	defer cancel()
+
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		// The file is replaced by a shorter one, as a rotated or re-created trace would be
+		second := `{"step_index":0,"type":"USER_INPUT","content":"<USER_REQUEST>Second</USER_REQUEST>"}` + "\n" +
+			`{"step_index":1,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T12:01:00Z","tool_calls":[{"id":"b","name":"run_command","args":{"CommandLine":"ls"}}]}` + "\n"
+		if err := os.WriteFile(logPath, []byte(second), 0o644); err != nil {
+			t.Error(err)
+		}
+	}()
+	if err := w.Watch(ctx, &buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"view_file", "truncated or replaced", "Second", "run_command"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Expected %q in the output:\n%s", want, out)
+		}
+	}
+}

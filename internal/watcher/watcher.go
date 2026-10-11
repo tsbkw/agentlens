@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -30,6 +31,8 @@ type Watcher struct {
 	// InferAfter is how long a subagent trace that names no spawning call waits for a tool
 	// result linking it, before it is attributed to the current turn as inferred.
 	InferAfter time.Duration
+	// ChildScanInterval is how often new subagent trace files are looked for while idle.
+	ChildScanInterval time.Duration
 }
 
 // NewWatcher initializes a Watcher instance.
@@ -40,6 +43,9 @@ func NewWatcher(provider *providers.LoadedProvider, filePath string) *Watcher {
 		PollInterval: 500 * time.Millisecond,
 		FromStart:    false,
 		InferAfter:   5 * time.Second,
+		// Scanning for new subagent files reads every sidecar; while nothing is written to
+		// the session it happens on this slower timer
+		ChildScanInterval: 2 * time.Second,
 	}
 }
 
@@ -122,6 +128,26 @@ type session struct {
 	tracked   map[string]bool      // child trace paths already followed
 	existing  map[string]bool      // child trace paths present before watching started (tail mode)
 	firstSeen map[string]time.Time // when an unlinked child trace was first seen
+	lastScan  time.Time            // last look for new child trace files
+	childDir  string               // directory of child traces, when the glob names it
+	childMod  time.Time            // its modification time at the last scan
+}
+
+// childrenMayHaveChanged reports whether the child trace directory was modified since the
+// last scan: a new trace or sidecar file changes it, while writes to known files do not.
+func (s *session) childrenMayHaveChanged() bool {
+	if s.childDir == "" {
+		return true
+	}
+	fi, err := os.Stat(s.childDir)
+	if err != nil {
+		return false
+	}
+	if fi.ModTime().Equal(s.childMod) {
+		return false
+	}
+	s.childMod = fi.ModTime()
+	return true
 }
 
 // Watch continuously tails the trace file and streams tool calls, results, and alerts.
@@ -140,6 +166,7 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 		firstSeen: make(map[string]time.Time),
 	}
 	defer sess.close()
+	sess.childDir, _ = collector.ChildTraceDir(w.Provider, w.FilePath)
 
 	if !w.FromStart {
 		// Subagents that were already running are tailed too, but their earlier calls are skipped
@@ -177,13 +204,57 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 			}
 		}
 
-		if sess.discoverChildren() {
-			continue
+		// New child files change their directory's mtime; a full scan also runs on a slow timer
+		if progressed || sess.pendingUnlinked() || sess.childrenMayHaveChanged() || time.Since(sess.lastScan) >= w.ChildScanInterval {
+			sess.lastScan = time.Now()
+			if sess.discoverChildren() {
+				continue
+			}
 		}
 		if !progressed {
-			time.Sleep(w.PollInterval)
+			if sess.reopenTruncated() {
+				continue
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(w.PollInterval):
+			}
 		}
 	}
+}
+
+// reopenTruncated re-reads from the start any followed file that became shorter than what
+// was already read (truncated or replaced), and reports whether one was reopened.
+func (s *session) reopenTruncated() bool {
+	reopened := false
+	for _, src := range s.sources {
+		fi, err := os.Stat(src.path)
+		if err != nil {
+			continue
+		}
+		pos, err := src.file.Seek(0, io.SeekCurrent)
+		if err != nil {
+			continue
+		}
+		if fi.Size() >= pos-int64(src.reader.Buffered()) {
+			continue
+		}
+		file, err := os.Open(src.path)
+		if err != nil {
+			continue
+		}
+		src.file.Close()
+		src.file, src.reader, src.partial = file, bufio.NewReader(file), ""
+		src.replayed = make(map[string]bool)
+		if src.parent == nil {
+			src.asm = collector.NewAssembler(s.w.Provider, src.path)
+		} else {
+			src.asm = collector.NewChildAssembler(s.w.Provider, src.path, *src.parent)
+		}
+		fmt.Fprintf(s.out, "\n%s↻ %s was truncated or replaced; reading it from the start%s\n", ansi.Yellow, filepath.Base(src.path), ansi.Reset)
+		reopened = true
+	}
+	return reopened
 }
 
 func (s *session) close() {
@@ -286,6 +357,17 @@ func (s *session) knownElsewhere(src *tailSource, id string) bool {
 			if n.ID == id && !other.replayed[id] {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// pendingUnlinked reports whether a child trace is waiting for the record of its spawning
+// call (waitedForLink); such a child is re-examined on every poll.
+func (s *session) pendingUnlinked() bool {
+	for path := range s.firstSeen {
+		if !s.tracked[path] {
+			return true
 		}
 	}
 	return false
