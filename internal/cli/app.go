@@ -124,6 +124,8 @@ func (a *App) Run(args []string) error {
 			return fmt.Errorf("missing call ID. Usage: agentlens inspect <call-id>")
 		}
 		return a.CmdInspect(args[2])
+	case "report":
+		return a.CmdReport(args[2:])
 	case "ui":
 		port := 8000
 		srv := server.NewServer(port, a.candidates()...)
@@ -284,6 +286,9 @@ Available Commands:
   trace <session-id>   Render turn-by-turn chronological execution trace tree
   watch [session-id]   Live stream tool calls, results & anomaly alerts from active session
   inspect <call-id>    Display detailed input, output, and anomaly diagnostics for a node
+  report [flags]       Aggregate calls and anomalies of all sessions over a period:
+                       --since <YYYY-MM-DD|Nd> (default 7d) --until <YYYY-MM-DD>
+                       --project <name> --top <n> --json
   ui                   Launch local Web UI dashboard
   version              Print version of agentlens
   help                 Print this help message

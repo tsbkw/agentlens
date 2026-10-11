@@ -99,7 +99,12 @@ agentlens ui
 
 # 実行中のAIセッションをリアルタイム監視 (省略時は最新のセッション)
 agentlens watch [session-id]
+
+# 期間内の全セッションの呼び出しと検知結果を集計 (既定: 直近7日間)
+agentlens report --since 2026-10-01 --until 2026-10-10 [--project <名前>] [--top 10] [--json]
 ```
+
+`report` は呼び出しそれぞれの時刻で期間を判定するため、期間をまたぐセッションも正しく数えます (`--until` はその日を含み、`--since 30d` は30日前を表します)。合計の後に、検知の多い順で MCP サーバー・ツール・セッションを一覧し、`--json` では集計全体を JSON で出力します。
 
 トレース形式は自動判定されます。固定したい場合はグローバルフラグ `--provider` / `-p` (`antigravity`, `claude-code`, `cursor`, `generic-jsonl`、または独自のプロバイダYAMLのパス) か、環境変数 `AGENTLENS_PROVIDER` を指定してください。
 

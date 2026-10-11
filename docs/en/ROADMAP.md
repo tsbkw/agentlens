@@ -20,7 +20,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 | **Phase 7** | Multi-Provider Adapters & Live Tail Watcher (`agentlens watch`) | Completed | PR #8 |
 | **Phase 8** | Internationalization (i18n: en & ja) CLI/UI Localization | Planned | PR #9 |
 | **Phase 9** | Claude Code Support (real `~/.claude/projects` transcripts end-to-end) | Completed | PR #12–#19 |
-| **Phase 10** | Claude Code Follow-ups (deterministic output, live and in-browser subagent stitching) | Completed | PR #20–#29 |
+| **Phase 10** | Claude Code Follow-ups (deterministic output, live and in-browser subagent stitching) | Completed | PR #20–#30 |
 
 ---
 
@@ -96,7 +96,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Stitch Claude Code subagent transcripts (`<session>/subagents/agent-*.jsonl`) into the call graph (PR #18)
 - [x] Claude Code trace support in the browser viewer (GitHub Pages) and docs (PR #19)
 
-### Phase 10: Claude Code Follow-ups (PR #20–#29)
+### Phase 10: Claude Code Follow-ups (PR #20–#30)
 - [x] Deterministic graph, dependency tree and anomaly ordering across runs (PR #20)
 - [x] `agentlens watch` follows subagent transcripts as they are written (PR #21)
 - [x] Subagent stitching in the browser viewer (multi-file / folder input) (PR #22)
@@ -106,3 +106,4 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Check only failed calls for auth errors and report each retry streak once (PR #27)
 - [x] Treat calls refused by the user or a permission policy as `denied` (not failed) and skip bookkeeping tools (`auxiliary_tools`) in fallback and retry sequences (PR #28)
 - [x] Rate silent fallbacks `high` / `low` confidence from a shared catalog of public services (`rules/substitutes.yaml`) and shared identifiers (PR #29)
+- [x] `agentlens report`: aggregate calls and anomalies of all sessions over a period (PR #30)
