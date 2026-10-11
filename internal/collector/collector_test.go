@@ -1,11 +1,13 @@
 package collector
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/models"
 	"github.com/tsbkw/agentlens/internal/providers"
 )
@@ -282,5 +284,37 @@ func TestIngestClaudeCodeSubagentTranscripts(t *testing.T) {
 	}
 	if len(nodes) != 6 {
 		t.Errorf("Expected 6 main-thread nodes from a plain reader, got %d", len(nodes))
+	}
+}
+
+func TestCallsBeforeTheFirstPromptKeepTheirOwnTurn(t *testing.T) {
+	loaded, err := providers.LoadProviderFromFile(filepath.Join("..", "..", "examples", "providers", "claude_code.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	asm := NewAssembler(loaded, "s.jsonl")
+	feed := func(line string) {
+		var payload map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := asm.Feed(payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	feed(`{"type":"assistant","timestamp":"2026-10-07T14:00:00Z","message":{"content":[{"type":"tool_use","id":"early","name":"Bash","input":{}}]}}`)
+	feed(`{"type":"user","timestamp":"2026-10-07T14:00:05Z","message":{"content":"first prompt"}}`)
+	feed(`{"type":"assistant","timestamp":"2026-10-07T14:00:06Z","message":{"content":[{"type":"tool_use","id":"later","name":"Read","input":{}}]}}`)
+	data := asm.Finish()
+
+	if len(data.Turns) != 2 || data.Turns[0].Index != 0 || data.Turns[0].Prompt != PreTurnPrompt || data.Turns[1].Index != 1 {
+		t.Fatalf("Expected turn 0 for the early call and turn 1 for the prompt, got %+v", data.Turns)
+	}
+	if len(data.Turns[0].Nodes) != 1 || data.Turns[0].Nodes[0].ID != "early" || len(data.Turns[1].Nodes) != 1 || data.Turns[1].Nodes[0].ID != "later" {
+		t.Errorf("Early call must be in turn 0 only: %+v / %+v", data.Turns[0].Nodes, data.Turns[1].Nodes)
+	}
+	g := graph.NewGraphBuilder().BuildWithTurns("s", "claude-code", data.Turns, data.Nodes)
+	if len(g.Parents["early"]) != 1 || g.Parents["early"][0] != "turn-0" {
+		t.Errorf("Expected the early call under turn-0 in the graph, got %v", g.Parents["early"])
 	}
 }

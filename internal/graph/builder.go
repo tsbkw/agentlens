@@ -98,8 +98,12 @@ func (b *GraphBuilder) AddEdge(sourceID, targetID string, edgeType models.CallEd
 		Type:     edgeType,
 	})
 
-	b.children[sourceID] = append(b.children[sourceID], targetID)
-	b.parents[targetID] = append(b.parents[targetID], sourceID)
+	// Only invocation edges shape the tree; a fallback or retry edge records a transition
+	// between siblings, and following it would render the second call under the first
+	if edgeType == models.EdgeTypeCalls || edgeType == models.EdgeTypeSpawns {
+		b.children[sourceID] = append(b.children[sourceID], targetID)
+		b.parents[targetID] = append(b.parents[targetID], sourceID)
+	}
 }
 
 // Build constructs the hierarchical DAG from turns and raw call nodes.
@@ -143,6 +147,7 @@ func (b *GraphBuilder) BuildWithTurns(
 				Name:      fmt.Sprintf("Turn %d: %s", turn.Index, turnLabel),
 				Timestamp: turn.Timestamp,
 				Status:    models.StatusSuccess,
+				Synthetic: true,
 			}
 			b.AddNode(turnNode)
 			b.roots = append(b.roots, turnNodeID)
@@ -178,6 +183,7 @@ func (b *GraphBuilder) BuildWithTurns(
 								Name:      callerScope,
 								Timestamp: callNode.Timestamp,
 								Status:    models.StatusSuccess,
+								Synthetic: true,
 							}
 							b.AddNode(scopeNode)
 							scopeParentID := turnNodeID
@@ -198,12 +204,12 @@ func (b *GraphBuilder) BuildWithTurns(
 				if !takesPartInAttempts(callNode) {
 					continue
 				}
-				if lastFailed := lastFailedByActor[callNode.ParentID]; lastFailed != nil {
+				if lastFailed := lastFailedByActor[callNode.ParentID]; lastFailed != nil && startedAfter(lastFailed, callNode) {
 					b.AddEdge(lastFailed.ID, callNode.ID, transitionAfterFailure(lastFailed, callNode))
 					delete(lastFailedByActor, callNode.ParentID)
 				}
 
-				if callNode.Status == models.StatusFailed {
+				if isFailure(callNode) {
 					lastFailedByActor[callNode.ParentID] = callNode
 				}
 			}
@@ -218,17 +224,18 @@ func (b *GraphBuilder) BuildWithTurns(
 		}
 
 		// 2. Sequential fallback transition linking (per actor, see BuildWithTurns)
-		prevByActor := make(map[string]*models.CallNode)
+		lastFailedByActor := make(map[string]*models.CallNode)
 		for _, node := range sortedNodes {
 			if !takesPartInAttempts(node) {
 				continue
 			}
-			if prevNode := prevByActor[node.ParentID]; prevNode != nil {
-				if prevNode.Status == models.StatusFailed {
-					b.AddEdge(prevNode.ID, node.ID, transitionAfterFailure(prevNode, node))
-				}
+			if lastFailed := lastFailedByActor[node.ParentID]; lastFailed != nil && startedAfter(lastFailed, node) {
+				b.AddEdge(lastFailed.ID, node.ID, transitionAfterFailure(lastFailed, node))
+				delete(lastFailedByActor, node.ParentID)
 			}
-			prevByActor[node.ParentID] = node
+			if isFailure(node) {
+				lastFailedByActor[node.ParentID] = node
+			}
 		}
 
 		// Roots are nodes without parents
@@ -284,11 +291,10 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 			caller = "Agent (Main Planner)"
 		}
 
-		callee := node.Name
+		callee := calleeKey(&node)
 		calleeType := node.Type
 
 		if node.ScopeName != "" {
-			callee = node.ScopeName
 			scopeParentMap[callee] = caller
 		}
 
@@ -334,7 +340,7 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 				if caller == "" {
 					caller = "Agent (Main Planner)"
 				}
-				key := depKey{Caller: caller, Callee: srcNode.Name}
+				key := depKey{Caller: caller, Callee: calleeKey(srcNode)}
 				if dep, exists := depMap[key]; exists {
 					dep.IsFallback = true
 					dep.FallbackTo = tgtNode.Name
@@ -478,6 +484,29 @@ func takesPartInAttempts(node *models.CallNode) bool {
 	return !node.Auxiliary && node.Status != models.StatusDenied
 }
 
+// calleeKey names a call in the dependency tree: the scope it opens, or else its tool.
+func calleeKey(node *models.CallNode) string {
+	if node.ScopeName != "" {
+		return node.ScopeName
+	}
+	return node.Name
+}
+
+// isFailure reports whether a call failed or timed out, so the next call may substitute it.
+func isFailure(node *models.CallNode) bool {
+	return node.Status == models.StatusFailed || node.Status == models.StatusTimeout
+}
+
+// startedAfter reports whether next began once the failure of failed was known. Calls issued
+// together (several tool uses in one model response share a timestamp) cannot react to each
+// other's results, so they are never a transition.
+func startedAfter(failed, next *models.CallNode) bool {
+	if failed.DurationMs > 0 {
+		return !next.Timestamp.Before(failed.Timestamp.Add(time.Duration(failed.DurationMs) * time.Millisecond))
+	}
+	return next.Timestamp.After(failed.Timestamp)
+}
+
 // transitionAfterFailure classifies the edge from a failed call to the call that follows it:
 // re-running the same tool is a retry, switching to another tool is a fallback candidate.
 func transitionAfterFailure(failed, next *models.CallNode) models.CallEdgeType {
@@ -507,7 +536,7 @@ func (g *Graph) ApplyConfirmedFallbacks(fallbacks []models.AnomalyRecord) {
 		if caller == "" {
 			caller = "Agent (Main Planner)"
 		}
-		key := depKey{Caller: caller, Callee: src.Name}
+		key := depKey{Caller: caller, Callee: calleeKey(src)}
 		if prev, exists := marks[key]; !exists || (prev.confidence != models.ConfidenceHigh && f.Confidence == models.ConfidenceHigh) {
 			marks[key] = mark{to: tgt.Name, confidence: f.Confidence}
 		}
@@ -554,6 +583,9 @@ func (g *Graph) ComputeMetrics() GraphMetrics {
 	m.TotalEdges = len(g.Edges)
 
 	for _, node := range g.Nodes {
+		if node.Synthetic {
+			continue
+		}
 		switch node.Type {
 		case models.NodeTypeSkill:
 			m.SkillCalls++

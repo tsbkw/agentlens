@@ -97,6 +97,9 @@ type CallNode struct {
 	// the user). Such calls never do the user's task, so they are neither a substitute for a
 	// failed call nor a break in a sequence of attempts.
 	Auxiliary bool `json:"auxiliary,omitempty"`
+	// Synthetic marks nodes the graph builder adds for structure (user turns, Skill and
+	// Subagent scopes). They are not calls and take no part in detection or call metrics.
+	Synthetic bool `json:"synthetic,omitempty"`
 }
 
 // IsInferredPlaceholder reports whether the node stands in for an unrecorded spawning call.

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -144,7 +145,10 @@ func collectStrings(v interface{}, out *[]string) {
 	switch x := v.(type) {
 	case string:
 		*out = append(*out, x)
-	case float64, int, int64:
+	case float64:
+		// Plain digits, so a numeric ID matches the same ID written as text
+		*out = append(*out, strconv.FormatFloat(x, 'f', -1, 64))
+	case int, int64:
 		*out = append(*out, fmt.Sprint(x))
 	case map[string]interface{}:
 		keys := make([]string, 0, len(x))

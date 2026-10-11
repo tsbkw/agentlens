@@ -25,6 +25,9 @@ func (c *AuthChecker) Check(g *graph.Graph) []models.AnomalyRecord {
 	var records []models.AnomalyRecord
 
 	for _, node := range g.OrderedNodes() {
+		if node.Synthetic {
+			continue
+		}
 		var contentToCheck []string
 		if node.ErrorMessage != "" {
 			contentToCheck = append(contentToCheck, node.ErrorMessage)
