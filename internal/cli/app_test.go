@@ -3,6 +3,7 @@ package cli
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestExtractProviderFlag(t *testing.T) {
@@ -39,5 +40,39 @@ func TestRunUnknownProvider(t *testing.T) {
 	}
 	if err := app.Run([]string{"agentlens", "--provider", "nope", "list"}); err == nil {
 		t.Errorf("Expected error for unknown provider")
+	}
+}
+
+func TestParseReportOptions(t *testing.T) {
+	loc := time.FixedZone("JST", 9*3600)
+	now := time.Date(2026, 10, 11, 15, 30, 0, 0, loc)
+	day := func(m time.Month, d int) time.Time { return time.Date(2026, m, d, 0, 0, 0, 0, loc) }
+
+	opts, err := ParseReportOptions(nil, now)
+	if err != nil || !opts.Window.Since.Equal(day(10, 4)) || !opts.Window.Until.IsZero() || opts.Top != 10 {
+		t.Errorf("Default: expected the last 7 days, got %+v (%v)", opts, err)
+	}
+
+	opts, err = ParseReportOptions([]string{"--since", "2026-10-01", "--until=2026-10-10", "--project", "repo", "--top", "3", "--json"}, now)
+	if err != nil || !opts.Window.Since.Equal(day(10, 1)) || !opts.Window.Until.Equal(day(10, 11)) ||
+		opts.Project != "repo" || opts.Top != 3 || !opts.JSON {
+		t.Errorf("Expected --until to include its whole day, got %+v (%v)", opts, err)
+	}
+
+	opts, err = ParseReportOptions([]string{"--since", "30d"}, now)
+	if err != nil || !opts.Window.Since.Equal(day(9, 11)) {
+		t.Errorf("Expected 30 days ago at midnight, got %+v (%v)", opts, err)
+	}
+
+	for _, bad := range [][]string{
+		{"--since", "yesterday"},
+		{"--since", "2026-10-10", "--until", "2026-10-01"},
+		{"--top", "0"},
+		{"--since"},
+		{"--verbose"},
+	} {
+		if _, err := ParseReportOptions(bad, now); err == nil {
+			t.Errorf("Expected %v to be rejected", bad)
+		}
 	}
 }

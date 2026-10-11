@@ -99,7 +99,12 @@ agentlens ui
 
 # Live-watch an ongoing AI session in real-time (latest session when omitted)
 agentlens watch [session-id]
+
+# Aggregate calls and anomalies of every session over a period (default: last 7 days)
+agentlens report --since 2026-10-01 --until 2026-10-10 [--project <name>] [--top 10] [--json]
 ```
+
+`report` counts the calls whose own timestamp falls in the period (`--until` includes that whole day; `--since 30d` means 30 days ago), so sessions spanning the boundary are split correctly. It lists the totals, then MCP servers, tools and sessions ranked by anomalies; `--json` prints the full aggregate.
 
 The trace format is detected automatically. Pin it with the global `--provider` / `-p` flag (`antigravity`, `claude-code`, `cursor`, `generic-jsonl`, or a path to your own provider YAML) or the `AGENTLENS_PROVIDER` environment variable.
 

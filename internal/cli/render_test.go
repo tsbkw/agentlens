@@ -12,6 +12,7 @@ import (
 	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/models"
 	"github.com/tsbkw/agentlens/internal/providers"
+	"github.com/tsbkw/agentlens/internal/report"
 )
 
 func TestRenderSessionList(t *testing.T) {
@@ -150,5 +151,26 @@ func TestRenderMarksInferredSubagents(t *testing.T) {
 	RenderNodeInspect(&buf, &nodes[2])
 	if !strings.Contains(buf.String(), "Parent link:") || !strings.Contains(buf.String(), "inferred") {
 		t.Errorf("Expected the parent link in inspect output:\n%s", buf.String())
+	}
+}
+
+func TestRenderReport(t *testing.T) {
+	r := &report.Report{
+		Window:   report.Window{Since: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)},
+		Sessions: 1,
+		Total:    report.Counts{Calls: 3, Failed: 1, AuthExpired: 1},
+		MCPServers: []report.Row{
+			{Key: "github", Counts: report.Counts{Calls: 1, Failed: 1, AuthExpired: 1}},
+		},
+		Tools:     []report.Row{{Key: "a"}, {Key: "b"}, {Key: "c"}},
+		BySession: []report.Row{{Key: "sess-1", Project: "repo", Counts: report.Counts{Calls: 3}}},
+	}
+	var buf bytes.Buffer
+	RenderReport(&buf, r, 2)
+	out := buf.String()
+	for _, want := range []string{"2026-10-01 00:00 → now", "Sessions: 1 | Calls: 3 | Failed: 1", "auth expired 1", "github", "… 1 more", "sess-1", "repo"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Expected %q in report output:\n%s", want, out)
+		}
 	}
 }

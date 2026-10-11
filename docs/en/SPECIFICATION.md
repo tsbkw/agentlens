@@ -120,6 +120,7 @@ Detects execution anomalies and alerts the developer:
 - **`agentlens graph <session-id>`**: Render fast tree call graphs in terminal with colored status indicators (green = success, red = error, yellow = fallback alert).
 - **`agentlens inspect <call-id>`**: Display full details, arguments, outputs, and anomaly diagnostics for a specific node.
 - **`agentlens watch`**: Live terminal monitor tailing active AI interactions in real-time.
+- **`agentlens report`**: Aggregates calls and anomalies of all sessions over a period (`--since`, `--until`, `--project`, `--json`), ranked by MCP server, tool and session.
 
 #### 3.5.2 Web UI Dashboard (Embedded & GitHub Pages)
 - **Local Embedded Server**: Running `agentlens ui` serves the embedded pre-compiled SPA and opens the browser.

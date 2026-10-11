@@ -124,6 +124,7 @@ AIの意図せぬ動作や性能劣化をルール・ヒューリスティクス
 - **`agentlens graph <session-id>`**: ターミナル上でのツリー型/階層型コールグラフ描画（成功=緑、エラー=赤、フォールバック警告=黄）。
 - **`agentlens inspect <call-id>`**: 特定ノードの引数・出力・異常検知結果の詳細表示。
 - **`agentlens watch`**: 実行中のAIセッションをターミナルでリアルタイム監視。
+- **`agentlens report`**: 期間内の全セッションの呼び出しと検知結果を集計 (`--since`, `--until`, `--project`, `--json`)。MCP サーバー・ツール・セッションごとに検知の多い順で一覧。
 
 #### 3.5.2 Web UI ダッシュボード (内蔵 & GitHub Pages)
 - **GitHub Pages 無料ホスティング**: `https://tsbkw.github.io/agentlens` にてホスティング。手元のログをドラッグ＆ドロップするだけで、サーバー通信不要の安全な完全ローカル描画。
