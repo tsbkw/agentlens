@@ -135,6 +135,9 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 			a.currentPrompt = PreTurnPrompt
 		}
 		a.flushTurn()
+		// Calls of the previous turn still waiting for a step result will never get one;
+		// they must not take the results of this turn's calls
+		a.pendingStepCalls = nil
 		a.currentTurnIndex++
 		a.currentPrompt = prompt
 		if !ts.IsZero() {
