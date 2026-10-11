@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/tsbkw/agentlens/internal/ansi"
 	"github.com/tsbkw/agentlens/internal/report"
 	"github.com/tsbkw/agentlens/internal/textutil"
 )
@@ -104,12 +105,12 @@ func RenderReport(w io.Writer, r *report.Report, top int) {
 	if !r.Window.Until.IsZero() {
 		until = r.Window.Until.Format("2006-01-02 15:04")
 	}
-	fmt.Fprintf(w, "\n%s📊 AgentLens Report:%s %s → %s (%s)\n", colorBold, colorReset, since, until, r.Window.Since.Format("MST"))
+	fmt.Fprintf(w, "\n%s📊 AgentLens Report:%s %s → %s (%s)\n", ansi.Bold, ansi.Reset, since, until, r.Window.Since.Format("MST"))
 	fmt.Fprintln(w, strings.Repeat("─", 65))
 	t := r.Total
 	fmt.Fprintf(w, "Sessions: %d | Calls: %d | Failed: %d | Denied: %d\n", r.Sessions, t.Calls, t.Failed, t.Denied)
 	fmt.Fprintf(w, "Anomalies: %sauth expired %d%s | %ssilent fallbacks %d%s (+%d possible, low confidence) | retry loops %d\n",
-		colorRed, t.AuthExpired, colorReset, colorYellow, t.SilentFallbacks, colorReset, t.PossibleFallbacks, t.RetryLoops)
+		ansi.Red, t.AuthExpired, ansi.Reset, ansi.Yellow, t.SilentFallbacks, ansi.Reset, t.PossibleFallbacks, t.RetryLoops)
 	if r.Sessions == 0 {
 		fmt.Fprintln(w, "\nNo tool calls recorded in this period.")
 		return
@@ -119,7 +120,7 @@ func RenderReport(w io.Writer, r *report.Report, top int) {
 		if len(rows) == 0 {
 			return
 		}
-		fmt.Fprintf(w, "\n%s%s%s\n", colorBold, title, colorReset)
+		fmt.Fprintf(w, "\n%s%s%s\n", ansi.Bold, title, ansi.Reset)
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 		header := keyHeader + "\tCALLS\tFAILED\tDENIED\tAUTH\tFALLBACK\tPOSSIBLE\tLOOPS"
 		if withProject {
@@ -134,18 +135,19 @@ func RenderReport(w io.Writer, r *report.Report, top int) {
 			line := fmt.Sprintf("  %s\t%d\t%d\t%d\t%d\t%d\t%d\t%d", textutil.Truncate(row.Key, 48, "…"),
 				c.Calls, c.Failed, c.Denied, c.AuthExpired, c.SilentFallbacks, c.PossibleFallbacks, c.RetryLoops)
 			if withProject {
-				line += "\t" + textutil.Truncate(row.Project, 40, "…")
+				// The end of a project path tells projects apart; keep it
+				line += "\t" + textutil.TruncateHead(row.Project, 40, "…")
 			}
 			fmt.Fprintln(tw, line)
 		}
 		tw.Flush()
 		if len(rows) > top {
-			fmt.Fprintf(w, "  %s… %d more (use --top or --json)%s\n", colorDim, len(rows)-top, colorReset)
+			fmt.Fprintf(w, "  %s… %d more (use --top or --json)%s\n", ansi.Dim, len(rows)-top, ansi.Reset)
 		}
 	}
 	table("MCP servers", "SERVER", r.MCPServers, false)
 	table("Tools", "TOOL", r.Tools, false)
 	table("Sessions", "SESSION", r.BySession, true)
 
-	fmt.Fprintf(w, "\n%s💡 Tip:%s Use `agentlens graph <session-id>` to see the anomalies of a session.\n\n", colorCyan, colorReset)
+	fmt.Fprintf(w, "\n%s💡 Tip:%s Use `agentlens graph <session-id>` to see the anomalies of a session.\n\n", ansi.Cyan, ansi.Reset)
 }

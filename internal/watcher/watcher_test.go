@@ -195,7 +195,7 @@ func TestWatcherFollowsSubagentTraces(t *testing.T) {
 	if len(subagentCalls) != 2 || !strings.Contains(subagentCalls[0], "Bash") || !strings.Contains(subagentCalls[1], "Read") {
 		t.Errorf("Expected the subagent's Bash and Read calls nested under it, got %q in:\n%s", subagentCalls, buf.String())
 	}
-	if strings.Contains(buf.String(), "USER PROMPT:\033[0m Read the failing deploy-prod") {
+	if strings.Contains(buf.String(), "USER PROMPT: Read the failing deploy-prod") {
 		t.Errorf("A subagent's prompt must not be shown as a user turn:\n%s", buf.String())
 	}
 }
@@ -325,7 +325,7 @@ func TestWatcherLinksForkedAndUnrecordedSubagents(t *testing.T) {
 	if l := find("Read"); !strings.HasPrefix(l, "  ↳ ") || !strings.Contains(l, "[Subagent: fork]") {
 		t.Errorf("Expected the fork's own call nested under it, got %q in:\n%s", l, out)
 	}
-	if strings.Count(out, "➔ \033[1mAgent") != 1 {
+	if strings.Count(out, "➔ Agent") != 1 {
 		t.Errorf("The spawning call replayed by the fork must be shown once:\n%s", out)
 	}
 	if !strings.Contains(out, "[Subagent: background-check] spawning call not recorded") {
