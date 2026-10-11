@@ -48,10 +48,14 @@ func (s *Server) providerByID(id string) *providers.LoadedProvider {
 // the API serves full session transcripts.
 func (s *Server) Start() error {
 	addr := net.JoinHostPort("127.0.0.1", fmt.Sprint(s.Port))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("cannot listen on %s (is another agentlens ui running? try --port): %w", addr, err)
+	}
 	fmt.Printf("🚀 AgentLens Web UI is live at: http://localhost:%d\n", s.Port)
 	fmt.Println("Press Ctrl+C to stop.")
 
-	return http.ListenAndServe(addr, s.Handler())
+	return http.Serve(ln, s.Handler())
 }
 
 // Handler returns the HTTP handler serving the UI and the session API. Requests whose Host

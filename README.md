@@ -94,9 +94,9 @@ agentlens graph <session-id | trace-file>
 agentlens trace <session-id | trace-file>
 
 # Inspect detailed input arguments, results, and anomaly diagnosis for a node
-agentlens inspect <call-id>
+agentlens inspect <call-id> [session-id]   # the session ID limits the search to one session
 
-# Launch the interactive local Web UI dashboard on http://localhost:8000
+# Launch the local Web UI dashboard on http://localhost:8000 (--port <n> to change it)
 agentlens ui
 
 # Live-watch an ongoing AI session in real-time (latest session when omitted)

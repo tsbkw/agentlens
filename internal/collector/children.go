@@ -251,6 +251,24 @@ func AttributeToParent(nodes []models.CallNode, parent models.CallNode, link mod
 	}
 }
 
+// ChildTraceDir returns the directory the provider's child traces of filePath live in, when
+// the configured glob names it literally (no wildcards before the file name), so a watcher can
+// tell from the directory's modification time whether a child trace was added.
+func ChildTraceDir(provider *providers.LoadedProvider, filePath string) (string, bool) {
+	cfg := provider.Definition.Source.ChildTraces
+	if cfg == nil || cfg.PathGlob == "" {
+		return "", false
+	}
+	dir := filepath.Dir(filePath)
+	stem := strings.TrimSuffix(filepath.Base(filePath), filepath.Ext(filePath))
+	pattern := strings.NewReplacer("{dir}", dir, "{stem}", stem).Replace(cfg.PathGlob)
+	parent := filepath.Dir(pattern)
+	if strings.ContainsAny(parent, "*?[") {
+		return "", false
+	}
+	return parent, true
+}
+
 // FindChildTraces lists the subagent trace files of the trace at filePath, as configured by
 // the provider's source.child_traces. It returns nothing when the provider has no such rule.
 func FindChildTraces(provider *providers.LoadedProvider, filePath string) ([]ChildTrace, error) {

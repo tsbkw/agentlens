@@ -2,6 +2,7 @@ package cli
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -74,5 +75,42 @@ func TestParseReportOptions(t *testing.T) {
 		if _, err := ParseReportOptions(bad, now); err == nil {
 			t.Errorf("Expected %v to be rejected", bad)
 		}
+	}
+}
+
+func TestParsePortFlagAndWithoutFlag(t *testing.T) {
+	if p, err := parsePortFlag(nil); err != nil || p != 8000 {
+		t.Errorf("default port: %d, %v", p, err)
+	}
+	if p, err := parsePortFlag([]string{"--port", "9000"}); err != nil || p != 9000 {
+		t.Errorf("--port 9000: %d, %v", p, err)
+	}
+	if p, err := parsePortFlag([]string{"--port=9001"}); err != nil || p != 9001 {
+		t.Errorf("--port=9001: %d, %v", p, err)
+	}
+	for _, bad := range [][]string{{"--port"}, {"--port", "x"}, {"--port", "70000"}, {"--open"}} {
+		if _, err := parsePortFlag(bad); err == nil {
+			t.Errorf("%v: expected an error", bad)
+		}
+	}
+	rest, found := withoutFlag([]string{"--trace", "abc"}, "--trace")
+	if !found || len(rest) != 1 || rest[0] != "abc" {
+		t.Errorf("withoutFlag = %v, %v", rest, found)
+	}
+	if rest, _ := withoutFlag([]string{"--trace"}, "--trace"); len(rest) != 0 {
+		t.Errorf("Expected no session ID left, got %v", rest)
+	}
+}
+
+func TestHelpWorksWithABadProvider(t *testing.T) {
+	app, err := NewApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.Run([]string{"agentlens", "-p", "nope", "help"}); err != nil {
+		t.Errorf("help must not need a provider: %v", err)
+	}
+	if err := app.Run([]string{"agentlens", "graph", "--trace"}); err == nil || !strings.Contains(err.Error(), "missing session ID") {
+		t.Errorf("Expected a missing-ID error, got %v", err)
 	}
 }

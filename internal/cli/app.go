@@ -6,12 +6,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
 	"github.com/tsbkw/agentlens/internal/collector"
 	"github.com/tsbkw/agentlens/internal/detector"
 	"github.com/tsbkw/agentlens/internal/graph"
+	"github.com/tsbkw/agentlens/internal/models"
 	"github.com/tsbkw/agentlens/internal/providers"
 	"github.com/tsbkw/agentlens/internal/server"
 	"github.com/tsbkw/agentlens/internal/watcher"
@@ -73,19 +75,13 @@ func (a *App) Run(args []string) error {
 	if spec == "" {
 		spec = os.Getenv("AGENTLENS_PROVIDER")
 	}
-	if spec != "" && spec != "auto" {
-		selected, err := providers.ResolveProvider(spec, a.Builtins)
-		if err != nil {
-			return err
-		}
-		a.Selected = selected
-	}
 
 	if len(args) < 2 {
 		a.PrintHelp()
 		return nil
 	}
 
+	// Help and version never need a provider, so a bad --provider does not hide them
 	command := args[1]
 	switch command {
 	case "version", "--version", "-v":
@@ -94,20 +90,28 @@ func (a *App) Run(args []string) error {
 	case "help", "--help", "-h":
 		a.PrintHelp()
 		return nil
+	}
+
+	if spec != "" && spec != "auto" {
+		selected, err := providers.ResolveProvider(spec, a.Builtins)
+		if err != nil {
+			return err
+		}
+		a.Selected = selected
+	}
+
+	switch command {
 	case "list":
 		return a.CmdList()
 	case "graph":
-		if len(args) < 3 {
+		rest, trace := withoutFlag(args[2:], "--trace")
+		if len(rest) < 1 {
 			return fmt.Errorf("missing session ID. Usage: agentlens graph <session-id> [--trace]")
 		}
-		if len(args) >= 4 && (args[3] == "--trace" || args[2] == "--trace") {
-			targetID := args[2]
-			if targetID == "--trace" {
-				targetID = args[3]
-			}
-			return a.CmdTrace(targetID)
+		if trace {
+			return a.CmdTrace(rest[0])
 		}
-		return a.CmdGraph(args[2])
+		return a.CmdGraph(rest[0])
 	case "trace":
 		if len(args) < 3 {
 			return fmt.Errorf("missing session ID. Usage: agentlens trace <session-id>")
@@ -121,13 +125,20 @@ func (a *App) Run(args []string) error {
 		return a.CmdWatch(targetID)
 	case "inspect":
 		if len(args) < 3 {
-			return fmt.Errorf("missing call ID. Usage: agentlens inspect <call-id>")
+			return fmt.Errorf("missing call ID. Usage: agentlens inspect <call-id> [session-id]")
 		}
-		return a.CmdInspect(args[2])
+		sessionID := ""
+		if len(args) >= 4 {
+			sessionID = args[3]
+		}
+		return a.CmdInspect(args[2], sessionID)
 	case "report":
 		return a.CmdReport(args[2:])
 	case "ui":
-		port := 8000
+		port, err := parsePortFlag(args[2:])
+		if err != nil {
+			return err
+		}
 		srv := server.NewServer(port, a.candidates()...)
 		return srv.Start()
 	default:
@@ -241,28 +252,96 @@ func (a *App) CmdTrace(targetID string) error {
 	return nil
 }
 
-// CmdInspect displays detailed diagnostic information for a specific node ID.
-func (a *App) CmdInspect(callID string) error {
-	sessions, err := collector.DiscoverAllSessions(a.candidates())
-	if err != nil {
-		return err
+// CmdInspect displays detailed diagnostic information for a specific node ID. With a session
+// ID or trace file, only that session is searched, which is much faster than scanning all.
+func (a *App) CmdInspect(callID, sessionID string) error {
+	var sessions []*collector.SessionInfo
+	providersByID := map[string]*providers.LoadedProvider{}
+	if sessionID != "" {
+		s, provider, err := a.resolveSessionOrFile(sessionID)
+		if err != nil {
+			return err
+		}
+		sessions = []*collector.SessionInfo{s}
+		providersByID[s.ProviderID] = provider
+	} else {
+		all, err := collector.DiscoverAllSessions(a.candidates())
+		if err != nil {
+			return err
+		}
+		for i := range all {
+			sessions = append(sessions, &all[i])
+			providersByID[all[i].ProviderID] = a.providerByID(all[i].ProviderID)
+		}
 	}
 
-	for i := range sessions {
-		g, err := analyzeSession(&sessions[i], a.providerByID(sessions[i].ProviderID))
+	for _, s := range sessions {
+		g, err := analyzeSession(s, providersByID[s.ProviderID])
 		if err != nil {
 			continue
 		}
-
+		// An exact ID first; a prefix must be unique so "t" never resolves to "turn-1"
+		var prefixed []*models.CallNode
 		for _, node := range g.OrderedNodes() {
-			if node.ID == callID || strings.HasPrefix(node.ID, callID) {
+			if node.ID == callID {
 				RenderNodeInspect(os.Stdout, node)
 				return nil
 			}
+			if strings.HasPrefix(node.ID, callID) && !node.Synthetic {
+				prefixed = append(prefixed, node)
+			}
+		}
+		if len(prefixed) == 1 {
+			RenderNodeInspect(os.Stdout, prefixed[0])
+			return nil
+		}
+		if len(prefixed) > 1 {
+			return fmt.Errorf("call ID %q is ambiguous in session %s; it matches %d calls", callID, s.SessionID, len(prefixed))
 		}
 	}
 
-	return fmt.Errorf("call node %q not found in any discovered sessions", callID)
+	if sessionID != "" {
+		return fmt.Errorf("call node %q not found in session %s", callID, sessionID)
+	}
+	return fmt.Errorf("call node %q not found in any discovered sessions (pass a session ID as the second argument to search one session)", callID)
+}
+
+// withoutFlag removes flag from args and reports whether it was present.
+func withoutFlag(args []string, flag string) ([]string, bool) {
+	var rest []string
+	found := false
+	for _, a := range args {
+		if a == flag {
+			found = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+	return rest, found
+}
+
+// parsePortFlag reads the --port of `agentlens ui`; the default is 8000.
+func parsePortFlag(args []string) (int, error) {
+	port := 8000
+	for i := 0; i < len(args); i++ {
+		flag, value, hasValue := strings.Cut(args[i], "=")
+		if flag != "--port" {
+			return 0, fmt.Errorf("unknown ui flag %q. Usage: agentlens ui [--port <n>]", args[i])
+		}
+		if !hasValue {
+			if i+1 >= len(args) {
+				return 0, fmt.Errorf("--port needs a value. Usage: agentlens ui [--port <n>]")
+			}
+			i++
+			value = args[i]
+		}
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 1 || n > 65535 {
+			return 0, fmt.Errorf("--port must be a number between 1 and 65535, got %q", value)
+		}
+		port = n
+	}
+	return port, nil
 }
 
 // CmdWatch tails an active session's trace file in real time.
@@ -290,11 +369,13 @@ Available Commands:
   graph <session-id>   Render Caller ➔ Callee call graph tracing where Skills/MCPs were called
   trace <session-id>   Render turn-by-turn chronological execution trace tree
   watch [session-id]   Live stream tool calls, results & anomaly alerts from active session
-  inspect <call-id>    Display detailed input, output, and anomaly diagnostics for a node
+  inspect <call-id> [session-id]
+                       Display detailed input, output, and anomaly diagnostics for a node;
+                       a session ID or trace file limits the search to that session
   report [flags]       Aggregate calls and anomalies of all sessions over a period:
                        --since <YYYY-MM-DD|Nd> (default 7d) --until <YYYY-MM-DD>
                        --project <name> --top <n> --json
-  ui                   Launch local Web UI dashboard
+  ui [--port <n>]      Launch the local Web UI dashboard on 127.0.0.1 (default port 8000)
   version              Print version of agentlens
   help                 Print this help message
 
