@@ -16,6 +16,8 @@ import (
 // ChildTrace is a subagent trace file found next to a session trace.
 type ChildTrace struct {
 	Path string
+	// SidecarPath is the metadata file read for the child.
+	SidecarPath string
 	// ParentCallID is the spawning call named by the child's sidecar, if any.
 	ParentCallID string
 	// ChildID is the child's own ID (source.child_traces.child_id_field), used to find the
@@ -280,6 +282,7 @@ func FindChildTraces(provider *providers.LoadedProvider, filePath string) ([]Chi
 		parentID, _ := providers.ResolveField(meta, cfg.ParentCallIDField).(string)
 		children = append(children, ChildTrace{
 			Path:         path,
+			SidecarPath:  sidecar,
 			ParentCallID: parentID,
 			ChildID:      childTraceID(path, cfg.ChildIDField),
 			Name:         firstString(meta, cfg.SidecarNameField),
