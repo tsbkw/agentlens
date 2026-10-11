@@ -191,7 +191,7 @@ func (c *Collector) ingestChild(path string, parent models.CallNode, link models
 	defer file.Close()
 
 	asm := NewChildAssembler(c.Provider, path, parent)
-	if err := feedJSONL(asm, file); err != nil {
+	if _, err := feedJSONL(asm, file); err != nil {
 		return nil, nil, err
 	}
 

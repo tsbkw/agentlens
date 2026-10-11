@@ -797,7 +797,53 @@
         const start = raw.indexOf(open), end = raw.indexOf(close);
         if (start >= 0 && end > start + open.length) return raw.substring(start + open.length, end).trim();
       }
-      return raw.trim().split('\n')[0].trim();
+      // The first line the user wrote, skipping <tag>…</tag> blocks injected around a prompt
+      // (collector.cleanPrompt)
+      const stripped = firstLine(stripTagBlocks(raw));
+      if (stripped) return stripped;
+      // Only tag blocks: label the turn with the first block's name and first line of text
+      const m = /<([a-zA-Z][a-zA-Z0-9_-]*)[^<>]*>/.exec(raw);
+      if (m) {
+        let inner = raw.slice(m.index + m[0].length);
+        const end = inner.indexOf(`</${m[1]}>`);
+        if (end >= 0) inner = inner.slice(0, end);
+        const line = firstLine(inner);
+        return line ? `[${m[1]}] ${line}` : `[${m[1]}]`;
+      }
+      return firstLine(raw);
+    }
+
+    function firstLine(text) {
+      return (String(text).split('\n').map(l => l.trim()).find(l => l !== '')) || '';
+    }
+
+    // A tag without a closing tag is ordinary text and stays
+    function stripTagBlocks(text) {
+      const open = /<([a-zA-Z][a-zA-Z0-9_-]*)[^<>]*>/g;
+      let m;
+      while ((m = open.exec(text)) !== null) {
+        const close = `</${m[1]}>`;
+        const end = text.indexOf(close, m.index + m[0].length);
+        if (end < 0) continue;
+        text = text.slice(0, m.index) + text.slice(end + close.length);
+        open.lastIndex = m.index;
+      }
+      return text;
+    }
+
+    // A timestamp field as an ISO string: RFC 3339, "YYYY-MM-DD HH:MM:SS", or a Unix epoch in
+    // seconds, milliseconds or microseconds (providers.ParseTimestampValue). null when unknown.
+    function parseTimestamp(v) {
+      if (v == null || v === '') return null;
+      if (typeof v === 'string' && !/^\s*-?[\d.]+\s*$/.test(v)) {
+        let t = Date.parse(v.trim());
+        if (Number.isNaN(t) && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(v.trim())) t = Date.parse(v.trim().replace(' ', 'T') + 'Z');
+        return Number.isNaN(t) ? null : new Date(t).toISOString();
+      }
+      const f = Number(v);
+      if (!Number.isFinite(f) || f <= 0) return null;
+      const ms = f >= 1e14 ? f / 1000 : f >= 1e11 ? f : f * 1000;
+      return new Date(ms).toISOString();
     }
 
     // Mirrors CompiledScopeRule.match / ScopeTracker.Apply in internal/providers/scope.go
@@ -884,7 +930,7 @@
               turns.push({ index: 0, prompt: '(calls before the first prompt)', timestamp: nodes[0].timestamp, nodes: nodes.slice() });
             }
             currentTurnIndex++;
-            currentTurnTime = resolveField(item, turnCfg.timestamp_field) || currentTurnTime;
+            currentTurnTime = parseTimestamp(resolveField(item, turnCfg.timestamp_field)) || currentTurnTime;
             tracker.active = tracker.defaultScope;
             turns.push({ index: currentTurnIndex, prompt: cleanPromptText(text, turnCfg.prompt_tag), timestamp: currentTurnTime, nodes: [] });
           }
@@ -929,6 +975,10 @@
             if (rawCallId && idx > 0 && !call.id && !(call.tool_call && call.tool_call.id)) {
               callId = `${callId}-${idx}`;
             }
+            // A reused call ID would overwrite the earlier call (Assembler.uniqueID)
+            if (callNodeMap[callId]) {
+              for (let n = 2; ; n++) { if (!callNodeMap[`${callId}#${n}`]) { callId = `${callId}#${n}`; break; } }
+            }
 
             const node = {
               id: callId,
@@ -939,7 +989,8 @@
               turn_index: currentTurnIndex,
               caller_scope: '',
               scope_name: '',
-              timestamp: resolveExpr(call, item, fields.timestamp) || currentTurnTime,
+              timestamp: parseTimestamp(resolveExpr(call, item, fields.timestamp)) || currentTurnTime,
+              duration_ms: fields.duration_ms ? Math.max(0, Number(resolveExpr(call, item, fields.duration_ms)) || 0) : 0,
               status: status,
               arguments: args,
               output: fields.output ? (resolveExpr(call, item, fields.output) ?? null) : null,
@@ -994,7 +1045,7 @@
             const node = callNodeMap[String(resolveField(r, resCfg.call_id_field))];
             if (node) answered.push(node.id);
             if (node && applyResult(node, r, true) && resCfg.timestamp_field && !node.duration_ms) {
-              const end = Date.parse(resolveField(item, resCfg.timestamp_field));
+              const end = Date.parse(parseTimestamp(resolveField(item, resCfg.timestamp_field)));
               const start = Date.parse(node.timestamp);
               if (end > start) node.duration_ms = end - start;
             }

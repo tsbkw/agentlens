@@ -3,6 +3,7 @@ package providers
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -152,8 +153,16 @@ func (p *TraceParser) buildNode(
 
 	// Timestamp
 	nodeTime := fallbackTime
-	if t, ok := ParseTimestamp(resolveString(callPayload, rootPayload, fields.Timestamp)); ok {
+	if t, ok := ParseTimestampValue(resolveAny(callPayload, rootPayload, fields.Timestamp)); ok {
 		nodeTime = t
+	}
+
+	// Duration recorded by the provider, when it has one
+	var durationMs int64
+	if fields.DurationMs != "" {
+		if d, ok := numberOf(resolveAny(callPayload, rootPayload, fields.DurationMs)); ok && d > 0 {
+			durationMs = int64(d)
+		}
 	}
 
 	// Status
@@ -189,6 +198,7 @@ func (p *TraceParser) buildNode(
 		Name:         toolName,
 		MCPServer:    mcpServer,
 		Timestamp:    nodeTime,
+		DurationMs:   durationMs,
 		Status:       status,
 		Arguments:    args,
 		Output:       output,
@@ -223,6 +233,28 @@ func classifyToolType(name string, explicitType string) models.CallNodeType {
 		return models.NodeTypeSkill
 	}
 	return models.NodeTypeSystemTool
+}
+
+// resolveAny returns the first "a || b" alternative present in the call, then the event.
+func resolveAny(callMap, rootMap map[string]interface{}, expr string) interface{} {
+	if expr == "" {
+		return nil
+	}
+	for _, part := range strings.Split(expr, "||") {
+		key := strings.TrimSpace(part)
+		if key == "null" {
+			continue
+		}
+		if val := ResolveField(callMap, key); val != nil {
+			return val
+		}
+		if rootMap != nil {
+			if val := ResolveField(rootMap, key); val != nil {
+				return val
+			}
+		}
+	}
+	return nil
 }
 
 func resolveString(callMap, rootMap map[string]interface{}, expr string) string {
@@ -333,18 +365,74 @@ func ResolveField(data map[string]interface{}, path string) interface{} {
 	return current
 }
 
-// ParseTimestamp parses an RFC 3339 timestamp, reporting whether parsing succeeded.
+// timestampLayouts are tried in order after RFC 3339; layouts without a zone are read as UTC.
+var timestampLayouts = []string{
+	time.RFC3339Nano,
+	"2006-01-02T15:04:05.999999999",
+	"2006-01-02 15:04:05.999999999Z07:00",
+	"2006-01-02 15:04:05.999999999",
+	"2006-01-02T15:04:05.999999999Z0700",
+}
+
+// ParseTimestamp parses a timestamp: RFC 3339, the common date-time layouts above, or a
+// Unix epoch in seconds, milliseconds or microseconds. It reports whether parsing succeeded.
 func ParseTimestamp(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
 	if s == "" {
 		return time.Time{}, false
 	}
-	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return t, true
+	for _, layout := range timestampLayouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
 	}
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t, true
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return epochTime(f)
 	}
 	return time.Time{}, false
+}
+
+// ParseTimestampValue parses a timestamp field whatever its JSON type: a string, or a number
+// holding a Unix epoch.
+func ParseTimestampValue(v interface{}) (time.Time, bool) {
+	switch x := v.(type) {
+	case nil:
+		return time.Time{}, false
+	case float64:
+		return epochTime(x)
+	case string:
+		return ParseTimestamp(x)
+	default:
+		return ParseTimestamp(fmt.Sprintf("%v", x))
+	}
+}
+
+// epochTime reads a Unix epoch, telling seconds, milliseconds and microseconds apart by size.
+func epochTime(f float64) (time.Time, bool) {
+	if f <= 0 {
+		return time.Time{}, false
+	}
+	switch {
+	case f >= 1e14: // microseconds
+		return time.UnixMicro(int64(f)).UTC(), true
+	case f >= 1e11: // milliseconds
+		return time.UnixMilli(int64(f)).UTC(), true
+	default:
+		sec, frac := math.Modf(f)
+		return time.Unix(int64(sec), int64(frac*1e9)).UTC(), true
+	}
+}
+
+// numberOf reads a JSON number, or a string holding one.
+func numberOf(v interface{}) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
+		return f, err == nil
+	}
+	return 0, false
 }
 
 // TextContent flattens a value into display text. Arrays of content blocks

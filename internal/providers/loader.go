@@ -156,12 +156,57 @@ func validateDefinition(def *models.ProviderDefinition) error {
 	if def.Extraction.Fields.ToolName == "" {
 		return fmt.Errorf("missing required field 'extraction.fields.tool_name'")
 	}
+	for i, pattern := range def.Source.PathPatterns {
+		if _, err := filepath.Match(pattern, ""); err != nil {
+			return fmt.Errorf("source.path_patterns[%d]: invalid glob %q: %v", i, pattern, err)
+		}
+	}
+	if ct := def.Source.ChildTraces; ct != nil && ct.PathGlob != "" {
+		if _, err := filepath.Match(ct.PathGlob, ""); err != nil {
+			return fmt.Errorf("source.child_traces.path_glob: invalid glob %q: %v", ct.PathGlob, err)
+		}
+	}
+	switch def.Extraction.Results.Correlation {
+	case "", models.CorrelationCallID:
+	case models.CorrelationPreviousStep:
+		if def.Extraction.Results.StepIndexField == "" {
+			return fmt.Errorf("extraction.results: correlation %q needs 'step_index_field'", models.CorrelationPreviousStep)
+		}
+	default:
+		return fmt.Errorf("extraction.results.correlation must be %q or %q, got %q", models.CorrelationCallID, models.CorrelationPreviousStep, def.Extraction.Results.Correlation)
+	}
+	for name, filter := range map[string]string{
+		"extraction.events.tool_call_filter":      def.Extraction.Events.ToolCallFilter,
+		"extraction.events.tool_call_item_filter": def.Extraction.Events.ToolCallItemFilter,
+		"extraction.turns.filter":                 def.Extraction.Turns.Filter,
+		"extraction.results.filter":               def.Extraction.Results.Filter,
+		"extraction.results.item_filter":          def.Extraction.Results.ItemFilter,
+	} {
+		if err := validateFilter(filter); err != nil {
+			return fmt.Errorf("%s: %v", name, err)
+		}
+	}
 	for i, rule := range def.Extraction.Scopes {
 		if rule.ToolName == "" {
 			return fmt.Errorf("extraction.scopes[%d]: missing required field 'tool_name'", i)
 		}
 		if rule.Kind != models.ScopeKindSkill && rule.Kind != models.ScopeKindSubagent {
 			return fmt.Errorf("extraction.scopes[%d]: kind must be %q or %q, got %q", i, models.ScopeKindSkill, models.ScopeKindSubagent, rule.Kind)
+		}
+	}
+	return nil
+}
+
+// validateFilter rejects a filter clause that uses a single "=", which the evaluator would
+// otherwise read as a bare field path that never matches what the author meant.
+func validateFilter(filter string) error {
+	for _, group := range strings.Split(filter, "||") {
+		for _, clause := range strings.Split(group, "&&") {
+			c := strings.TrimSpace(clause)
+			stripped := strings.ReplaceAll(strings.ReplaceAll(c, "==", ""), "!=", "")
+			if strings.Contains(stripped, "=") {
+				return fmt.Errorf("clause %q uses a single '='; write '==' or '!='", c)
+			}
 		}
 	}
 	return nil

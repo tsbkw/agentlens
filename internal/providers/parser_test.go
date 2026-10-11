@@ -30,7 +30,7 @@ func TestParseAntigravityEvents(t *testing.T) {
 		"step_index": 4,
 		"type": "PLANNER_RESPONSE",
 		"status": "DONE",
-		"created_at": "2026-10-07T14:00:00Z",
+		"created_at": "2026-10-04T14:00:00Z",
 		"tool_calls": [
 			{
 				"id": "tc-1",
@@ -202,6 +202,32 @@ func TestEvaluateSimpleFilter(t *testing.T) {
 	for _, c := range cases {
 		if got := evaluateSimpleFilter(payload, c.filter); got != c.want {
 			t.Errorf("evaluateSimpleFilter(%q) = %v; want %v", c.filter, got, c.want)
+		}
+	}
+}
+
+func TestParseTimestampFormats(t *testing.T) {
+	want := time.Unix(1791122400, 0).UTC()
+	for _, in := range []interface{}{
+		"2026-10-04T14:00:00Z",
+		"2026-10-04T14:00:00.000Z",
+		"2026-10-04T23:00:00+09:00",
+		"2026-10-04 14:00:00",
+		"2026-10-04T14:00:00",
+		"1791122400",
+		float64(1791122400),
+		float64(1791122400000),
+		float64(1791122400000000),
+		"1791122400000",
+	} {
+		got, ok := ParseTimestampValue(in)
+		if !ok || !got.Equal(want) {
+			t.Errorf("ParseTimestampValue(%v) = %v, %v; want %v", in, got, ok, want)
+		}
+	}
+	for _, in := range []interface{}{"", "not-a-date", nil, float64(0), float64(-5)} {
+		if _, ok := ParseTimestampValue(in); ok {
+			t.Errorf("ParseTimestampValue(%v) must fail", in)
 		}
 	}
 }

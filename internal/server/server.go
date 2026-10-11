@@ -103,7 +103,11 @@ func (s *Server) Handler() http.Handler {
 
 		matched, provider, err := s.findSession(parts[0])
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			status := http.StatusInternalServerError
+			if strings.Contains(err.Error(), "ambiguous") {
+				status = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), status)
 			return
 		}
 		if matched == nil {
@@ -145,18 +149,9 @@ func (s *Server) findSession(id string) (*collector.SessionInfo, *providers.Load
 	if err != nil {
 		return nil, nil, err
 	}
-	var matched *collector.SessionInfo
-	for i := range sessions {
-		if sessions[i].SessionID == id {
-			matched = &sessions[i]
-			break
-		}
-		if matched == nil && strings.HasPrefix(sessions[i].SessionID, id) {
-			matched = &sessions[i]
-		}
-	}
-	if matched == nil {
-		return nil, nil, nil
+	matched, err := collector.FindSession(sessions, id)
+	if err != nil || matched == nil {
+		return nil, nil, err
 	}
 	if provider := s.providerByID(matched.ProviderID); provider != nil {
 		return matched, provider, nil
