@@ -360,7 +360,7 @@ async function runTestSuite() {
       { path: '/s.jsonl', text: j(
         { type: 'user', message: { content: 'first' }, timestamp: '2026-10-07T10:00:00Z' },
         { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'call_agent', name: 'Agent', input: { subagent_type: 'Explore' } }] }, timestamp: '2026-10-07T10:00:01Z' },
-        { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'call_skill', name: 'Skill', input: { skill: 'use-browser' } }] }, timestamp: '2026-10-07T10:00:10Z' },
+        { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'call_skill', name: 'Skill', input: { skill: 'web-research' } }] }, timestamp: '2026-10-07T10:00:10Z' },
         { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'call_skill', content: 'launched' }] }, toolUseResult: { status: 'forked', agentId: 'agentF' }, timestamp: '2026-10-07T10:00:11Z' },
         { type: 'user', message: { content: 'second' }, timestamp: '2026-10-07T11:00:00Z' }
       ) },
@@ -369,7 +369,7 @@ async function runTestSuite() {
         { agentId: 'agentA', type: 'assistant', message: { content: [{ type: 'tool_use', id: 'call_agent', name: 'Agent', input: { subagent_type: 'Explore' } }] }, timestamp: '2026-10-07T10:00:01Z' },
         { agentId: 'agentA', type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a_read', name: 'Read', input: {} }] }, timestamp: '2026-10-07T10:00:02Z' }
       ) },
-      { path: '/s/subagents/agent-agentF.meta.json', text: JSON.stringify({ agentType: 'general-purpose', name: 'use-browser' }) },
+      { path: '/s/subagents/agent-agentF.meta.json', text: JSON.stringify({ agentType: 'general-purpose', name: 'web-research' }) },
       { path: '/s/subagents/agent-agentF.jsonl', text: j({ agentId: 'agentF', type: 'assistant', message: { content: [{ type: 'tool_use', id: 'f_nav', name: 'Bash', input: {} }] }, timestamp: '2026-10-07T10:00:12Z' }) },
       { path: '/s/subagents/agent-agentU.meta.json', text: JSON.stringify({ agentType: 'general-purpose', name: 'background-check' }) },
       { path: '/s/subagents/agent-agentU.jsonl', text: j({ agentId: 'agentU', type: 'assistant', message: { content: [{ type: 'tool_use', id: 'u_grep', name: 'Grep', input: {} }] }, timestamp: '2026-10-07T11:00:05Z' }) }
@@ -385,7 +385,7 @@ async function runTestSuite() {
   });
   const expectLinks = {
     a_read: 'call_agent|sidecar|1|Subagent: Explore',
-    f_nav: 'call_skill|result|1|Skill: use-browser',
+    f_nav: 'call_skill|result|1|Skill: web-research',
     placeholder: '|inferred|2|Agent',
     u_grep: 'inferred-subagent-agentU|inferred|2|Subagent: background-check'
   };

@@ -37,7 +37,7 @@ func TestChildTraceParentLinks(t *testing.T) {
 {"type":"user","message":{"content":"first"},"timestamp":"2026-10-07T10:00:00Z"}
 {"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"call_agent","name":"Agent","input":{"subagent_type":"Explore"}}]},"timestamp":"2026-10-07T10:00:01Z"}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"call_agent","content":"done"}]},"toolUseResult":{"status":"completed","agentId":"agentA"},"timestamp":"2026-10-07T10:00:09Z"}
-{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call_skill","name":"Skill","input":{"skill":"use-browser"}}]},"timestamp":"2026-10-07T10:00:10Z"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call_skill","name":"Skill","input":{"skill":"web-research"}}]},"timestamp":"2026-10-07T10:00:10Z"}
 {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"call_skill","content":"Skill launched (forked execution)"}]},"toolUseResult":{"status":"forked","agentId":"agentF"},"timestamp":"2026-10-07T10:00:11Z"}
 {"type":"user","message":{"content":"second"},"timestamp":"2026-10-07T11:00:00Z"}
 {"type":"assistant","message":{"content":[{"type":"tool_use","id":"call_bash","name":"Bash","input":{}}]},"timestamp":"2026-10-07T11:00:01Z"}
@@ -50,7 +50,7 @@ func TestChildTraceParentLinks(t *testing.T) {
 {"agentId":"agentA","type":"assistant","message":{"content":[{"type":"tool_use","id":"a_read","name":"Read","input":{}}]},"timestamp":"2026-10-07T10:00:02Z"}
 `,
 		// Forked by a skill: the sidecar names no call, the Skill's result names the agent
-		"s/subagents/agent-agentF.meta.json": `{"agentType":"general-purpose","name":"use-browser"}`,
+		"s/subagents/agent-agentF.meta.json": `{"agentType":"general-purpose","name":"web-research"}`,
 		"s/subagents/agent-agentF.jsonl": `
 {"agentId":"agentF","type":"assistant","message":{"content":[{"type":"tool_use","id":"f_nav","name":"Bash","input":{}}]},"timestamp":"2026-10-07T10:00:12Z"}
 `,
@@ -88,7 +88,7 @@ func TestChildTraceParentLinks(t *testing.T) {
 	}{
 		{"call_agent", "", "", 1, "Agent"},
 		{"a_read", "call_agent", models.ParentLinkSidecar, 1, "Subagent: Explore"},
-		{"f_nav", "call_skill", models.ParentLinkResult, 1, "Skill: use-browser"},
+		{"f_nav", "call_skill", models.ParentLinkResult, 1, "Skill: web-research"},
 		{placeholder, "", models.ParentLinkInferred, 2, "Agent"},
 		{"u_grep", placeholder, models.ParentLinkInferred, 2, "Subagent: background-check"},
 		{"n_glob", "u_agent", models.ParentLinkSidecar, 2, "Subagent: reviewer"},
