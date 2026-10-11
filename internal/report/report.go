@@ -40,8 +40,10 @@ func (c Counts) Anomalies() int {
 type Row struct {
 	Key string `json:"key"`
 	// Project is the directory the session belongs to (sessions only).
-	Project string `json:"project,omitempty"`
+	Project  string `json:"project,omitempty"`
 	Provider string `json:"provider,omitempty"`
+	// LastCall is the time of the session's last call in the window (sessions only).
+	LastCall time.Time `json:"last_call,omitempty"`
 	Counts
 }
 
@@ -87,6 +89,9 @@ func (b *Builder) Add(sessionID, project string, calls []models.CallNode, g *gra
 		}
 		for _, c := range rows {
 			countCall(c, n)
+		}
+		if n.Timestamp.After(session.LastCall) {
+			session.LastCall = n.Timestamp
 		}
 	}
 	if session.Calls > 0 {

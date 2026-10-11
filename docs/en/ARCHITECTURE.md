@@ -204,4 +204,4 @@ AgentLens's Web UI is built as a portable Single Page Application (SPA):
    - 100% private: users can drag and drop trace files directly onto the browser window. Log parsing and graph rendering execute client-side via JavaScript without transmitting data to any server.
 2. **Local Embedded Server**:
    - The compiled static files in `web/` are embedded inside the Go binary using Go 1.16+ `//go:embed web/dist/*`.
-   - Running `agentlens ui` spins up a local HTTP server and automatically opens the browser.
+   - Running `agentlens ui` spins up a local HTTP server on `127.0.0.1:8000`, which also serves the period report and raw session files to the page's local sessions dashboard.

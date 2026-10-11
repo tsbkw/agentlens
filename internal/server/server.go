@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/tsbkw/agentlens/internal/collector"
 	"github.com/tsbkw/agentlens/internal/detector"
 	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/providers"
+	"github.com/tsbkw/agentlens/internal/report"
 )
 
 //go:embed static/index.html
@@ -69,41 +73,50 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(sessions)
+		writeJSON(w, sessions)
 	})
 
-	// API: Graph for a specific session
-	mux.HandleFunc("/api/sessions/", func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
-		parts := strings.Split(path, "/")
-		if len(parts) == 0 || parts[0] == "" {
-			http.NotFound(w, r)
+	// API: Aggregate over the sessions of a period (see `agentlens report`)
+	mux.HandleFunc("/api/report", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		window, err := report.ParseWindow(q.Get("since"), q.Get("until"), time.Now())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-
-		sessionID := parts[0]
-		sessions, err := collector.DiscoverAllSessions(s.Providers)
+		rep, err := report.Collect(s.Providers, window, q.Get("project"), nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		writeJSON(w, rep)
+	})
 
-		var matched *collector.SessionInfo
-		for _, sess := range sessions {
-			if sess.SessionID == sessionID || strings.HasPrefix(sess.SessionID, sessionID) {
-				matched = &sess
-				break
-			}
+	// API: Graph for a specific session, or with /files its raw trace files
+	mux.HandleFunc("/api/sessions/", func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+		parts := strings.Split(path, "/")
+		if len(parts) == 0 || parts[0] == "" || len(parts) > 2 || (len(parts) == 2 && parts[1] != "files") {
+			http.NotFound(w, r)
+			return
 		}
 
+		matched, provider, err := s.findSession(parts[0])
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		if matched == nil {
 			http.NotFound(w, r)
 			return
 		}
-		provider := s.providerByID(matched.ProviderID)
-		if provider == nil {
-			http.NotFound(w, r)
+		if len(parts) == 2 {
+			files, err := traceFiles(provider, matched.FilePath)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, files)
 			return
 		}
 
@@ -119,11 +132,75 @@ func (s *Server) Handler() http.Handler {
 		det := detector.NewDetector(provider)
 		det.Analyze(g)
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(g)
+		writeJSON(w, g)
 	})
 
 	return localOnly(mux)
+}
+
+// findSession returns the session whose ID is id or starts with it, and its provider. It
+// returns a nil session when there is none.
+func (s *Server) findSession(id string) (*collector.SessionInfo, *providers.LoadedProvider, error) {
+	sessions, err := collector.DiscoverAllSessions(s.Providers)
+	if err != nil {
+		return nil, nil, err
+	}
+	var matched *collector.SessionInfo
+	for i := range sessions {
+		if sessions[i].SessionID == id {
+			matched = &sessions[i]
+			break
+		}
+		if matched == nil && strings.HasPrefix(sessions[i].SessionID, id) {
+			matched = &sessions[i]
+		}
+	}
+	if matched == nil {
+		return nil, nil, nil
+	}
+	if provider := s.providerByID(matched.ProviderID); provider != nil {
+		return matched, provider, nil
+	}
+	return nil, nil, nil
+}
+
+// TraceFile is a trace file of a session, with its path relative to the session's directory.
+type TraceFile struct {
+	Path string `json:"path"`
+	Text string `json:"text"`
+}
+
+// traceFiles reads the trace at mainPath and its child traces and sidecars, the same files a
+// user would drop into the viewer.
+func traceFiles(provider *providers.LoadedProvider, mainPath string) ([]TraceFile, error) {
+	paths := []string{mainPath}
+	children, err := collector.FindChildTraces(provider, mainPath)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range children {
+		paths = append(paths, c.Path, c.SidecarPath)
+	}
+
+	dir := filepath.Dir(mainPath)
+	files := make([]TraceFile, 0, len(paths))
+	for _, p := range paths {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, TraceFile{Path: "/" + filepath.ToSlash(rel), Text: string(raw)})
+	}
+	return files, nil
+}
+
+func writeJSON(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
 }
 
 // localOnly rejects requests that were not addressed to localhost or a loopback IP.

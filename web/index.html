@@ -212,6 +212,43 @@
       font-size: 0.85rem;
     }
 
+    /* Local sessions (agentlens ui only) */
+    .local-section {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .local-header { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; justify-content: space-between; }
+    .local-header h2 { font-size: 1.1rem; color: #fff; }
+    .report-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+    .report-form label { font-size: 0.8rem; color: var(--text-muted); display: flex; gap: 0.35rem; align-items: center; }
+    .report-status { font-size: 0.85rem; color: var(--text-muted); }
+    .report-heading { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; margin-bottom: 0.4rem; }
+    .report-table-wrap { overflow-x: auto; }
+    .report-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .report-table th {
+      text-align: left;
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 0.4rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .report-table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .report-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .report-table .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }
+    .report-table tr.session-row { cursor: pointer; }
+    .report-table tr.session-row:hover { background-color: var(--card-alt); }
+    .count-zero { color: var(--text-muted); opacity: 0.5; }
+    .count-danger { color: var(--danger); font-weight: 600; }
+    .count-warning { color: var(--warning); font-weight: 600; }
+
     /* Caller ➔ Callee Dependency Cards */
     .deps-container {
       display: flex;
@@ -397,6 +434,32 @@
           <h1>Generative AI Call Graph Visualizer</h1>
           <p>Trace which SKILLs, Subagents, and MCP servers called what. Identify silent fallbacks, broken authentications, and performance bottlenecks.</p>
         </div>
+        <!-- Local sessions, shown when served by `agentlens ui` -->
+        <div class="local-section" id="localSection" style="display:none">
+          <div class="local-header">
+            <h2>Local sessions</h2>
+            <form class="report-form" id="reportForm">
+              <select id="reportPeriod" class="filter-select" aria-label="Period">
+                <option value="0d">Today</option>
+                <option value="7d" selected>Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="90d">Last 90 days</option>
+                <option value="custom">Custom range</option>
+              </select>
+              <label id="reportRange" style="display:none">
+                <input type="date" id="reportSince" class="filter-select" aria-label="Since"> →
+                <input type="date" id="reportUntil" class="filter-select" aria-label="Until">
+              </label>
+              <input type="text" id="reportProject" class="filter-select" placeholder="Project contains…" aria-label="Project">
+              <button type="submit" class="btn btn-primary">Analyze</button>
+            </form>
+          </div>
+          <div class="report-status" id="reportStatus"></div>
+          <div class="stats-grid" id="reportStats"></div>
+          <div id="reportServers"></div>
+          <div id="reportSessions"></div>
+        </div>
+
         <div class="dropzone" id="dropzone">
           <div class="dropzone-icon">📂</div>
           <h2>Drop an Antigravity, Claude Code or JSONL trace log here</h2>
@@ -454,7 +517,7 @@
             <option value="failed">Failures Only</option>
             <option value="anomalies">Anomalies Only</option>
           </select>
-          <button class="btn" id="resetBtn">Upload Another File</button>
+          <button class="btn" id="resetBtn">Open Another Session</button>
         </div>
 
         <!-- Caller ➔ Callee Dependency View -->
@@ -607,6 +670,7 @@
     const SUBSTITUTES = JSON.parse(document.getElementById('substitute-catalog').textContent).services || [];
     let currentProvider = null;
     let currentSubagentTraces = [];
+    let currentSourceLabel = '';
 
     function escapeHtml(value) {
       return String(value == null ? '' : value)
@@ -1082,7 +1146,9 @@
 
     // Detects the provider of the main trace among the loaded files and assembles the session,
     // including subagent traces when the provider declares child_traces.
-    function processTraceFiles(files) {
+    // label names where the files came from, such as a local session
+    function processTraceFiles(files, label = '') {
+      currentSourceLabel = label;
       files = files.map(f => ({ path: normalizePath(f.path), text: f.text }));
 
       // Files that are another file's child trace (or sidecar) are not session candidates
@@ -1401,7 +1467,7 @@
         ? ` · ${currentSubagentTraces.length} subagent transcript(s) stitched`
         : '';
       document.getElementById('sourceInfo').textContent =
-        `Format: ${currentProvider ? currentProvider.name : 'unknown'}${subagentNote}`;
+        `${currentSourceLabel ? currentSourceLabel + ' · ' : ''}Format: ${currentProvider ? currentProvider.name : 'unknown'}${subagentNote}`;
 
       // Update stats
       document.getElementById('statTotalNodes').textContent = currentNodes.length;
@@ -1715,6 +1781,145 @@
         anomSection.style.display = 'none';
       }
     }
+
+    // Local sessions: `agentlens ui` serves an aggregate of the sessions on this machine
+    // (/api/report) and their raw trace files (/api/sessions/<id>/files), which are analyzed here
+    // exactly like dropped files. Elsewhere, such as on GitHub Pages, the section stays hidden.
+    const localSection = document.getElementById('localSection');
+    const reportForm = document.getElementById('reportForm');
+    const reportPeriod = document.getElementById('reportPeriod');
+    const reportRange = document.getElementById('reportRange');
+    const reportStatus = document.getElementById('reportStatus');
+
+    async function fetchJSON(url) {
+      const res = await fetch(url);
+      const type = res.headers.get('content-type') || '';
+      if (!res.ok) throw new Error((await res.text()).trim() || res.statusText);
+      if (!type.includes('application/json')) throw new Error('not a JSON response');
+      return res.json();
+    }
+
+    function reportQuery() {
+      const params = new URLSearchParams();
+      if (reportPeriod.value === 'custom') {
+        const since = document.getElementById('reportSince').value;
+        const until = document.getElementById('reportUntil').value;
+        if (since) params.set('since', since);
+        if (until) params.set('until', until);
+      } else {
+        params.set('since', reportPeriod.value);
+      }
+      const project = document.getElementById('reportProject').value.trim();
+      if (project) params.set('project', project);
+      return params.toString();
+    }
+
+    async function loadLocalReport() {
+      reportStatus.textContent = 'Analyzing local sessions…';
+      try {
+        renderLocalReport(await fetchJSON('api/report?' + reportQuery()));
+      } catch (e) {
+        reportStatus.textContent = `Could not load the report: ${e.message}`;
+      }
+    }
+
+    async function detectLocalServer() {
+      if (!/^https?:$/.test(location.protocol)) return;
+      let report;
+      try {
+        report = await fetchJSON('api/report?' + reportQuery());
+      } catch (e) {
+        return; // a static host without the API
+      }
+      localSection.style.display = 'flex';
+      renderLocalReport(report);
+    }
+
+    // Go encodes an open window bound as the zero time
+    function isSetTime(t) {
+      return typeof t === 'string' && t !== '' && !t.startsWith('0001-');
+    }
+
+    function formatTime(t) {
+      return new Date(t).toLocaleString([], { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function countCell(n, cls) {
+      return `<td class="num ${n ? cls : 'count-zero'}">${Number(n) || 0}</td>`;
+    }
+
+    const COUNT_HEADERS = '<th class="num">Calls</th><th class="num">Failed</th><th class="num">Denied</th><th class="num">Auth</th><th class="num">Fallback</th><th class="num">Possible</th><th class="num">Loops</th>';
+
+    function countCells(c) {
+      return countCell(c.calls, '') + countCell(c.failed, 'count-danger') + countCell(c.denied, '') +
+        countCell(c.auth_expired, 'count-danger') + countCell(c.silent_fallbacks, 'count-warning') +
+        countCell(c.possible_fallbacks, '') + countCell(c.retry_loops, 'count-warning');
+    }
+
+    function renderLocalReport(report) {
+      const w = report.window || {};
+      const since = isSetTime(w.since) ? formatTime(w.since) : 'the beginning';
+      const until = isSetTime(w.until) ? formatTime(w.until) : 'now';
+      reportStatus.textContent = `${since} → ${until} · click a session to open its call graph`;
+
+      const t = report.total || {};
+      const stat = (label, value, color) =>
+        `<div class="stat-card"><div class="stat-label">${label}</div><div class="stat-value"${color ? ` style="color:var(${color})"` : ''}>${Number(value) || 0}</div></div>`;
+      document.getElementById('reportStats').innerHTML =
+        stat('Sessions', report.sessions) + stat('Calls', t.calls) + stat('Failed', t.failed, '--danger') +
+        stat('Auth Expired', t.auth_expired, '--danger') + stat('Silent Fallbacks', t.silent_fallbacks, '--warning') +
+        stat('Possible Fallbacks', t.possible_fallbacks) + stat('Retry Loops', t.retry_loops, '--warning');
+
+      const servers = (report.mcp_servers || []).slice(0, 10);
+      document.getElementById('reportServers').innerHTML = servers.length === 0 ? '' : `
+        <div class="report-heading">MCP servers</div>
+        <div class="report-table-wrap"><table class="report-table">
+          <thead><tr><th>Server</th>${COUNT_HEADERS}</tr></thead>
+          <tbody>${servers.map(r => `<tr><td>${escapeHtml(r.key)}</td>${countCells(r)}</tr>`).join('')}</tbody>
+        </table></div>`;
+
+      const sessions = report.sessions_detail || [];
+      document.getElementById('reportSessions').innerHTML = sessions.length === 0
+        ? '<div class="report-status">No tool calls recorded in this period.</div>'
+        : `
+        <div class="report-heading">Sessions (most anomalies first)</div>
+        <div class="report-table-wrap"><table class="report-table">
+          <thead><tr><th>Session</th><th>Project</th><th>Last call</th>${COUNT_HEADERS}</tr></thead>
+          <tbody>${sessions.map(r => `
+            <tr class="session-row" data-session="${escapeHtml(r.key)}" data-project="${escapeHtml(r.project || '')}" title="${escapeHtml(r.key)}">
+              <td class="mono">${escapeHtml(String(r.key).slice(0, 8))}</td>
+              <td>${escapeHtml(r.project || '')}</td>
+              <td>${isSetTime(r.last_call) ? escapeHtml(formatTime(r.last_call)) : ''}</td>
+              ${countCells(r)}
+            </tr>`).join('')}</tbody>
+        </table></div>`;
+    }
+
+    async function openLocalSession(id, project) {
+      reportStatus.textContent = 'Loading session…';
+      let files;
+      try {
+        files = await fetchJSON(`api/sessions/${encodeURIComponent(id)}/files`);
+      } catch (e) {
+        reportStatus.textContent = `Could not load session ${id}: ${e.message}`;
+        return;
+      }
+      reportStatus.textContent = '';
+      processTraceFiles(files, `Session ${id}${project ? ` · ${project}` : ''}`);
+    }
+
+    reportPeriod.addEventListener('change', () => {
+      reportRange.style.display = reportPeriod.value === 'custom' ? 'flex' : 'none';
+    });
+    reportForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      loadLocalReport();
+    });
+    document.getElementById('reportSessions').addEventListener('click', (e) => {
+      const row = e.target.closest('tr.session-row');
+      if (row) openLocalSession(row.dataset.session, row.dataset.project);
+    });
+    detectLocalServer();
 
     function loadSampleTrace() {
       const sample = [

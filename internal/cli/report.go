@@ -5,15 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
-	"github.com/tsbkw/agentlens/internal/collector"
-	"github.com/tsbkw/agentlens/internal/detector"
-	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/report"
 	"github.com/tsbkw/agentlens/internal/textutil"
 )
@@ -30,10 +26,10 @@ const reportUsage = "Usage: agentlens report [--since <date|Nd>] [--until <date>
 
 // ParseReportOptions parses report flags. Dates are YYYY-MM-DD in local time or RFC 3339;
 // --since also accepts "<N>d" (N days ago). --until with a date includes that whole day.
-// Without --since, the last 7 days are reported.
+// Without --since, the last 7 days are reported (report.ParseWindow).
 func ParseReportOptions(args []string, now time.Time) (ReportOptions, error) {
 	opts := ReportOptions{Top: 10}
-	since, until := "7d", ""
+	var since, until string
 	for i := 0; i < len(args); i++ {
 		flag, value, hasValue := strings.Cut(args[i], "=")
 		next := func() (string, error) {
@@ -72,37 +68,10 @@ func ParseReportOptions(args []string, now time.Time) (ReportOptions, error) {
 	}
 
 	var err error
-	if opts.Window.Since, err = parseReportTime(since, now, false); err != nil {
-		return opts, fmt.Errorf("invalid --since: %w", err)
-	}
-	if until != "" {
-		if opts.Window.Until, err = parseReportTime(until, now, true); err != nil {
-			return opts, fmt.Errorf("invalid --until: %w", err)
-		}
-	}
-	if !opts.Window.Until.IsZero() && !opts.Window.Since.Before(opts.Window.Until) {
-		return opts, fmt.Errorf("--since must be before --until")
+	if opts.Window, err = report.ParseWindow(since, until, now); err != nil {
+		return opts, fmt.Errorf("%w. %s", err, reportUsage)
 	}
 	return opts, nil
-}
-
-func parseReportTime(s string, now time.Time, endOfDay bool) (time.Time, error) {
-	if days, ok := strings.CutSuffix(s, "d"); ok {
-		if n, err := strconv.Atoi(days); err == nil && n >= 0 {
-			y, m, d := now.Date()
-			return time.Date(y, m, d, 0, 0, 0, 0, now.Location()).AddDate(0, 0, -n), nil
-		}
-	}
-	if t, err := time.ParseInLocation("2006-01-02", s, now.Location()); err == nil {
-		if endOfDay {
-			t = t.AddDate(0, 0, 1)
-		}
-		return t, nil
-	}
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t, nil
-	}
-	return time.Time{}, fmt.Errorf("%q is not YYYY-MM-DD, RFC 3339 or <N>d", s)
 }
 
 // CmdReport aggregates the anomalies of all sessions with calls in a time window.
@@ -111,51 +80,12 @@ func (a *App) CmdReport(args []string) error {
 	if err != nil {
 		return err
 	}
-	sessions, err := collector.DiscoverAllSessions(a.candidates())
+	r, err := report.Collect(a.candidates(), opts.Window, opts.Project, func(path string, err error) {
+		fmt.Fprintf(os.Stderr, "skipping %s: %v\n", path, err)
+	})
 	if err != nil {
 		return err
 	}
-
-	b := report.NewBuilder(opts.Window)
-	for i := range sessions {
-		s := &sessions[i]
-		project := filepath.Base(filepath.Dir(s.FilePath))
-		// A trace last written before the window cannot hold calls in it
-		if s.ModTime.Before(opts.Window.Since) {
-			continue
-		}
-		if opts.Project != "" && project != "logs" && !strings.Contains(project, opts.Project) {
-			continue
-		}
-		provider := a.providerByID(s.ProviderID)
-		if provider == nil {
-			continue
-		}
-		data, err := collector.NewCollector(provider).IngestSessionFile(s.FilePath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "skipping %s: %v\n", s.FilePath, err)
-			continue
-		}
-		if project == "logs" {
-			for _, n := range data.Nodes {
-				if cwd, ok := n.Arguments["Cwd"].(string); ok && cwd != "" {
-					cwd = strings.Trim(cwd, "\"'")
-					if base := filepath.Base(cwd); base != "" && base != "." && base != "/" {
-						project = base
-						break
-					}
-				}
-			}
-		}
-		if opts.Project != "" && !strings.Contains(project, opts.Project) {
-			continue
-		}
-		g := graph.NewGraphBuilder().BuildWithTurns(s.SessionID, provider.Definition.Provider.ID, data.Turns, data.Nodes)
-		detector.NewDetector(provider).Analyze(g)
-		b.Add(s.SessionID, project, data.Nodes, g)
-	}
-
-	r := b.Report()
 	if opts.JSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
