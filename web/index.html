@@ -1409,7 +1409,8 @@
         // A successful call's output is arbitrary content that often mentions 401; only failed calls are scanned
         const parts = [node.errorMessage || ''];
         if (node.output != null && isFailed(node)) parts.push(textContent(node.output));
-        const outStr = parts.join(' ').trim();
+        // Joined with line breaks so a match is quoted from one part only (matchContext)
+        const outStr = parts.join('\n').trim();
         const authMatch = authRegexes.map(re => re.exec(outStr)).find(Boolean);
         if (outStr && authMatch) {
           record(node, {
