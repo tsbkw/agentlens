@@ -221,13 +221,18 @@ func (c *Collector) ingestInferredChild(child ChildTrace, session *SessionData) 
 // NewChildAssembler creates an Assembler for a subagent trace whose own calls are attributed
 // to the scope of the spawning call.
 func NewChildAssembler(provider *providers.LoadedProvider, path string, parent models.CallNode) *Assembler {
-	scope := parent.ScopeName
-	if scope == "" {
-		scope = "Subagent: " + parent.Name
-	}
 	asm := NewAssembler(provider, path)
-	asm.SetDefaultScope(scope)
+	asm.SetDefaultScope(ChildScope(parent))
 	return asm
+}
+
+// ChildScope is the scope of the calls a subagent trace makes directly: the scope opened by
+// its spawning call.
+func ChildScope(parent models.CallNode) string {
+	if parent.ScopeName != "" {
+		return parent.ScopeName
+	}
+	return "Subagent: " + parent.Name
 }
 
 // AttributeToParent places the calls of a subagent trace in the session and turn of the

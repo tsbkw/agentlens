@@ -63,6 +63,7 @@ type tailSource struct {
 	partial string // bytes of a line whose newline has not been written yet
 	asm     *collector.Assembler
 	link    models.ParentLink // how a subagent trace was linked to parent
+	child   collector.ChildTrace
 	// replayed holds calls a forked subagent copied from its parent's context; they are
 	// already shown and analyzed as the parent's calls.
 	replayed map[string]bool
@@ -224,6 +225,16 @@ func (s *session) discoverChildren() bool {
 		}
 	}
 
+	// A record naming the spawning call of an inferred subagent may arrive after it was placed
+	for _, src := range s.sources {
+		if src.link != models.ParentLinkInferred {
+			continue
+		}
+		if parent, link, ok := collector.ResolveParent(src.child, byID, links); ok {
+			s.relink(src, parent, link)
+		}
+	}
+
 	added := false
 	for _, child := range children {
 		if s.tracked[child.Path] {
@@ -258,11 +269,23 @@ func (s *session) discoverChildren() bool {
 			continue
 		}
 		src.link = link
+		src.child = child
 		s.tracked[child.Path] = true
 		s.sources = append(s.sources, src)
 		added = true
 	}
 	return added
+}
+
+// relink attaches an inferred subagent trace to its spawning call once a record names it. Its
+// calls seen so far move from the placeholder to that call and its scope.
+func (s *session) relink(src *tailSource, parent models.CallNode, link models.ParentLink) {
+	placeholder := src.parent.ScopeName
+	src.asm.Rescope(collector.ChildScope(parent))
+	src.parent = &parent
+	src.link = link
+	fmt.Fprintf(s.out, "  ↳ %s[%s] linked to its spawning call %s (%s); earlier calls moved from %s%s\n",
+		colorCyan, collector.ChildScope(parent), parent.Name, link, placeholder, colorReset)
 }
 
 // knownElsewhere reports whether a call ID already belongs to another followed source.
