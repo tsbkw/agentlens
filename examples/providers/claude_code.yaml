@@ -59,6 +59,40 @@ extraction:
     output_field: "content"
     error_flag_field: "is_error"
     timestamp_field: "timestamp"
+    # Claude Code's own refusals: the call never ran (user rejection, permission rules,
+    # auto mode classifier). Errors reported by a tool that did run are not matched.
+    denied_regex:
+      - "^The user doesn't want to proceed with this tool use"
+      - "^Permission for this action was denied"
+      - "^Permission to use \\S+ "
+      - "^The server-side auto mode classifier gave no verdict"
+      - "^\\S+ is temporarily unavailable .*auto mode cannot determine"
+      - "^<tool_use_error>File is in a directory that is denied by your permission settings"
+      - "^<tool_use_error>Blocked: "
+
+  # Bookkeeping tools: tool discovery, task tracking, planning, questions, scheduling and
+  # agent messaging. They never do the user's task themselves.
+  auxiliary_tools:
+    - "ToolSearch"
+    - "TodoWrite"
+    - "TaskCreate"
+    - "TaskUpdate"
+    - "TaskGet"
+    - "TaskList"
+    - "TaskOutput"
+    - "TaskStop"
+    - "AskUserQuestion"
+    - "EnterPlanMode"
+    - "ExitPlanMode"
+    - "ScheduleWakeup"
+    - "Cron*"
+    - "ListAgents"
+    - "SendMessage"
+    - "SubagentHandback"
+    - "StructuredOutput"
+    - "EnterWorktree"
+    - "ExitWorktree"
+    - "ListMcpResourcesTool"
 
   scopes:
     - tool_name: "Skill"

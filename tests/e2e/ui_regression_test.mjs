@@ -397,6 +397,51 @@ async function runTestSuite() {
   console.log('  ✓ sidecar / result / inferred parent links match the Go collector, replayed calls are deduplicated');
 
   // -------------------------------------------------------------
+  // Test 7e: Denied and bookkeeping calls in attempt sequences
+  // (same transcript as TestDeniedAndAuxiliaryCallsInAttemptSequences)
+  // -------------------------------------------------------------
+  console.log('\nTest 7e: Denied and auxiliary calls...');
+  await page.click('#resetBtn');
+  const seqLines = [
+      "{\"type\":\"user\",\"message\":{\"content\":\"go\"},\"timestamp\":\"2026-10-07T10:00:00Z\"}",
+      "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"m1\",\"name\":\"mcp__github__get_issue\",\"input\":{}}]},\"timestamp\":\"2026-10-07T10:00:01Z\"}",
+      "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"m1\",\"content\":\"Authentication Failed: Bad credentials\",\"is_error\":true}]},\"toolUseResult\":\"Error\",\"timestamp\":\"2026-10-07T10:00:02Z\"}",
+      "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"ts\",\"name\":\"ToolSearch\",\"input\":{\"query\":\"github\"}}]},\"timestamp\":\"2026-10-07T10:00:03Z\"}",
+      "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"ts\",\"content\":\"No such tool available\",\"is_error\":true}]},\"toolUseResult\":\"Error\",\"timestamp\":\"2026-10-07T10:00:04Z\"}",
+      "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"b1\",\"name\":\"Bash\",\"input\":{\"command\":\"gh issue view 1\"}}]},\"timestamp\":\"2026-10-07T10:00:05Z\"}",
+      "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"b1\",\"content\":\"ok\"}]},\"toolUseResult\":{\"stdout\":\"ok\"},\"timestamp\":\"2026-10-07T10:00:06Z\"}",
+      "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"e1\",\"name\":\"mcp__notion__update_page\",\"input\":{}}]},\"timestamp\":\"2026-10-07T10:00:07Z\"}",
+      "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"e1\",\"content\":\"The user doesn't want to proceed with this tool use. The tool use was rejected.\",\"is_error\":true}]},\"toolUseResult\":\"Error\",\"timestamp\":\"2026-10-07T10:00:08Z\"}",
+      "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"g1\",\"name\":\"Grep\",\"input\":{}}]},\"timestamp\":\"2026-10-07T10:00:09Z\"}",
+      "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"g1\",\"content\":\"match\"}]},\"toolUseResult\":{\"stdout\":\"match\"},\"timestamp\":\"2026-10-07T10:00:10Z\"}",
+      "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"r1\",\"name\":\"Read\",\"input\":{}}]},\"timestamp\":\"2026-10-07T10:00:11Z\"}",
+      "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"r1\",\"content\":\"File does not exist.\",\"is_error\":true}]},\"toolUseResult\":\"Error\",\"timestamp\":\"2026-10-07T10:00:12Z\"}",
+      "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"td\",\"name\":\"TaskUpdate\",\"input\":{}}]},\"timestamp\":\"2026-10-07T10:00:13Z\"}",
+      "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"r2\",\"name\":\"Read\",\"input\":{}}]},\"timestamp\":\"2026-10-07T10:00:14Z\"}",
+      "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"r2\",\"content\":\"File does not exist.\",\"is_error\":true}]},\"toolUseResult\":\"Error\",\"timestamp\":\"2026-10-07T10:00:15Z\"}",
+      "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"d1\",\"name\":\"Bash\",\"input\":{\"command\":\"rm -rf build\"}}]},\"timestamp\":\"2026-10-07T10:00:16Z\"}",
+      "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"d1\",\"content\":\"Permission for this action was denied by the Claude Code auto mode classifier.\",\"is_error\":true}]},\"toolUseResult\":\"Error\",\"timestamp\":\"2026-10-07T10:00:17Z\"}",
+      "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"r3\",\"name\":\"Read\",\"input\":{}}]},\"timestamp\":\"2026-10-07T10:00:18Z\"}",
+      "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"r3\",\"content\":\"File does not exist.\",\"is_error\":true}]},\"toolUseResult\":\"Error\",\"timestamp\":\"2026-10-07T10:00:19Z\"}"
+  ];
+  const seqResult = await page.evaluate((lines) => {
+    processTraceText(lines.join('\n'));
+    const by = id => currentNodes.find(n => n.id === id);
+    return {
+      statuses: ['e1', 'd1', 'm1'].map(id => by(id).status),
+      auxiliary: ['ts', 'td', 'b1'].map(id => !!by(id).auxiliary),
+      anomalies: currentAnomalies.filter(a => a.type !== 'auth_expired')
+        .map(a => a.type === 'silent_fallback' ? `fallback:${a.relatedNodeId}->${a.nodeId}` : `loop:${a.title}`)
+    };
+  }, seqLines);
+  if (JSON.stringify(seqResult.statuses) !== JSON.stringify(['denied', 'denied', 'failed'])) throw new Error(`Unexpected statuses ${seqResult.statuses}`);
+  if (JSON.stringify(seqResult.auxiliary) !== JSON.stringify([true, true, false])) throw new Error(`Unexpected auxiliary flags ${seqResult.auxiliary}`);
+  if (JSON.stringify(seqResult.anomalies) !== JSON.stringify(['fallback:m1->b1', 'loop:Retry Loop: Read failed 3 times consecutively'])) {
+    throw new Error(`Unexpected anomalies ${seqResult.anomalies}`);
+  }
+  console.log('  ✓ Refusals are denied, bookkeeping calls are skipped, fallbacks and loops match the Go detector');
+
+  // -------------------------------------------------------------
   // Test 7b: Trace content is rendered as text, not HTML
   // -------------------------------------------------------------
   console.log('\nTest 7b: HTML escaping of trace content...');

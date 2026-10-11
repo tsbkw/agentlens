@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -207,7 +208,7 @@ func resultItems(cfg models.ResultExtraction, payload map[string]interface{}) []
 
 // applyResult copies output and failure status from a result record onto its call node,
 // reporting whether a result was found. flattenText reduces content-block outputs to plain text.
-func applyResult(node *models.CallNode, cfg models.ResultExtraction, result map[string]interface{}, flattenText bool) bool {
+func applyResult(node *models.CallNode, cfg models.ResultExtraction, denied []*regexp.Regexp, result map[string]interface{}, flattenText bool) bool {
 	output := providers.ResolveField(result, cfg.OutputField)
 	if output == nil {
 		return false
@@ -235,6 +236,13 @@ func applyResult(node *models.CallNode, cfg models.ResultExtraction, result map[
 		node.Status = models.StatusFailed
 		if flattenText && node.ErrorMessage == "" {
 			node.ErrorMessage = providers.TextContent(output)
+		}
+		text := providers.TextContent(output)
+		for _, re := range denied {
+			if re.MatchString(text) {
+				node.Status = models.StatusDenied
+				break
+			}
 		}
 	}
 	return true

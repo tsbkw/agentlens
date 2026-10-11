@@ -284,3 +284,70 @@ func TestRetryLoopReportedOncePerStreak(t *testing.T) {
 		t.Errorf("Second streak: expected anomaly on n9 counting 3 failures, got %+v", records[1])
 	}
 }
+
+func TestDeniedAndAuxiliaryCallsInAttemptSequences(t *testing.T) {
+	provider, err := providers.LoadProviderFromFile(filepath.Join("..", "..", "examples", "providers", "claude_code.yaml"))
+	if err != nil {
+		t.Fatalf("Failed to load provider: %v", err)
+	}
+	transcript := strings.Join([]string{
+		`{"type":"user","message":{"content":"go"},"timestamp":"2026-10-07T10:00:00Z"}`,
+		// MCP fails, the agent looks up tools, then substitutes the shell: one fallback mcp -> Bash
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"m1","name":"mcp__github__get_issue","input":{}}]},"timestamp":"2026-10-07T10:00:01Z"}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"m1","content":"Authentication Failed: Bad credentials","is_error":true}]},"toolUseResult":"Error","timestamp":"2026-10-07T10:00:02Z"}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"ts","name":"ToolSearch","input":{"query":"github"}}]},"timestamp":"2026-10-07T10:00:03Z"}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"ts","content":"No such tool available","is_error":true}]},"toolUseResult":"Error","timestamp":"2026-10-07T10:00:04Z"}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"b1","name":"Bash","input":{"command":"gh issue view 1"}}]},"timestamp":"2026-10-07T10:00:05Z"}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"b1","content":"ok"}]},"toolUseResult":{"stdout":"ok"},"timestamp":"2026-10-07T10:00:06Z"}`,
+		// The user rejects an edit; the next call is not a fallback from it
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"e1","name":"mcp__notion__update_page","input":{}}]},"timestamp":"2026-10-07T10:00:07Z"}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"e1","content":"The user doesn't want to proceed with this tool use. The tool use was rejected.","is_error":true}]},"toolUseResult":"Error","timestamp":"2026-10-07T10:00:08Z"}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"g1","name":"Grep","input":{}}]},"timestamp":"2026-10-07T10:00:09Z"}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"g1","content":"match"}]},"toolUseResult":{"stdout":"match"},"timestamp":"2026-10-07T10:00:10Z"}`,
+		// Failures separated only by bookkeeping and a denied call still form one streak
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"r1","name":"Read","input":{}}]},"timestamp":"2026-10-07T10:00:11Z"}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"r1","content":"File does not exist.","is_error":true}]},"toolUseResult":"Error","timestamp":"2026-10-07T10:00:12Z"}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"td","name":"TaskUpdate","input":{}}]},"timestamp":"2026-10-07T10:00:13Z"}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"r2","name":"Read","input":{}}]},"timestamp":"2026-10-07T10:00:14Z"}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"r2","content":"File does not exist.","is_error":true}]},"toolUseResult":"Error","timestamp":"2026-10-07T10:00:15Z"}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"d1","name":"Bash","input":{"command":"rm -rf build"}}]},"timestamp":"2026-10-07T10:00:16Z"}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"d1","content":"Permission for this action was denied by the Claude Code auto mode classifier.","is_error":true}]},"toolUseResult":"Error","timestamp":"2026-10-07T10:00:17Z"}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"r3","name":"Read","input":{}}]},"timestamp":"2026-10-07T10:00:18Z"}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"r3","content":"File does not exist.","is_error":true}]},"toolUseResult":"Error","timestamp":"2026-10-07T10:00:19Z"}`,
+	}, "\n")
+
+	data, err := collector.NewCollector(provider).IngestSessionReader(strings.NewReader(transcript), "s.jsonl")
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+	status := map[string]models.CallStatus{}
+	auxiliary := map[string]bool{}
+	for _, n := range data.Nodes {
+		status[n.ID], auxiliary[n.ID] = n.Status, n.Auxiliary
+	}
+	if status["e1"] != models.StatusDenied || status["d1"] != models.StatusDenied || status["m1"] != models.StatusFailed {
+		t.Errorf("Expected refusals as denied and tool errors as failed, got %v", status)
+	}
+	if !auxiliary["ts"] || !auxiliary["td"] || auxiliary["b1"] {
+		t.Errorf("Unexpected auxiliary flags %v", auxiliary)
+	}
+
+	g := graph.NewGraphBuilder().BuildWithTurns("s", "claude-code", data.Turns, data.Nodes)
+	res := NewDetector(provider).Analyze(g)
+	var got []string
+	for _, a := range res.Anomalies {
+		switch a.Type {
+		case models.AnomalySilentFallback:
+			got = append(got, "fallback:"+a.RelatedNodeID+"->"+a.NodeID)
+		case models.AnomalyRetryLoop:
+			got = append(got, "loop:"+a.Title)
+		}
+	}
+	want := []string{"fallback:m1->b1", "loop:Retry Loop / Thrashing: Read failed 3 times"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("Expected %v, got %v", want, got)
+	}
+	if m := g.ComputeMetrics(); m.FailedCalls != 5 || m.DeniedCalls != 2 {
+		t.Errorf("Expected 5 failed and 2 denied calls, got %+v", m)
+	}
+}

@@ -23,6 +23,9 @@ const (
 	StatusSuccess CallStatus = "success"
 	StatusFailed  CallStatus = "failed"
 	StatusTimeout CallStatus = "timeout"
+	// StatusDenied: the call never ran because the user or a permission policy refused it.
+	// It is not a tool failure, so it never starts a fallback or a retry loop.
+	StatusDenied CallStatus = "denied"
 	StatusUnknown CallStatus = "unknown"
 )
 
@@ -79,6 +82,10 @@ type CallNode struct {
 	// ParentLink records how a call from a child (subagent) trace was linked to its spawner.
 	// Empty for calls of the main trace.
 	ParentLink ParentLink `json:"parent_link,omitempty"`
+	// Auxiliary marks agent bookkeeping (tool discovery, planning, task tracking, questions to
+	// the user). Such calls never do the user's task, so they are neither a substitute for a
+	// failed call nor a break in a sequence of attempts.
+	Auxiliary bool `json:"auxiliary,omitempty"`
 }
 
 // IsInferredPlaceholder reports whether the node stands in for an unrecorded spawning call.

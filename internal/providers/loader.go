@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/tsbkw/agentlens/internal/models"
 	"gopkg.in/yaml.v3"
@@ -17,6 +18,17 @@ type LoadedProvider struct {
 	AuthFailureRegex []*regexp.Regexp
 	MCPServerRegex   *regexp.Regexp
 	ScopeRules       []CompiledScopeRule
+	DeniedRegex      []*regexp.Regexp
+}
+
+// IsAuxiliaryTool reports whether name is one of the provider's bookkeeping tools.
+func (p *LoadedProvider) IsAuxiliaryTool(name string) bool {
+	for _, pattern := range p.Definition.Extraction.AuxiliaryTools {
+		if pattern == name || (strings.HasSuffix(pattern, "*") && strings.HasPrefix(name, strings.TrimSuffix(pattern, "*"))) {
+			return true
+		}
+	}
+	return false
 }
 
 // LoadProviderFromFile reads and parses a YAML provider definition from disk.
@@ -72,6 +84,14 @@ func LoadProviderFromBytes(data []byte) (*LoadedProvider, error) {
 			compiled.NameRegex = re
 		}
 		loaded.ScopeRules = append(loaded.ScopeRules, compiled)
+	}
+
+	for _, pattern := range def.Extraction.Results.DeniedRegex {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid results.denied_regex %q: %w", pattern, err)
+		}
+		loaded.DeniedRegex = append(loaded.DeniedRegex, re)
 	}
 
 	// Pre-compile anomaly auth failure regex patterns

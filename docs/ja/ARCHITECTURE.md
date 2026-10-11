@@ -124,14 +124,17 @@ type CallNode struct {
     MCPServer    string                 `json:"mcp_server,omitempty"`
     Timestamp    time.Time              `json:"timestamp"`
     DurationMs   int64                  `json:"duration_ms"`
-    Status       string                 `json:"status"` // "success", "failed", "timeout"
+    Status       string                 `json:"status"` // "success", "failed", "timeout", "denied"
     Arguments    map[string]interface{} `json:"arguments,omitempty"`
     Output       interface{}            `json:"output,omitempty"`
     ErrorMessage string                 `json:"error_message,omitempty"`
     Anomalies    []AnomalyRecord        `json:"anomalies,omitempty"`
     ParentLink   string                 `json:"parent_link,omitempty"` // "sidecar", "result", "inferred"
+    Auxiliary    bool                   `json:"auxiliary,omitempty"`
 }
 ```
+
+`Status` が `denied` の呼び出しは、ユーザーや権限設定に拒否されて実行されなかったもの (`results.denied_regex`) で、失敗とは区別します。`Auxiliary` はツール検索・タスク管理・計画などエージェント自身の管理操作 (`extraction.auxiliary_tools`) を表します。denied と補助ツールの呼び出しはフォールバックとリトライループの判定に関与しません。「MCP 失敗 → ツール検索 → シェル」は、MCP からシェルへのフォールバックとして扱います。
 
 `ParentLink` は子 (サブエージェント) トレースから統合した呼び出しに設定され、その配置の根拠を表します。
 
