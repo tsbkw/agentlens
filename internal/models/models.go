@@ -35,9 +35,7 @@ type AnomalyType string
 const (
 	AnomalySilentFallback AnomalyType = "silent_fallback"
 	AnomalyAuthExpired    AnomalyType = "auth_expired"
-	AnomalyProxyRouting   AnomalyType = "proxy_routing"
 	AnomalyRetryLoop      AnomalyType = "retry_loop"
-	AnomalyLatencySpike   AnomalyType = "latency_spike"
 )
 
 // AnomalySeverity indicates how critical the issue is.

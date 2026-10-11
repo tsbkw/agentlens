@@ -569,6 +569,29 @@ func (g *Graph) ComputeMetrics() GraphMetrics {
 		case models.StatusDenied:
 			m.DeniedCalls++
 		}
+		m.TotalDuration += time.Duration(node.DurationMs) * time.Millisecond
+	}
+
+	// Depth of the call tree below the roots, following calls and spawns edges
+	var depth func(id string, seen map[string]bool) int
+	depth = func(id string, seen map[string]bool) int {
+		if seen[id] {
+			return 0
+		}
+		seen[id] = true
+		deepest := 0
+		for _, child := range g.Children[id] {
+			if d := depth(child, seen); d > deepest {
+				deepest = d
+			}
+		}
+		return deepest + 1
+	}
+	seen := make(map[string]bool, len(g.Nodes))
+	for _, root := range g.Roots {
+		if d := depth(root, seen) - 1; d > m.MaxDepth {
+			m.MaxDepth = d
+		}
 	}
 
 	return m

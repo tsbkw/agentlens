@@ -15,7 +15,7 @@ When Generative AI runs in autonomous mode, it invokes skills, MCP (Model Contex
 
 ### Key Capabilities
 1. **Call Graph Reconstruction (DAG)**: Maps turns, agents, skills, and MCP tool executions.
-2. **Silent Fallback & Anomaly Detection**: Detects HTTP 401/403, indirect proxy routing, and unexpected tool substitutions.
+2. **Silent Fallback & Anomaly Detection**: Detects HTTP 401/403, unexpected tool substitutions (rated by confidence) and retry loops.
 3. **Strict Provider Agnosticism**: AI platform specifics are isolated exclusively into declarative YAML definitions.
 4. **Zero-Dependency CLI & Dual Web UI**: Written in Go (single binary), bundled with an embedded Web UI (`agentlens ui`) and a 100% free client-side viewer on **GitHub Pages** (`https://tsbkw.github.io/agentlens`).
 

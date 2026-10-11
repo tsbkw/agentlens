@@ -19,7 +19,7 @@ However, visibility into what is *actually* executing behind the scenes is often
 **AgentLens** brings complete transparency to AI tool interactions:
 - 🚀 **Zero-Dependency Single Binary**: Written in Go. Runs instantly on macOS, Linux, and Windows with **no Python, no Node.js, and no runtime installation required**.
 - 📊 **Call Graph Reconstruction**: Reassembles complex agent execution flows, SKILL calls, and MCP invocations into a structured Directed Acyclic Graph (DAG).
-- 🚨 **Silent Fallback & Anomaly Detection**: Automatically flags authentication expirations (HTTP 401/403), indirect proxy routing, and silent tool substitutions.
+- 🚨 **Silent Fallback & Anomaly Detection**: Automatically flags authentication expirations (HTTP 401/403), silent tool substitutions (rated by confidence) and retry loops.
 - 🔌 **Provider-Agnostic Design**: Decouples all AI platform dependencies into declarative YAML provider definitions. Supports Google Antigravity, Claude Code, Cursor, and custom agent traces.
 - 🖥️ **CLI & Web UI Visualizations**:
   - **Terminal CLI**: Inspect executions instantly in your terminal via formatted trees with colored status and anomaly badges.
@@ -36,7 +36,8 @@ flowchart TD
     subgraph L1["1. Provider Definition Layer (AI-Dependent)"]
         P1["Antigravity YAML"]
         P2["Claude Code YAML"]
-        P3["Generic JSONL YAML"]
+        P3["Cursor YAML"]
+        P4["Generic JSONL YAML"]
     end
 
     subgraph L2["2. Data Collector Layer (Go)"]
