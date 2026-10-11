@@ -436,7 +436,7 @@ async function runTestSuite() {
   }, seqLines);
   if (JSON.stringify(seqResult.statuses) !== JSON.stringify(['denied', 'denied', 'failed'])) throw new Error(`Unexpected statuses ${seqResult.statuses}`);
   if (JSON.stringify(seqResult.auxiliary) !== JSON.stringify([true, true, false])) throw new Error(`Unexpected auxiliary flags ${seqResult.auxiliary}`);
-  if (JSON.stringify(seqResult.anomalies) !== JSON.stringify(['fallback:m1->b1', 'loop:Retry Loop: Read failed 3 times consecutively'])) {
+  if (JSON.stringify(seqResult.anomalies) !== JSON.stringify(['fallback:m1->b1', 'loop:Retry Loop / Thrashing: Read failed 3 times'])) {
     throw new Error(`Unexpected anomalies ${seqResult.anomalies}`);
   }
   console.log('  ✓ Refusals are denied, bookkeeping calls are skipped, fallbacks and loops match the Go detector');
@@ -466,6 +466,46 @@ async function runTestSuite() {
   if (JSON.stringify(conf.fb) !== JSON.stringify(['a->b:high', 'c->d:high', 'e->f:low'])) throw new Error(`Unexpected fallback confidence ${conf.fb}`);
   if (!conf.lowRow) throw new Error('Expected the low-confidence fallback to be labelled in the dependency view');
   console.log('  ✓ catalog CLI and shared identifiers give high confidence, an unrelated next call stays low');
+
+  // -------------------------------------------------------------
+  // Test 7g: Parallel sibling calls, pre-turn calls, object error messages (parity with Go)
+  // -------------------------------------------------------------
+  console.log('\nTest 7g: Sibling calls, pre-turn calls and object errors...');
+  await page.click('#resetBtn');
+  const parity = await page.evaluate(() => {
+    const call = (id, name, input, ts) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input }] }, timestamp: ts });
+    const fail = (id, ts, content = 'Error: 502 Bad Gateway') => ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content, is_error: true }] }, toolUseResult: 'Error', timestamp: ts });
+    const ok = (id, ts) => ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] }, toolUseResult: { stdout: 'ok' }, timestamp: ts });
+    processTraceText([
+      // A call before the first prompt: it keeps its own turn and never reacts to turn 1
+      call('pre', 'mcp__github__get_issue', { owner: 'acme', repo: 'widgets' }, '2026-10-07T09:59:00Z'), fail('pre', '2026-10-07T09:59:01Z'),
+      { type: 'user', message: { content: 'go' }, timestamp: '2026-10-07T10:00:00Z' },
+      // Two tool uses in one model response share a timestamp: the sibling is not a fallback
+      { type: 'assistant', timestamp: '2026-10-07T10:00:01Z', message: { content: [
+        { type: 'tool_use', id: 'a', name: 'mcp__github__get_issue', input: { owner: 'acme', repo: 'widgets', issue_number: 42 } },
+        { type: 'tool_use', id: 'sib', name: 'Bash', input: { command: 'gh issue view 42 -R acme/widgets' } }
+      ] } },
+      fail('a', '2026-10-07T10:00:03Z'), ok('sib', '2026-10-07T10:00:03Z'),
+      // Issued after the failure was known: this one is the fallback
+      call('b', 'Bash', { command: 'gh issue view 42 -R acme/widgets' }, '2026-10-07T10:00:04Z'), ok('b', '2026-10-07T10:00:05Z')
+    ].map(l => JSON.stringify(l)).join('\n'));
+    return {
+      fallbacks: currentAnomalies.filter(a => a.type === 'silent_fallback').map(a => `${a.relatedNodeId}->${a.nodeId}`),
+      turns: currentTurns.map(t => `${t.index}:${t.nodes.map(n => n.id).join(',')}`),
+      titles: currentAnomalies.map(a => a.title)
+    };
+  });
+  if (JSON.stringify(parity.fallbacks) !== JSON.stringify(['a->b'])) throw new Error(`Unexpected fallbacks ${parity.fallbacks}`);
+  if (JSON.stringify(parity.turns) !== JSON.stringify(['0:pre', '1:a,sib,b'])) throw new Error(`Unexpected turns ${parity.turns}`);
+  if (!parity.titles.includes('Silent Fallback Detected: mcp__github__get_issue → Bash')) throw new Error(`Unexpected titles ${parity.titles}`);
+  const objErr = await page.evaluate(() => {
+    processTraceText([
+      { event_type: 'tool_call', id: 'c1', name: 'mcp_github_x', mcp_server: 'github', params: { q: 'a' }, status: 'error', error: { code: 401 }, timestamp: '2026-10-07T10:00:00Z' }
+    ].map(l => JSON.stringify(l)).join('\n'));
+    return currentAnomalies.map(a => a.type);
+  });
+  if (JSON.stringify(objErr) !== JSON.stringify(['auth_expired'])) throw new Error(`Expected an auth anomaly from an object error, got ${objErr}`);
+  console.log('  ✓ Siblings are not fallbacks, pre-turn calls get turn 0, object errors are scanned');
 
   // -------------------------------------------------------------
   // Test 7b: Trace content is rendered as text, not HTML

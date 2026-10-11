@@ -366,3 +366,25 @@ func TestMatchContextQuotesTheErrorLine(t *testing.T) {
 		t.Errorf("matchContext must keep the match in a short window, got %q", got)
 	}
 }
+
+func TestRetryLoopInsideASkillScope(t *testing.T) {
+	now := time.Now()
+	turns := []models.ExecutionTurn{{Index: 1, Prompt: "go", Timestamp: now}}
+	nodes := []models.CallNode{
+		{ID: "skill", TurnIndex: 1, Type: models.NodeTypeSkill, Name: "Skill", ScopeName: "Skill: deploy", Timestamp: now, Status: models.StatusSuccess},
+	}
+	for i := 1; i <= 3; i++ {
+		nodes = append(nodes, models.CallNode{ID: fmt.Sprintf("b%d", i), TurnIndex: 1, Type: models.NodeTypeSystemTool, Name: "Bash", CallerScope: "Skill: deploy", Timestamp: now.Add(time.Duration(i) * time.Second), Status: models.StatusFailed})
+	}
+	g := graph.NewGraphBuilder().BuildWithTurns("s", "p", turns, nodes)
+	result := NewDetector(nil).Analyze(g)
+	var loops int
+	for _, a := range result.Anomalies {
+		if a.Type == models.AnomalyRetryLoop {
+			loops++
+		}
+	}
+	if loops != 1 {
+		t.Errorf("Expected the streak inside the Skill scope to be reported once, got %d in %+v", loops, result.Anomalies)
+	}
+}

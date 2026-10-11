@@ -739,6 +739,25 @@
 
     // Mirrors resolveValue in internal/providers/parser.go: "a || b" alternatives, looked up
     // on the call first (also without a "tool_call." prefix), then on the enclosing event.
+    // The first "a || b" alternative that is an object, or parses as one (providers.resolveMap)
+    function resolveMap(callObj, rootObj, expr) {
+      if (!expr) return {};
+      for (const alt of String(expr).split('||')) {
+        let v = resolveExpr(callObj, rootObj, alt.trim());
+        if (typeof v === 'string' && v.trim().startsWith('{')) {
+          try { v = JSON.parse(v); } catch (e) { continue; }
+        }
+        if (v && typeof v === 'object' && !Array.isArray(v)) return v;
+      }
+      return {};
+    }
+
+    // An error message as text, whatever shape the trace gives it (Go: fmt %v)
+    function errorText(v) {
+      if (v == null || v === '') return null;
+      return typeof v === 'string' ? v : textContent(v) || JSON.stringify(v);
+    }
+
     function resolveExpr(callObj, rootObj, expr) {
       if (!expr) return undefined;
       for (let key of expr.split('||')) {
@@ -860,6 +879,10 @@
           const raw = resolveField(item, turnCfg.prompt_field);
           const text = textContent(raw);
           if (text !== '' || !Array.isArray(raw)) {
+            // Calls recorded before any prompt keep their own turn (Assembler.PreTurnPrompt)
+            if (currentTurnIndex === 0 && nodes.length > 0) {
+              turns.push({ index: 0, prompt: '(calls before the first prompt)', timestamp: nodes[0].timestamp, nodes: nodes.slice() });
+            }
             currentTurnIndex++;
             currentTurnTime = resolveField(item, turnCfg.timestamp_field) || currentTurnTime;
             tracker.active = tracker.defaultScope;
@@ -899,11 +922,7 @@
               case 'timeout': status = 'timeout'; break;
             }
 
-            let args = resolveExpr(call, item, fields.arguments);
-            if (typeof args === 'string' && args.trim().startsWith('{')) {
-              try { args = JSON.parse(args); } catch (e) { args = {}; }
-            }
-            if (!args || typeof args !== 'object' || Array.isArray(args)) args = {};
+            const args = resolveMap(call, item, fields.arguments);
 
             let rawCallId = resolveExpr(call, item, fields.call_id);
             let callId = rawCallId ? String(rawCallId) : `line-${lineIdx}-${idx}`;
@@ -924,7 +943,7 @@
               status: status,
               arguments: args,
               output: fields.output ? (resolveExpr(call, item, fields.output) ?? null) : null,
-              errorMessage: resolveExpr(call, item, fields.error_message) || null,
+              errorMessage: errorText(resolveExpr(call, item, fields.error_message)),
               auxiliary: isAuxiliary(toolName),
               anomalies: []
             };
@@ -1263,6 +1282,13 @@
       return line.split(/\s+/).filter(Boolean).join(' ');
     }
 
+    // Whether next began once the failure of failed was known (GraphBuilder.startedAfter)
+    function startedAfter(failed, next) {
+      const start = Date.parse(failed.timestamp), at = Date.parse(next.timestamp);
+      if (failed.duration_ms > 0) return at >= start + failed.duration_ms;
+      return at > start;
+    }
+
     function analyzeAnomalies(nodes, turns, provider) {
       currentAnomalies = [];
       confirmedFallbacks = {};
@@ -1284,9 +1310,9 @@
             type: 'auth_expired',
             severity: 'critical',
             nodeId: node.id,
-            title: `Authentication Expired: ${node.name}`,
-            description: `Tool reported an authentication failure: "${matchContext(outStr, authMatch.index, authMatch[0].length, 120)}".`,
-            recommendation: `Check and renew OAuth tokens or credentials for ${node.mcp_server || node.name}.`
+            title: `Authentication Expired or Failed: ${node.name}`,
+            description: `Tool ${node.mcp_server ? `${node.name} (MCP server: ${node.mcp_server})` : node.name} reported an authentication failure: "${matchContext(outStr, authMatch.index, authMatch[0].length, 120)}". Execution may be degraded or blocked.`,
+            recommendation: 'Verify credentials, renew OAuth tokens, or check environment variables for this tool/MCP server.'
           });
         }
       });
@@ -1302,21 +1328,32 @@
       Object.values(sequences).forEach(seq => {
         seq.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
 
-        // Silent fallback: a failed call followed by a different tool
-        for (let i = 0; i + 1 < seq.length; i++) {
-          const node = seq[i], next = seq[i + 1];
-          if (!isFailed(node) || node.name === next.name) continue;
+        // Silent fallback: a failed call followed by a different tool, once the failure was
+        // known (GraphBuilder.startedAfter: calls issued together share a timestamp and cannot
+        // react to each other's results)
+        let lastFailed = null;
+        seq.forEach(next => {
+          if (lastFailed && startedAfter(lastFailed, next)) {
+            const node = lastFailed;
+            lastFailed = null;
+            if (node.name !== next.name) checkFallback(node, next);
+          }
+          if (isFailed(next)) lastFailed = next;
+        });
+
+        function checkFallback(node, next) {
           const rule = knownFallbacks.find(r => matchToolPattern(r.original_tool, node.name) && matchToolPattern(r.fallback_tool, next.name));
           const generic = (node.type === 'mcp_tool' || node.type === 'skill') && next.type === 'system_tool';
-          if (!rule && !generic) continue;
+          if (!rule && !generic) return;
           const { confidence, evidence } = fallbackEvidence(node, next);
-          const depKey = `${node.caller_scope || 'Agent'}::${node.name}`;
+          // Keyed like the dependency rows: the scope a call opens, or else its tool
+          const depKey = `${node.caller_scope || 'Agent'}::${node.scope_name || node.name}`;
           const prev = confirmedFallbacks[depKey];
           if (!prev || (prev.confidence !== 'high' && confidence === 'high')) confirmedFallbacks[depKey] = { to: next.name, confidence };
           const low = confidence === 'low';
-          const description = (rule && rule.description) || (low
-            ? `Tool ${node.name} failed and ${next.name} ran next in the same sequence; it may be a substitute.`
-            : `Primary tool ${node.name} failed. Agent silently fell back to substitute tool ${next.name} without warning.`);
+          let description = (rule && rule.description) || (low
+            ? `Tool "${node.name}" failed and "${next.name}" ran next in the same sequence; it may be a substitute.`
+            : `Intended tool "${node.name}" failed; the agent silently attempted fallback via substitute tool "${next.name}" without user notification.`);
           record(next, {
             id: `fallback-${node.id}-${next.id}`,
             type: 'silent_fallback',
@@ -1325,9 +1362,9 @@
             relatedNodeId: node.id,
             confidence,
             evidence,
-            title: low ? `Possible Silent Fallback (low confidence): ${node.name} → ${next.name}` : `Silent Fallback: ${node.name} → ${next.name}`,
+            title: low ? `Possible Silent Fallback (low confidence): ${node.name} → ${next.name}` : `Silent Fallback Detected: ${node.name} → ${next.name}`,
             description: `${description} Evidence: ${evidence}.`,
-            recommendation: `Fix ${node.name} to avoid degraded or incomplete results from fallback tool.`
+            recommendation: `Resolve the failure on primary tool "${node.name}". Falling back to "${next.name}" often produces degraded or incomplete results.`
           });
         }
 
@@ -1347,12 +1384,14 @@
                 type: 'retry_loop',
                 severity: 'warning',
                 nodeId: node.id,
-                description: `Tool ${node.name} failed repeatedly without backoff. Agent appears stuck in an error loop.`,
-                recommendation: `Inspect tool parameters or environment state causing repeated execution failure.`
+                recommendation: 'Inspect input arguments or environment state causing repeated failures.'
               };
               record(node, loop);
             }
-            if (loop) loop.title = `Retry Loop: ${node.name} failed ${consecutiveFails} times consecutively`;
+            if (loop) {
+              loop.title = `Retry Loop / Thrashing: ${node.name} failed ${consecutiveFails} times`;
+              loop.description = `Tool "${node.name}" failed ${consecutiveFails} times consecutively. The agent appears stuck in a retry loop without progress.`;
+            }
           } else {
             consecutiveFails = 1;
             lastFailedName = node.name;
@@ -1418,7 +1457,7 @@
 
       // Sort dependencies under each caller
       Object.keys(callerDeps).forEach(c => {
-        callerDeps[c].sort((a, b) => b.call_count - a.call_count);
+        callerDeps[c].sort((a, b) => (b.call_count - a.call_count) || (a.callee < b.callee ? -1 : a.callee > b.callee ? 1 : 0));
       });
 
       // Recursively attach children
@@ -1439,13 +1478,10 @@
 
       // Root callers
       const allCallees = new Set(Object.values(depMap).map(d => d.callee));
-      const rootCallers = [];
-      Object.keys(callerDeps).forEach(c => {
-        if (c.startsWith('Agent')) rootCallers.push(c);
-      });
-      Object.keys(callerDeps).forEach(c => {
-        if (!c.startsWith('Agent') && !allCallees.has(c)) rootCallers.push(c);
-      });
+      // Agent callers first, then the rest, each group alphabetical (GraphBuilder)
+      const callerNames = Object.keys(callerDeps).sort();
+      const rootCallers = callerNames.filter(c => c.startsWith('Agent'))
+        .concat(callerNames.filter(c => !c.startsWith('Agent') && !allCallees.has(c)));
 
       const roots = [];
       rootCallers.forEach(r => {

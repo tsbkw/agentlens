@@ -44,6 +44,9 @@ type Assembler struct {
 	finished         bool
 }
 
+// PreTurnPrompt labels turn 0, which holds calls made before the first recorded prompt.
+const PreTurnPrompt = "(calls before the first prompt)"
+
 // NewAssembler creates an Assembler for events read from filePath.
 func NewAssembler(provider *providers.LoadedProvider, filePath string) *Assembler {
 	parser := providers.NewTraceParser(provider)
@@ -115,6 +118,11 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 
 	// Detect user interaction turn
 	if prompt, ts, ok := extractTurn(extraction.Turns, payload); ok {
+		// Calls recorded before any prompt (e.g. a resumed or compacted session) keep their
+		// own turn, so they stay visible and never count as reactions to turn 1
+		if a.currentTurnIndex == 0 && len(a.turnNodes) > 0 {
+			a.currentPrompt = PreTurnPrompt
+		}
 		a.flushTurn()
 		a.currentTurnIndex++
 		a.currentPrompt = prompt
