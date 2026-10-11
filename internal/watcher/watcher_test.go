@@ -285,9 +285,9 @@ func TestWatcherLinksForkedAndUnrecordedSubagents(t *testing.T) {
 	go func() {
 		time.Sleep(60 * time.Millisecond)
 		appendLine(t, logPath, `{"type":"user","message":{"content":"Check the page"},"timestamp":"2026-10-07T14:01:00Z"}`+"\n")
-		appendLine(t, logPath, `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call_skill","name":"Skill","input":{"skill":"use-browser"}}]},"timestamp":"2026-10-07T14:01:01Z"}`+"\n")
+		appendLine(t, logPath, `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call_skill","name":"Skill","input":{"skill":"web-research"}}]},"timestamp":"2026-10-07T14:01:01Z"}`+"\n")
 		// The forked child appears before the Skill's result names it
-		appendLine(t, filepath.Join(subDir, "agent-forked.meta.json"), `{"agentType":"general-purpose","name":"use-browser"}`)
+		appendLine(t, filepath.Join(subDir, "agent-forked.meta.json"), `{"agentType":"general-purpose","name":"web-research"}`)
 		appendLine(t, filepath.Join(subDir, "agent-forked.jsonl"), `{"agentId":"forked","type":"assistant","message":{"content":[{"type":"tool_use","id":"f_nav","name":"WebFetch","input":{}}]},"timestamp":"2026-10-07T14:01:02Z"}`+"\n")
 		time.Sleep(60 * time.Millisecond)
 		appendLine(t, logPath, `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"call_skill","content":"launched"}]},"toolUseResult":{"status":"forked","agentId":"forked"},"timestamp":"2026-10-07T14:01:03Z"}`+"\n")
@@ -319,7 +319,7 @@ func TestWatcherLinksForkedAndUnrecordedSubagents(t *testing.T) {
 		}
 		return ""
 	}
-	if l := find("WebFetch"); !strings.HasPrefix(l, "  ↳ ") || !strings.Contains(l, "[Skill: use-browser]") || strings.Contains(l, "inferred") {
+	if l := find("WebFetch"); !strings.HasPrefix(l, "  ↳ ") || !strings.Contains(l, "[Skill: web-research]") || strings.Contains(l, "inferred") {
 		t.Errorf("Expected the forked call linked to its Skill call, got %q in:\n%s", l, out)
 	}
 	if l := find("Read"); !strings.HasPrefix(l, "  ↳ ") || !strings.Contains(l, "[Subagent: fork]") {
@@ -355,8 +355,8 @@ func TestWatcherRelinksInferredSubagentWhenResultArrivesLate(t *testing.T) {
 	go func() {
 		time.Sleep(60 * time.Millisecond)
 		appendLine(t, logPath, `{"type":"user","message":{"content":"Check the page"},"timestamp":"2026-10-07T14:01:00Z"}`+"\n")
-		appendLine(t, logPath, `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call_skill","name":"Skill","input":{"skill":"use-browser"}}]},"timestamp":"2026-10-07T14:01:01Z"}`+"\n")
-		appendLine(t, filepath.Join(subDir, "agent-forked.meta.json"), `{"agentType":"general-purpose","name":"use-browser"}`)
+		appendLine(t, logPath, `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call_skill","name":"Skill","input":{"skill":"web-research"}}]},"timestamp":"2026-10-07T14:01:01Z"}`+"\n")
+		appendLine(t, filepath.Join(subDir, "agent-forked.meta.json"), `{"agentType":"general-purpose","name":"web-research"}`)
 		appendLine(t, child, `{"agentId":"forked","type":"assistant","message":{"content":[{"type":"tool_use","id":"f_early","name":"WebFetch","input":{}}]},"timestamp":"2026-10-07T14:01:02Z"}`+"\n")
 
 		// The Skill's result naming the subagent arrives well after InferAfter
@@ -384,12 +384,12 @@ func TestWatcherRelinksInferredSubagentWhenResultArrivesLate(t *testing.T) {
 			}
 		case strings.Contains(l, "linked to its spawning call Skill (result)"):
 			relinked = i
-			if !strings.Contains(l, "[Skill: use-browser]") {
+			if !strings.Contains(l, "[Skill: web-research]") {
 				t.Errorf("Expected the relink to name the Skill scope, got %q", l)
 			}
 		case strings.Contains(l, "Grep"):
 			late = i
-			if strings.Contains(l, "inferred") || !strings.Contains(l, "[Skill: use-browser]") {
+			if strings.Contains(l, "inferred") || !strings.Contains(l, "[Skill: web-research]") {
 				t.Errorf("After the relink calls belong to the Skill call, got %q", l)
 			}
 		}
@@ -416,14 +416,14 @@ func TestAssemblerRescope(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	asm.Rescope("Skill: use-browser")
+	asm.Rescope("Skill: web-research")
 
 	got := map[string]string{}
 	for _, n := range asm.Nodes() {
 		got[n.ID] = n.CallerScope
 	}
 	// Calls inside the nested skill keep their scope; direct calls move to the new one
-	want := map[string]string{"a": "Skill: use-browser", "b": "Skill: use-browser", "c": "Skill: inner"}
+	want := map[string]string{"a": "Skill: web-research", "b": "Skill: web-research", "c": "Skill: inner"}
 	for id, scope := range want {
 		if got[id] != scope {
 			t.Errorf("%s: scope %q, want %q", id, got[id], scope)
