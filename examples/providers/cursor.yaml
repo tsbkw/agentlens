@@ -35,8 +35,11 @@ extraction:
     error_message: "error"
 
 anomaly_rules:
+  # Auth failures are matched only in the text of failed calls, and a bare "401"/"403" is not
+  # enough (file sizes, line numbers and table cells carry those digits). The code must come
+  # with an HTTP / status / error prefix or a word such as "Unauthorized" or "Forbidden".
   auth_failure_regex:
-    - "(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"
+    - "(?i)\\bunauthorized\\b|bad credentials|invalid[ _-]?(?:api[ _-]?key|token|credentials)|token\\s+(?:has\\s+)?(?:expired|invalid|revoked)|(?:re-?)?auth(?:entication|orization)\\s+(?:failed|required|error)|requires\\s+re-?auth|not\\s+authenticated|\\b(?:http|status(?:\\s+code)?|code|error)\\b[\"']?\\s*[:=]?\\s*[\"'(]?40[13]\\b|\\b40[13]\\s+\\(?(?:unauthorized|forbidden|authorization|authentication|client\\s+error|error|post|get|put|patch|delete|for)\\b|\\(40[13]\\)"
   # Failed MCP / Skill calls followed by a shell or HTTP call are detected by the core for
   # every provider (with rules/substitutes.yaml raising confidence). List only pairs that are
   # specific to this agent here.
