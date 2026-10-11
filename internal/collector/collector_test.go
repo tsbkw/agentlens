@@ -318,3 +318,29 @@ func TestCallsBeforeTheFirstPromptKeepTheirOwnTurn(t *testing.T) {
 		t.Errorf("Expected the early call under turn-0 in the graph, got %v", g.Parents["early"])
 	}
 }
+
+func TestPreviousStepResultIsNotTheNextPrompt(t *testing.T) {
+	loaded, err := providers.LoadProviderFromFile(filepath.Join("..", "..", "examples", "providers", "antigravity.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := `{"step_index":0,"type":"USER_INPUT","content":"<USER_REQUEST>first</USER_REQUEST>"}
+{"step_index":1,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T12:00:00Z","tool_calls":[{"id":"a","name":"run_command","args":{"CommandLine":"ls"}}]}
+{"step_index":2,"type":"USER_INPUT","content":"<USER_REQUEST>second</USER_REQUEST>"}
+{"step_index":3,"type":"PLANNER_RESPONSE","created_at":"2026-10-07T12:01:00Z","tool_calls":[{"id":"b","name":"run_command","args":{"CommandLine":"pwd"}}]}
+{"step_index":4,"type":"GENERIC","status":"DONE","content":"/home"}
+`
+	data, err := NewCollector(loaded).IngestSessionReader(strings.NewReader(input), "transcript.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.Nodes) != 2 {
+		t.Fatalf("Expected 2 calls, got %d", len(data.Nodes))
+	}
+	if data.Nodes[0].Output != nil {
+		t.Errorf("The next prompt must not become the call's result, got %v", data.Nodes[0].Output)
+	}
+	if out, _ := data.Nodes[1].Output.(string); out != "/home" {
+		t.Errorf("Expected the real result on the second call, got %v", data.Nodes[1].Output)
+	}
+}

@@ -118,12 +118,15 @@ type CallNode struct {
     Anomalies    []AnomalyRecord        `json:"anomalies,omitempty"`
     ParentLink   ParentLink             `json:"parent_link,omitempty"` // "sidecar", "result", "inferred"
     Auxiliary    bool                   `json:"auxiliary,omitempty"`
+    Synthetic    bool                   `json:"synthetic,omitempty"`   // turn and scope nodes added by the builder
 }}
 ```
 
 `Status` is `denied` when the call never ran because the user or a permission policy refused it (`results.denied_regex`); it is not a failure. `Auxiliary` marks agent bookkeeping such as tool discovery, task tracking or planning (`extraction.auxiliary_tools`). Neither denied nor auxiliary calls take part in fallback and retry-loop detection: "MCP failed → tool search → shell" is still a fallback from the MCP call to the shell call.
 
-A silent fallback is reported when a failed MCP or Skill call is followed by a system tool (shell, HTTP fetch, file access) for any provider; `anomaly_rules.known_fallbacks` adds provider-specific pairs. Each one carries a `confidence`:
+`Synthetic` marks the turn and scope nodes the graph builder adds for structure; they are not calls and take no part in detection or call metrics.
+
+A silent fallback is reported when a failed (or timed-out) MCP or Skill call is followed by a system tool (shell, HTTP fetch, file access) for any provider. The following call must have started after the failure was known: calls issued together in one model response share a timestamp and are never a fallback for each other; `anomaly_rules.known_fallbacks` adds provider-specific pairs. Each one carries a `confidence`:
 
 - `high`: the substitute reaches the same public service — it runs that service's CLI or calls its host, as listed in the provider-independent catalog `rules/substitutes.yaml` (e.g. GitHub → `gh`) — or reuses at least two identifiers of the failed call (repository, table, IDs).
 - `low`: only the order of calls suggests it. It is shown as "Possible Silent Fallback" and is a lead to check, not a finding.

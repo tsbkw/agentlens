@@ -116,6 +116,12 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Plain CLI output when piped (`NO_COLOR`, TTY detection), grouped alerts that quote the error, durations in `trace` / `inspect` and the web viewer (PR #35)
 - [x] Go PR template and `.gitignore`, `LICENSE` file, `go 1.23` directive, relative doc links (PR #36)
 - [x] Docs describe what is implemented; `GraphMetrics` fills depth and tool time; unused anomaly types removed (PR #37)
+- [x] No fallback between calls issued together; retry loops inside Skill scopes; calls before the first prompt get turn 0; `trace` renders each call once; web viewer parity (PR #38)
+- [x] Auth failure pattern requires context around 401/403 (PR #39)
+- [x] Collector survives over-long and malformed lines and a BOM; epoch and date-time timestamps; duplicate call IDs kept apart; turn labels skip injected tag blocks; symlink-safe discovery; ambiguous session prefixes rejected; YAML validation of globs, filters and correlation (PR #40)
+- [x] `ui --port`, bind before announcing, `watch` reopens truncated files and scans idle sessions cheaply, `inspect <call-id> [session-id]` (PR #41)
+- [x] Web viewer: phone layout, filters in the trace view, grouped alerts, denied stat, clean state per session, unknown files reported (PR #42)
+- [x] A user's next prompt is no longer taken as the previous step's tool result (PR #43)
 
 ### Phase 12: Deeper Analysis (Planned)
 - [ ] Indirect proxy routing detection (tool A reached through tool B)

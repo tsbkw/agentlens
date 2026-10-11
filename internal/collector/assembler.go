@@ -184,7 +184,8 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 	}
 	switch resultCfg.Correlation {
 	case models.CorrelationPreviousStep:
-		if stepIdx > 0 {
+		// The event after a call is its result, unless it is the user's next prompt
+		if stepIdx > 0 && !res.TurnStarted {
 			targetIdx := -1
 			for _, pIdx := range a.pendingStepCalls {
 				if a.nodes[pIdx].Output == nil {

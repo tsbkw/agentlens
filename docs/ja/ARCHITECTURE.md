@@ -117,12 +117,15 @@ type CallNode struct {
     Anomalies    []AnomalyRecord        `json:"anomalies,omitempty"`
     ParentLink   ParentLink             `json:"parent_link,omitempty"` // "sidecar", "result", "inferred"
     Auxiliary    bool                   `json:"auxiliary,omitempty"`
+    Synthetic    bool                   `json:"synthetic,omitempty"`   // ビルダーが構造のために追加するターン・スコープのノード
 }}
 ```
 
 `Status` が `denied` の呼び出しは、ユーザーや権限設定に拒否されて実行されなかったもの (`results.denied_regex`) で、失敗とは区別します。`Auxiliary` はツール検索・タスク管理・計画などエージェント自身の管理操作 (`extraction.auxiliary_tools`) を表します。denied と補助ツールの呼び出しはフォールバックとリトライループの判定に関与しません。「MCP 失敗 → ツール検索 → シェル」は、MCP からシェルへのフォールバックとして扱います。
 
-サイレントフォールバックは、失敗した MCP / Skill 呼び出しの直後にシステムツール (シェル、HTTP 取得、ファイル操作) が続いたときに、プロバイダを問わず報告します。`anomaly_rules.known_fallbacks` にはプロバイダ固有の組み合わせだけを書きます。各検知には `confidence` が付きます。
+`Synthetic` はグラフビルダーが構造のために追加するターン・スコープのノードを表します。呼び出しではないので、検知や呼び出し数の集計には関与しません。
+
+サイレントフォールバックは、失敗 (またはタイムアウト) した MCP / Skill 呼び出しの直後にシステムツール (シェル、HTTP 取得、ファイル操作) が続いたときに、プロバイダを問わず報告します。後続の呼び出しは失敗が判明した後に始まっている必要があります。1回のモデル応答で同時に発行された呼び出しはタイムスタンプを共有し、互いのフォールバックにはなりません。`anomaly_rules.known_fallbacks` にはプロバイダ固有の組み合わせだけを書きます。各検知には `confidence` が付きます。
 
 - `high`: 代わりの呼び出しが同じ公開サービスに到達している (プロバイダ共通の対応表 `rules/substitutes.yaml` にある CLI を実行した、またはホストを呼んだ。例: GitHub → `gh`)、または失敗した呼び出しの固有名詞 (リポジトリ名、テーブル名、ID など) を2つ以上使っている。
 - `low`: 呼び出しの順序だけが根拠。「Possible Silent Fallback」として表示し、確定した検知ではなく確認すべき手がかりとして扱います。
