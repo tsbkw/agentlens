@@ -167,7 +167,7 @@ func (a *App) resolveSessionOrFile(target string) (*collector.SessionInfo, *prov
 			return nil, nil, fmt.Errorf("could not detect the trace format of %q; pass --provider <id|path.yaml>", target)
 		}
 		return &collector.SessionInfo{
-			SessionID:  filepath.Base(target),
+			SessionID:  strings.TrimSuffix(filepath.Base(target), filepath.Ext(target)),
 			FilePath:   target,
 			ProviderID: provider.Definition.Provider.ID,
 			ModTime:    fi.ModTime(),
@@ -187,13 +187,14 @@ func (a *App) resolveSessionOrFile(target string) (*collector.SessionInfo, *prov
 		return &sessions[0], a.providerByID(sessions[0].ProviderID), nil
 	}
 
-	for _, s := range sessions {
-		if s.SessionID == target || strings.HasPrefix(s.SessionID, target) {
-			return &s, a.providerByID(s.ProviderID), nil
-		}
+	s, err := collector.FindSession(sessions, target)
+	if err != nil {
+		return nil, nil, err
 	}
-
-	return nil, nil, fmt.Errorf("session or file %q not found. Run `agentlens list` to view available sessions", target)
+	if s == nil {
+		return nil, nil, fmt.Errorf("session or file %q not found. Run `agentlens list` to view available sessions", target)
+	}
+	return s, a.providerByID(s.ProviderID), nil
 }
 
 // analyzeSession ingests a session and returns its call graph with anomalies attached.
@@ -201,6 +202,10 @@ func analyzeSession(session *collector.SessionInfo, provider *providers.LoadedPr
 	data, err := collector.NewCollector(provider).IngestSessionFile(session.FilePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ingest session trace: %w", err)
+	}
+	if data.SkippedLines > 0 {
+		fmt.Fprintf(os.Stderr, "note: skipped %d line(s) of %s that were not JSON objects or exceeded %d MB\n",
+			data.SkippedLines, session.FilePath, collector.MaxLineBytes/(1024*1024))
 	}
 
 	g := graph.NewGraphBuilder().BuildWithTurns(session.SessionID, provider.Definition.Provider.ID, data.Turns, data.Nodes)

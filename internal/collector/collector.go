@@ -2,7 +2,9 @@ package collector
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -32,7 +34,12 @@ type SessionData struct {
 	Nodes     []models.CallNode      `json:"nodes"`
 	// ChildLinks maps child trace IDs to their spawning call IDs, as named by tool results.
 	ChildLinks map[string]string `json:"-"`
+	// SkippedLines counts lines that were not valid JSON objects or exceeded MaxLineBytes.
+	SkippedLines int `json:"skipped_lines,omitempty"`
 }
+
+// MaxLineBytes is the longest JSONL line that is decoded; longer lines are skipped and counted.
+const MaxLineBytes = 64 * 1024 * 1024
 
 // Collector reads trace logs and converts them into normalized events.
 type Collector struct {
@@ -61,10 +68,15 @@ func (c *Collector) DiscoverSessions() ([]SessionInfo, error) {
 		}
 
 		for _, match := range matches {
-			if seenPaths[match] {
+			// The same file reached through a symlinked directory is one session
+			real := match
+			if r, err := filepath.EvalSymlinks(match); err == nil {
+				real = r
+			}
+			if seenPaths[real] {
 				continue
 			}
-			seenPaths[match] = true
+			seenPaths[real] = true
 
 			fi, err := os.Stat(match)
 			if err != nil || fi.IsDir() {
@@ -73,7 +85,8 @@ func (c *Collector) DiscoverSessions() ([]SessionInfo, error) {
 
 			sessionID := c.Parser.ExtractSessionID(match, nil)
 			if sessionID == "" {
-				sessionID = filepath.Base(filepath.Dir(match))
+				// Without a path rule, the file name tells sessions in one directory apart
+				sessionID = strings.TrimSuffix(filepath.Base(match), filepath.Ext(match))
 			}
 
 			sessions = append(sessions, SessionInfo{
@@ -132,38 +145,78 @@ func (c *Collector) IngestReader(reader io.Reader, filePath string) ([]models.Ca
 // IngestSessionReader parses JSONL events into full SessionData.
 func (c *Collector) IngestSessionReader(reader io.Reader, filePath string) (*SessionData, error) {
 	asm := NewAssembler(c.Provider, filePath)
-	if err := feedJSONL(asm, reader); err != nil {
+	skipped, err := feedJSONL(asm, reader)
+	if err != nil {
 		return nil, err
 	}
-	return asm.Finish(), nil
+	data := asm.Finish()
+	data.SkippedLines = skipped
+	return data, nil
 }
 
-// feedJSONL decodes JSONL events from reader into asm, skipping blank and malformed lines.
-func feedJSONL(asm *Assembler, reader io.Reader) error {
-	scanner := bufio.NewScanner(reader)
-	buf := make([]byte, 64*1024)
-	scanner.Buffer(buf, 10*1024*1024)
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
+// feedJSONL decodes JSONL events from reader into asm. Blank lines are ignored; lines that
+// are not JSON objects or are longer than MaxLineBytes are skipped and counted, so one bad
+// line never hides a whole session.
+func feedJSONL(asm *Assembler, reader io.Reader) (skipped int, err error) {
+	br := bufio.NewReaderSize(reader, 64*1024)
+	first := true
+	for {
+		line, readErr := readLine(br, MaxLineBytes)
+		if readErr != nil && readErr != io.EOF {
+			if readErr == errLineTooLong {
+				skipped++
+				continue
+			}
+			return skipped, fmt.Errorf("error reading trace stream: %w", readErr)
 		}
-
-		var payload map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &payload); err != nil {
-			continue
+		if first {
+			line = bytes.TrimPrefix(line, utf8BOM)
+			first = false
 		}
-
-		if _, err := asm.Feed(payload); err != nil {
-			return err
+		if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
+			var payload map[string]interface{}
+			if json.Unmarshal(trimmed, &payload) != nil {
+				skipped++
+			} else if _, err := asm.Feed(payload); err != nil {
+				return skipped, err
+			}
+		}
+		if readErr == io.EOF {
+			return skipped, nil
 		}
 	}
+}
 
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading trace stream: %w", err)
+var (
+	utf8BOM        = []byte{0xEF, 0xBB, 0xBF}
+	errLineTooLong = errors.New("line too long")
+)
+
+// readLine returns the next line without its newline. A line longer than max is consumed to
+// its end and reported as errLineTooLong. io.EOF comes with the last line, which may be empty.
+func readLine(br *bufio.Reader, max int) ([]byte, error) {
+	var line []byte
+	for {
+		chunk, err := br.ReadSlice('\n')
+		if len(line)+len(chunk) > max {
+			// Drain the rest of the over-long line
+			for err == bufio.ErrBufferFull {
+				_, err = br.ReadSlice('\n')
+			}
+			if err != nil && err != bufio.ErrBufferFull {
+				return nil, err
+			}
+			return nil, errLineTooLong
+		}
+		line = append(line, chunk...)
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if err != nil {
+			return line, err
+		}
+		return bytes.TrimSuffix(line, []byte("\n")), nil
 	}
-	return nil
 }
 
 // extractTurn reports whether payload starts a new user turn and returns its prompt and timestamp.
@@ -179,7 +232,7 @@ func extractTurn(cfg models.TurnExtraction, payload map[string]interface{}) (str
 			return "", time.Time{}, false
 		}
 	}
-	ts, _ := providers.ParseTimestamp(fmt.Sprintf("%v", providers.ResolveField(payload, cfg.TimestampField)))
+	ts, _ := providers.ParseTimestampValue(providers.ResolveField(payload, cfg.TimestampField))
 	return cleanPrompt(text, cfg.PromptTag), ts, true
 }
 
@@ -253,13 +306,15 @@ func applyResultTiming(node *models.CallNode, cfg models.ResultExtraction, event
 	if cfg.TimestampField == "" || node.DurationMs != 0 {
 		return
 	}
-	ts, ok := providers.ParseTimestamp(fmt.Sprintf("%v", providers.ResolveField(event, cfg.TimestampField)))
+	ts, ok := providers.ParseTimestampValue(providers.ResolveField(event, cfg.TimestampField))
 	if ok && ts.After(node.Timestamp) {
 		node.DurationMs = ts.Sub(node.Timestamp).Milliseconds()
 	}
 }
 
-// cleanPrompt extracts the inner text of tag when present, otherwise the first line of content.
+// cleanPrompt extracts the inner text of tag when present. Otherwise it returns the first
+// line the user wrote, skipping <tag>…</tag> blocks the harness injects around a prompt
+// (reminders, pasted-content wrappers) when anything else remains.
 func cleanPrompt(content, tag string) string {
 	if tag != "" {
 		open, closing := "<"+tag+">", "</"+tag+">"
@@ -271,11 +326,55 @@ func cleanPrompt(content, tag string) string {
 			}
 		}
 	}
-	lines := strings.Split(strings.TrimSpace(content), "\n")
-	if len(lines) > 0 {
-		return strings.TrimSpace(lines[0])
+	if line := firstLine(stripTagBlocks(content)); line != "" {
+		return line
 	}
-	return content
+	// Only tag blocks (a shell command the user ran, a local command's output): label the
+	// turn with the first block's name and its first line of text
+	if loc := tagOpenRe.FindStringSubmatchIndex(content); loc != nil {
+		name := content[loc[2]:loc[3]]
+		inner := content[loc[1]:]
+		if end := strings.Index(inner, "</"+name+">"); end >= 0 {
+			inner = inner[:end]
+		}
+		if line := firstLine(inner); line != "" {
+			return "[" + name + "] " + line
+		}
+		return "[" + name + "]"
+	}
+	return firstLine(content)
+}
+
+func firstLine(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+var tagOpenRe = regexp.MustCompile(`<([a-zA-Z][a-zA-Z0-9_-]*)[^<>]*>`)
+
+// stripTagBlocks removes every <name …>…</name> block from content. A tag without a closing
+// tag is ordinary text and stays.
+func stripTagBlocks(content string) string {
+	from := 0
+	for {
+		loc := tagOpenRe.FindStringSubmatchIndex(content[from:])
+		if loc == nil {
+			return content
+		}
+		start, tagEnd := from+loc[0], from+loc[1]
+		closing := "</" + content[from+loc[2]:from+loc[3]] + ">"
+		end := strings.Index(content[tagEnd:], closing)
+		if end < 0 {
+			from = tagEnd
+			continue
+		}
+		content = content[:start] + content[tagEnd+end+len(closing):]
+		from = start
+	}
 }
 
 func expandHomeDir(path string) string {
@@ -286,6 +385,32 @@ func expandHomeDir(path string) string {
 		}
 	}
 	return path
+}
+
+// FindSession returns the session whose ID is id, or else the one whose ID starts with it.
+// A prefix shared by several sessions is an error that names them, so the wrong session is
+// never analyzed silently. It returns nil when nothing matches.
+func FindSession(sessions []SessionInfo, id string) (*SessionInfo, error) {
+	var prefixed []*SessionInfo
+	for i := range sessions {
+		if sessions[i].SessionID == id {
+			return &sessions[i], nil
+		}
+		if strings.HasPrefix(sessions[i].SessionID, id) {
+			prefixed = append(prefixed, &sessions[i])
+		}
+	}
+	switch len(prefixed) {
+	case 0:
+		return nil, nil
+	case 1:
+		return prefixed[0], nil
+	}
+	ids := make([]string, 0, len(prefixed))
+	for _, s := range prefixed {
+		ids = append(ids, s.SessionID+" ("+s.ProviderID+")")
+	}
+	return nil, fmt.Errorf("session ID %q is ambiguous; it matches %d sessions: %s", id, len(prefixed), strings.Join(ids, ", "))
 }
 
 // DiscoverAllSessions discovers sessions for every provider, most recently modified first.
