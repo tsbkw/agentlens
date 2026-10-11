@@ -129,8 +129,17 @@ type CallNode struct {
     Output       interface{}            `json:"output,omitempty"`
     ErrorMessage string                 `json:"error_message,omitempty"`
     Anomalies    []AnomalyRecord        `json:"anomalies,omitempty"`
+    ParentLink   string                 `json:"parent_link,omitempty"` // "sidecar", "result", "inferred"
 }
 ```
+
+`ParentLink` は子 (サブエージェント) トレースから統合した呼び出しに設定され、その配置の根拠を表します。
+
+| 値 | 根拠 | 確からしさ |
+| :--- | :--- | :--- |
+| `sidecar` | 子のメタデータに起動元の呼び出しが記録されている (`child_traces.parent_call_id_field`)。 | 記録あり |
+| `result` | 起動元の呼び出しのツール結果に子の ID が記録されている (`child_traces.result_child_id_field`)。例: Skill から fork されたサブエージェント。 | 記録あり |
+| `inferred` | 子と呼び出しを結ぶ記録がない。子の呼び出しは、子の開始時点で進行中だったターンに置いたプレースホルダーのサブエージェントノード (`id: inferred-subagent-<子>`、`parent_id` は空) の下に配置し、依存関係の行にも `inferred: true` を付ける。 | 推定 |
 
 ### 3.3 `CallEdge` (エッジ定義)
 ```go

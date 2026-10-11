@@ -39,6 +39,9 @@ type Watcher struct {
 	FilePath     string
 	PollInterval time.Duration
 	FromStart    bool
+	// InferAfter is how long a subagent trace that names no spawning call waits for a tool
+	// result linking it, before it is attributed to the current turn as inferred.
+	InferAfter time.Duration
 }
 
 // NewWatcher initializes a Watcher instance.
@@ -48,6 +51,7 @@ func NewWatcher(provider *providers.LoadedProvider, filePath string) *Watcher {
 		FilePath:     filePath,
 		PollInterval: 500 * time.Millisecond,
 		FromStart:    false,
+		InferAfter:   5 * time.Second,
 	}
 }
 
@@ -58,7 +62,11 @@ type tailSource struct {
 	reader  *bufio.Reader
 	partial string // bytes of a line whose newline has not been written yet
 	asm     *collector.Assembler
-	parent  *models.CallNode // spawning call of a subagent trace; nil for the main trace
+	link    models.ParentLink // how a subagent trace was linked to parent
+	// replayed holds calls a forked subagent copied from its parent's context; they are
+	// already shown and analyzed as the parent's calls.
+	replayed map[string]bool
+	parent   *models.CallNode // spawning call of a subagent trace; nil for the main trace
 }
 
 func openSource(path string, fromStart bool, asm *collector.Assembler, parent *models.CallNode) (*tailSource, error) {
@@ -72,7 +80,7 @@ func openSource(path string, fromStart bool, asm *collector.Assembler, parent *m
 			return nil, fmt.Errorf("failed to seek trace file: %w", err)
 		}
 	}
-	return &tailSource{path: path, file: file, reader: bufio.NewReader(file), asm: asm, parent: parent}, nil
+	return &tailSource{path: path, file: file, reader: bufio.NewReader(file), asm: asm, parent: parent, replayed: make(map[string]bool)}, nil
 }
 
 // nextLine returns the next complete line, or ok=false when none has been written yet.
@@ -97,18 +105,34 @@ func (s *tailSource) nodes() []models.CallNode {
 		return nodes
 	}
 	attributed := append([]models.CallNode(nil), nodes...)
-	collector.AttributeToParent(attributed, *s.parent)
+	collector.AttributeToParent(attributed, *s.parent, s.link)
 	return attributed
+}
+
+// graphNodes returns the calls of this source, without replayed ones, plus the placeholder
+// parent of an inferred subagent.
+func (s *tailSource) graphNodes() []models.CallNode {
+	var nodes []models.CallNode
+	if s.link == models.ParentLinkInferred {
+		nodes = append(nodes, *s.parent)
+	}
+	for _, n := range s.nodes() {
+		if !s.replayed[n.ID] {
+			nodes = append(nodes, n)
+		}
+	}
+	return nodes
 }
 
 // session is the set of followed trace files of one watched session.
 type session struct {
-	w        *Watcher
-	out      io.Writer
-	det      *detector.Detector
-	sources  []*tailSource
-	tracked  map[string]bool // child trace paths already followed
-	existing map[string]bool // child trace paths present before watching started (tail mode)
+	w         *Watcher
+	out       io.Writer
+	det       *detector.Detector
+	sources   []*tailSource
+	tracked   map[string]bool      // child trace paths already followed
+	existing  map[string]bool      // child trace paths present before watching started (tail mode)
+	firstSeen map[string]time.Time // when an unlinked child trace was first seen
 }
 
 // Watch continuously tails the trace file and streams tool calls, results, and alerts.
@@ -118,12 +142,13 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 		return err
 	}
 	sess := &session{
-		w:        w,
-		out:      out,
-		det:      detector.NewDetector(w.Provider),
-		sources:  []*tailSource{main},
-		tracked:  make(map[string]bool),
-		existing: make(map[string]bool),
+		w:         w,
+		out:       out,
+		det:       detector.NewDetector(w.Provider),
+		sources:   []*tailSource{main},
+		tracked:   make(map[string]bool),
+		existing:  make(map[string]bool),
+		firstSeen: make(map[string]time.Time),
 	}
 	defer sess.close()
 
@@ -187,9 +212,15 @@ func (s *session) discoverChildren() bool {
 	}
 
 	byID := make(map[string]models.CallNode)
+	links := make(map[string]string)
 	for _, src := range s.sources {
 		for _, n := range src.nodes() {
 			byID[n.ID] = n
+		}
+		for k, v := range src.asm.ChildLinks() {
+			if _, exists := links[k]; !exists {
+				links[k] = v
+			}
 		}
 	}
 
@@ -198,14 +229,27 @@ func (s *session) discoverChildren() bool {
 		if s.tracked[child.Path] {
 			continue
 		}
-		parent, known := byID[child.ParentCallID]
 		preexisting := s.existing[child.Path]
+		parent, link, known := collector.ResolveParent(child, byID, links)
 		if !known {
-			if !preexisting {
-				continue // the spawning call has not been read yet
+			switch {
+			case child.ParentCallID != "" && preexisting:
+				// Spawned before watching started: the named spawning call was never read
+				parent = models.CallNode{ID: child.ParentCallID, Name: "Agent"}
+				link = models.ParentLinkSidecar
+			case !child.IsUnlinked(links) && preexisting:
+				// Likewise, for a child named by the result of a call that was never read
+				parent = models.CallNode{ID: links[child.ChildID], Name: "Agent"}
+				link = models.ParentLinkResult
+			case child.IsUnlinked(links) && (preexisting || s.waitedForLink(child.Path)):
+				// No record names the spawning call: attribute it to the current turn
+				parent = collector.InferredParent(child, "", s.sources[0].asm.CurrentTurn(), time.Now())
+				link = models.ParentLinkInferred
+				fmt.Fprintf(s.out, "  ↳ %s[%s] spawning call not recorded; attributed to the current turn (inferred)%s\n",
+					colorYellow, parent.ScopeName, colorReset)
+			default:
+				continue // the spawning call, or the result naming it, has not been read yet
 			}
-			// Spawned before watching started: the spawning call was never read
-			parent = models.CallNode{ID: child.ParentCallID, Name: "Agent"}
 		}
 
 		asm := collector.NewChildAssembler(s.w.Provider, child.Path, parent)
@@ -213,11 +257,38 @@ func (s *session) discoverChildren() bool {
 		if err != nil {
 			continue
 		}
+		src.link = link
 		s.tracked[child.Path] = true
 		s.sources = append(s.sources, src)
 		added = true
 	}
 	return added
+}
+
+// knownElsewhere reports whether a call ID already belongs to another followed source.
+func (s *session) knownElsewhere(src *tailSource, id string) bool {
+	for _, other := range s.sources {
+		if other == src {
+			continue
+		}
+		for _, n := range other.asm.Nodes() {
+			if n.ID == id && !other.replayed[id] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// waitedForLink reports whether an unlinked child trace has waited InferAfter for a tool
+// result naming its spawning call.
+func (s *session) waitedForLink(path string) bool {
+	first, seen := s.firstSeen[path]
+	if !seen {
+		s.firstSeen[path] = time.Now()
+		return s.w.InferAfter <= 0
+	}
+	return time.Since(first) >= s.w.InferAfter
 }
 
 func (s *session) handleLine(src *tailSource, line string) {
@@ -238,9 +309,12 @@ func (s *session) handleLine(src *tailSource, line string) {
 	}
 	nodes := src.nodes()
 
-	indent := ""
+	indent, linkNote := "", ""
 	if src.parent != nil {
 		indent = "  ↳ "
+	}
+	if src.link == models.ParentLinkInferred {
+		linkNote = fmt.Sprintf(" %s(inferred parent)%s", colorDim, colorReset)
 	}
 
 	// A subagent's own prompt is the spawning call's input, not a user turn
@@ -251,6 +325,10 @@ func (s *session) handleLine(src *tailSource, line string) {
 
 	for _, idx := range res.NewCalls {
 		node := nodes[idx]
+		if src.parent != nil && s.knownElsewhere(src, node.ID) {
+			src.replayed[node.ID] = true
+			continue
+		}
 		scope := node.CallerScope
 		if node.ScopeName != "" {
 			scope = node.ScopeName
@@ -258,8 +336,8 @@ func (s *session) handleLine(src *tailSource, line string) {
 		timeStr := node.Timestamp.Format("15:04:05")
 		typeBadge := formatTypeBadge(node.Type, node.MCPServer)
 		scopeStr := fmt.Sprintf("%s[%s]%s", colorDim, scope, colorReset)
-		fmt.Fprintf(out, "%s[%s] %s %s ➔ %s%s%s\n",
-			indent, timeStr, scopeStr, typeBadge, colorBold, node.Name, colorReset,
+		fmt.Fprintf(out, "%s[%s] %s %s ➔ %s%s%s%s\n",
+			indent, timeStr, scopeStr, typeBadge, colorBold, node.Name, colorReset, linkNote,
 		)
 	}
 
@@ -270,13 +348,16 @@ func (s *session) handleLine(src *tailSource, line string) {
 	// Run live anomaly check over everything seen so far, subagents included
 	var all []models.CallNode
 	for _, other := range s.sources {
-		all = append(all, other.nodes()...)
+		all = append(all, other.graphNodes()...)
 	}
 	g := graph.NewGraphBuilder().Build("live-session", s.w.Provider.Definition.Provider.ID, all)
 	anomalies := s.det.Analyze(g)
 
 	for _, idx := range res.Results {
 		node := nodes[idx]
+		if src.replayed[node.ID] {
+			continue
+		}
 		if node.Status == models.StatusFailed {
 			timeStr := time.Now().Format("15:04:05")
 			fmt.Fprintf(out, "%s  %s[%s] ✗ FAILED: %s (Error: %v)%s\n",

@@ -350,6 +350,53 @@ async function runTestSuite() {
   console.log('  ✓ Subagent transcripts stitched from picked files and from a dropped folder (nested included)');
 
   // -------------------------------------------------------------
+  // Test 7d: Parent link provenance (sidecar / result / inferred)
+  // -------------------------------------------------------------
+  console.log('\nTest 7d: Subagent parent links and inferred placement...');
+  await page.click('#resetBtn');
+  const linked = await page.evaluate(() => {
+    const j = (...objs) => objs.map(o => JSON.stringify(o)).join('\n');
+    processTraceFiles([
+      { path: '/s.jsonl', text: j(
+        { type: 'user', message: { content: 'first' }, timestamp: '2026-10-07T10:00:00Z' },
+        { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'call_agent', name: 'Agent', input: { subagent_type: 'Explore' } }] }, timestamp: '2026-10-07T10:00:01Z' },
+        { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'call_skill', name: 'Skill', input: { skill: 'use-browser' } }] }, timestamp: '2026-10-07T10:00:10Z' },
+        { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'call_skill', content: 'launched' }] }, toolUseResult: { status: 'forked', agentId: 'agentF' }, timestamp: '2026-10-07T10:00:11Z' },
+        { type: 'user', message: { content: 'second' }, timestamp: '2026-10-07T11:00:00Z' }
+      ) },
+      { path: '/s/subagents/agent-agentA.meta.json', text: JSON.stringify({ agentType: 'fork', toolUseId: 'call_agent' }) },
+      { path: '/s/subagents/agent-agentA.jsonl', text: j(
+        { agentId: 'agentA', type: 'assistant', message: { content: [{ type: 'tool_use', id: 'call_agent', name: 'Agent', input: { subagent_type: 'Explore' } }] }, timestamp: '2026-10-07T10:00:01Z' },
+        { agentId: 'agentA', type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a_read', name: 'Read', input: {} }] }, timestamp: '2026-10-07T10:00:02Z' }
+      ) },
+      { path: '/s/subagents/agent-agentF.meta.json', text: JSON.stringify({ agentType: 'general-purpose', name: 'use-browser' }) },
+      { path: '/s/subagents/agent-agentF.jsonl', text: j({ agentId: 'agentF', type: 'assistant', message: { content: [{ type: 'tool_use', id: 'f_nav', name: 'Bash', input: {} }] }, timestamp: '2026-10-07T10:00:12Z' }) },
+      { path: '/s/subagents/agent-agentU.meta.json', text: JSON.stringify({ agentType: 'general-purpose', name: 'background-check' }) },
+      { path: '/s/subagents/agent-agentU.jsonl', text: j({ agentId: 'agentU', type: 'assistant', message: { content: [{ type: 'tool_use', id: 'u_grep', name: 'Grep', input: {} }] }, timestamp: '2026-10-07T11:00:05Z' }) }
+    ]);
+    const pick = id => { const n = currentNodes.find(x => x.id === id); return n && `${n.parent_id}|${n.parent_link || ''}|${n.turn_index}|${n.caller_scope}`; };
+    return {
+      count: currentNodes.length,
+      agentCalls: currentNodes.filter(n => n.id === 'call_agent').length,
+      a_read: pick('a_read'), f_nav: pick('f_nav'),
+      placeholder: pick('inferred-subagent-agentU'), u_grep: pick('u_grep'),
+      inferredBadges: document.querySelectorAll('#depsViewContainer .badge-warning, #traceViewContainer .badge-warning').length
+    };
+  });
+  const expectLinks = {
+    a_read: 'call_agent|sidecar|1|Subagent: Explore',
+    f_nav: 'call_skill|result|1|Skill: use-browser',
+    placeholder: '|inferred|2|Agent',
+    u_grep: 'inferred-subagent-agentU|inferred|2|Subagent: background-check'
+  };
+  for (const [k, v] of Object.entries(expectLinks)) {
+    if (linked[k] !== v) throw new Error(`${k}: expected ${v}, got ${linked[k]}`);
+  }
+  if (linked.agentCalls !== 1 || linked.count !== 6) throw new Error(`Replayed spawning call must be counted once: ${JSON.stringify(linked)}`);
+  if (linked.inferredBadges < 2) throw new Error(`Expected inferred badges in the dependency and trace views, got ${linked.inferredBadges}`);
+  console.log('  ✓ sidecar / result / inferred parent links match the Go collector, replayed calls are deduplicated');
+
+  // -------------------------------------------------------------
   // Test 7b: Trace content is rendered as text, not HTML
   // -------------------------------------------------------------
   console.log('\nTest 7b: HTML escaping of trace content...');

@@ -166,8 +166,12 @@ func renderDependencyTree(w io.Writer, dep models.CallerDependency, prefix strin
 		)
 	}
 
-	fmt.Fprintf(w, "%s%s%s %s%s%s %s\n",
-		prefix, connector, calleeBadge, colorBold, dep.Callee, colorReset, statusStr,
+	inferredNote := ""
+	if dep.Inferred {
+		inferredNote = fmt.Sprintf(" %s(inferred: spawning call not recorded)%s", colorYellow, colorReset)
+	}
+	fmt.Fprintf(w, "%s%s%s %s%s%s %s%s\n",
+		prefix, connector, calleeBadge, colorBold, dep.Callee, colorReset, statusStr, inferredNote,
 	)
 
 	if dep.IsFallback {
@@ -294,9 +298,14 @@ func renderNodeRecursive(w io.Writer, g *graph.Graph, nodeID string, prefix stri
 	if node.MCPServer != "" {
 		mcpInfo = fmt.Sprintf(" %s(server: %s)%s", colorDim, node.MCPServer, colorReset)
 	}
+	name := node.Name
+	if node.IsInferredPlaceholder() {
+		name = node.ScopeName
+		mcpInfo += fmt.Sprintf(" %s(inferred: spawning call not recorded, placed by time)%s", colorYellow, colorReset)
+	}
 
 	fmt.Fprintf(w, "%s%s%s %s %s%s%s%s%s\n",
-		prefix, connector, statusBadge, typeBadge, colorBold, node.Name, colorReset, mcpInfo, anomalyBadge,
+		prefix, connector, statusBadge, typeBadge, colorBold, name, colorReset, mcpInfo, anomalyBadge,
 	)
 
 	visited[nodeID] = true
@@ -326,6 +335,9 @@ func RenderNodeInspect(w io.Writer, node *models.CallNode) {
 	fmt.Fprintf(w, "  %sSession:%s     %s\n", colorBold, colorReset, node.SessionID)
 	if node.ParentID != "" {
 		fmt.Fprintf(w, "  %sParent ID:%s   %s\n", colorBold, colorReset, node.ParentID)
+	}
+	if node.ParentLink != "" {
+		fmt.Fprintf(w, "  %sParent link:%s %s\n", colorBold, colorReset, describeParentLink(node.ParentLink))
 	}
 	fmt.Fprintf(w, "  %sTimestamp:%s   %s\n", colorBold, colorReset, node.Timestamp.Format("2006-01-02 15:04:05.000"))
 	fmt.Fprintf(w, "  %sStatus:%s      %s\n", colorBold, colorReset, node.Status)
@@ -365,4 +377,17 @@ func RenderNodeInspect(w io.Writer, node *models.CallNode) {
 		}
 	}
 	fmt.Fprintln(w, strings.Repeat("─", 60))
+}
+
+func describeParentLink(link models.ParentLink) string {
+	switch link {
+	case models.ParentLinkSidecar:
+		return "sidecar (the subagent's metadata names the spawning call)"
+	case models.ParentLinkResult:
+		return "result (the spawning call's result names the subagent)"
+	case models.ParentLinkInferred:
+		return fmt.Sprintf("%sinferred%s (no record names the spawning call; placed in the turn active when the subagent started)", colorYellow, colorReset)
+	default:
+		return string(link)
+	}
 }

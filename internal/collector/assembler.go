@@ -32,8 +32,9 @@ type Assembler struct {
 	turns       []models.ExecutionTurn
 	turnNodeIdx [][]int // per turn, indices into nodes (materialized in Finish)
 	turnNodes   []int
-	stepNodeMap map[int]int    // step index -> index in nodes
-	callNodeMap map[string]int // call ID -> index in nodes
+	stepNodeMap map[int]int       // step index -> index in nodes
+	callNodeMap map[string]int    // call ID -> index in nodes
+	childLinks  map[string]string // child trace ID -> spawning call ID, from tool results
 
 	currentTurnIndex int
 	currentPrompt    string
@@ -52,6 +53,7 @@ func NewAssembler(provider *providers.LoadedProvider, filePath string) *Assemble
 		sessionID:       parser.ExtractSessionID(filePath, nil),
 		stepNodeMap:     make(map[int]int),
 		callNodeMap:     make(map[string]int),
+		childLinks:      make(map[string]string),
 		currentTurnTime: time.Now(),
 		scopes:          providers.NewScopeTracker(provider),
 	}
@@ -67,6 +69,17 @@ func (a *Assembler) SetDefaultScope(scope string) {
 // Nodes returns all call nodes assembled so far.
 func (a *Assembler) Nodes() []models.CallNode {
 	return a.nodes
+}
+
+// ChildLinks maps child trace IDs to the calls that spawned them, as named by tool results
+// (source.child_traces.result_child_id_field).
+func (a *Assembler) ChildLinks() map[string]string {
+	return a.childLinks
+}
+
+// CurrentTurn returns the index of the turn subsequent calls belong to.
+func (a *Assembler) CurrentTurn() int {
+	return a.currentTurnIndex
 }
 
 // ActiveScope returns the scope subsequent calls will be attributed to.
@@ -138,25 +151,44 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 			}
 		}
 	case models.CorrelationCallID:
+		var answered []string
 		for _, item := range resultItems(resultCfg, payload) {
 			callID := fmt.Sprintf("%v", providers.ResolveField(item, resultCfg.CallIDField))
 			if idx, exists := a.callNodeMap[callID]; exists {
+				answered = append(answered, callID)
 				if applyResult(&a.nodes[idx], resultCfg, item, true) {
 					applyResultTiming(&a.nodes[idx], resultCfg, payload)
 					res.Results = append(res.Results, idx)
 				}
 			}
 		}
+		a.recordChildLink(payload, answered)
 	}
 
 	return res, nil
+}
+
+// recordChildLink remembers which call spawned the child trace named by a result event. The
+// link is only kept when the event answers exactly one call, so it is never ambiguous.
+func (a *Assembler) recordChildLink(payload map[string]interface{}, answered []string) {
+	cfg := a.provider.Definition.Source.ChildTraces
+	if cfg == nil || cfg.ResultChildIDField == "" || len(answered) != 1 {
+		return
+	}
+	childID, ok := providers.ResolveField(payload, cfg.ResultChildIDField).(string)
+	if !ok || childID == "" {
+		return
+	}
+	if _, exists := a.childLinks[childID]; !exists {
+		a.childLinks[childID] = answered[0]
+	}
 }
 
 // Finish closes the last turn and returns the assembled SessionData.
 // The Assembler must not be fed after Finish.
 func (a *Assembler) Finish() *SessionData {
 	if a.finished {
-		return &SessionData{SessionID: a.sessionID, Turns: a.turns, Nodes: a.nodes}
+		return &SessionData{SessionID: a.sessionID, Turns: a.turns, Nodes: a.nodes, ChildLinks: a.childLinks}
 	}
 	a.finished = true
 	a.flushTurn()
@@ -169,9 +201,10 @@ func (a *Assembler) Finish() *SessionData {
 	}
 
 	return &SessionData{
-		SessionID: a.sessionID,
-		Turns:     a.turns,
-		Nodes:     a.nodes,
+		SessionID:  a.sessionID,
+		Turns:      a.turns,
+		Nodes:      a.nodes,
+		ChildLinks: a.childLinks,
 	}
 }
 

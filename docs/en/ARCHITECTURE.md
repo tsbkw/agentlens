@@ -130,8 +130,17 @@ type CallNode struct {
     Output       interface{}            `json:"output,omitempty"`
     ErrorMessage string                 `json:"error_message,omitempty"`
     Anomalies    []AnomalyRecord        `json:"anomalies,omitempty"`
+    ParentLink   string                 `json:"parent_link,omitempty"` // "sidecar", "result", "inferred"
 }
 ```
+
+`ParentLink` is set on calls stitched from a child (subagent) trace and records the evidence for their placement:
+
+| Value | Evidence | Certainty |
+| :--- | :--- | :--- |
+| `sidecar` | The child's metadata names the spawning call (`child_traces.parent_call_id_field`). | Recorded |
+| `result` | The spawning call's tool result names the child (`child_traces.result_child_id_field`), e.g. a subagent forked by a Skill. | Recorded |
+| `inferred` | No record links the child to a call. Its calls are placed under a placeholder subagent node (`id: inferred-subagent-<child>`, `parent_id` empty) in the turn active when the child started, and the dependency row is flagged `inferred: true`. | Best guess |
 
 ### 3.3 `CallEdge`
 ```go

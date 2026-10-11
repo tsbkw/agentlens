@@ -58,7 +58,10 @@
           "properties": {
             "path_glob": { "type": "string", "description": "Glob for child trace files; '{dir}' is the parent trace's directory and '{stem}' its file name without extension." },
             "sidecar_suffix": { "type": "string", "description": "Replaces the child trace's extension to locate its metadata JSON (e.g. '.meta.json')." },
-            "parent_call_id_field": { "type": "string", "description": "Dot-path in the sidecar JSON holding the spawning call ID." }
+            "parent_call_id_field": { "type": "string", "description": "Dot-path in the sidecar JSON holding the spawning call ID." },
+            "child_id_field": { "type": "string", "description": "Dot-path, in the child trace's events, of the child's own ID." },
+            "result_child_id_field": { "type": "string", "description": "Dot-path, in a tool result event, naming the child trace spawned by the call that result answers. Links children whose sidecar has no parent call ID." },
+            "sidecar_name_field": { "type": "string", "description": "Sidecar field(s) naming a child with no linked spawning call ('a || b' picks the first non-empty one). Such children are attributed by time and marked parent_link: inferred." }
           }
         }
       }
