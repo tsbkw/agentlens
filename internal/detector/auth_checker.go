@@ -28,9 +28,8 @@ func (c *AuthChecker) Check(g *graph.Graph) []models.AnomalyRecord {
 		if node.ErrorMessage != "" {
 			contentToCheck = append(contentToCheck, node.ErrorMessage)
 		}
-		// Successful system tools routinely print arbitrary text (file contents, search hits),
-		// so their output is only checked when the call failed. MCP tools may report auth
-		// errors inside a successful response, so theirs is always checked.
+		// A successful call's output is arbitrary content (files, documents, search hits, query
+		// rows) that often mentions "401" or "unauthorized"; only failed calls are checked.
 		if node.Output != nil && outputMayCarryAuthError(node) {
 			contentToCheck = append(contentToCheck, fmt.Sprintf("%v", node.Output))
 		}
@@ -69,8 +68,5 @@ func (c *AuthChecker) Check(g *graph.Graph) []models.AnomalyRecord {
 }
 
 func outputMayCarryAuthError(node *models.CallNode) bool {
-	if node.Status == models.StatusFailed || node.Status == models.StatusTimeout {
-		return true
-	}
-	return node.Type == models.NodeTypeMCPTool
+	return node.Status == models.StatusFailed || node.Status == models.StatusTimeout
 }

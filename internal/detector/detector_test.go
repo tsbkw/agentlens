@@ -1,7 +1,9 @@
 package detector
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -200,9 +202,9 @@ func TestAuthCheckerIgnoresSuccessfulSystemToolOutput(t *testing.T) {
 		// Reading source code that mentions HTTP 401 is not an auth failure
 		{ID: "read", Name: "Bash", Type: models.NodeTypeSystemTool, Timestamp: now, Status: models.StatusSuccess,
 			Output: `if resp.StatusCode == 401 { return ErrUnauthorized }`},
-		// An MCP tool may report an auth error inside a successful response
+		// Neither is a document fetched by a successful MCP call that mentions 401
 		{ID: "mcp", Name: "mcp__notion__fetch", Type: models.NodeTypeMCPTool, Timestamp: now.Add(time.Second), Status: models.StatusSuccess,
-			Output: `{"error":"401 Unauthorized"}`},
+			Output: `{"title":"Runbook","text":"If the API returns 401 Unauthorized, rotate the token."}`},
 		// A failed system tool is still checked
 		{ID: "gh", Name: "Bash", Type: models.NodeTypeSystemTool, Timestamp: now.Add(2 * time.Second), Status: models.StatusFailed,
 			Output: "HTTP 401: Bad credentials"},
@@ -214,11 +216,11 @@ func TestAuthCheckerIgnoresSuccessfulSystemToolOutput(t *testing.T) {
 	for _, r := range records {
 		flagged[r.NodeID] = true
 	}
-	if flagged["read"] {
-		t.Errorf("Successful Bash output must not be flagged as an auth failure")
+	if flagged["read"] || flagged["mcp"] {
+		t.Errorf("Successful calls must not be flagged as auth failures, got %v", flagged)
 	}
-	if !flagged["mcp"] || !flagged["gh"] {
-		t.Errorf("Expected MCP and failed Bash calls to be flagged, got %v", flagged)
+	if !flagged["gh"] {
+		t.Errorf("Expected the failed Bash call to be flagged, got %v", flagged)
 	}
 }
 
@@ -251,5 +253,34 @@ func TestDependencyFallbackFlagsRequireConfirmation(t *testing.T) {
 				t.Errorf("Expected confirmed fallback to Bash, got %v %q", dep.IsFallback, dep.FallbackTo)
 			}
 		}
+	}
+}
+
+func TestRetryLoopReportedOncePerStreak(t *testing.T) {
+	now := time.Now()
+	var nodes []models.CallNode
+	add := func(name string, status models.CallStatus) {
+		nodes = append(nodes, models.CallNode{
+			ID: fmt.Sprintf("n%d", len(nodes)), Name: name, Type: models.NodeTypeMCPTool,
+			Timestamp: now.Add(time.Duration(len(nodes)) * time.Second), Status: status,
+		})
+	}
+	for i := 0; i < 6; i++ {
+		add("mcp__jira__create_issue", models.StatusFailed)
+	}
+	add("mcp__jira__create_issue", models.StatusSuccess)
+	for i := 0; i < 3; i++ {
+		add("mcp__jira__create_issue", models.StatusFailed)
+	}
+
+	records := NewLoopDetector().Check(graph.NewGraphBuilder().Build("s", "test", nodes))
+	if len(records) != 2 {
+		t.Fatalf("Expected one anomaly per streak (2), got %d: %+v", len(records), records)
+	}
+	if records[0].NodeID != "n2" || !strings.Contains(records[0].Title, "failed 6 times") {
+		t.Errorf("First streak: expected anomaly on n2 counting 6 failures, got %+v", records[0])
+	}
+	if records[1].NodeID != "n9" || !strings.Contains(records[1].Title, "failed 3 times") {
+		t.Errorf("Second streak: expected anomaly on n9 counting 3 failures, got %+v", records[1])
 	}
 }
