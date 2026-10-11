@@ -80,7 +80,7 @@ func Collect(provs []*providers.LoadedProvider, window Window, project string, s
 	for _, s := range sessions {
 		name := ProjectOf(s)
 		// A trace last written before the window cannot hold calls in it
-		if s.ModTime.Before(window.Since) || (project != "" && !strings.Contains(name, project)) {
+		if s.ModTime.Before(window.Since) || (project != "" && name != "logs" && !strings.Contains(name, project)) {
 			continue
 		}
 		provider := byID[s.ProviderID]
@@ -92,6 +92,20 @@ func Collect(provs []*providers.LoadedProvider, window Window, project string, s
 			if skip != nil {
 				skip(s.FilePath, err)
 			}
+			continue
+		}
+		if name == "logs" {
+			for _, n := range data.Nodes {
+				if cwd, ok := n.Arguments["Cwd"].(string); ok && cwd != "" {
+					cwd = strings.Trim(cwd, "\"'")
+					if base := filepath.Base(cwd); base != "" && base != "." && base != "/" {
+						name = base
+						break
+					}
+				}
+			}
+		}
+		if project != "" && !strings.Contains(name, project) {
 			continue
 		}
 		g := graph.NewGraphBuilder().BuildWithTurns(s.SessionID, provider.Definition.Provider.ID, data.Turns, data.Nodes)

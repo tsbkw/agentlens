@@ -19,19 +19,36 @@ func loadExampleProvider(t *testing.T, name string) *LoadedProvider {
 func TestScopeTrackerAntigravity(t *testing.T) {
 	tracker := NewScopeTracker(loadExampleProvider(t, "antigravity.yaml"))
 
-	skill := models.CallNode{Name: "view_file", Arguments: map[string]interface{}{"AbsolutePath": "/x/skills/query-optimizer/SKILL.md"}}
-	tracker.Apply(&skill)
-	if skill.Type != models.NodeTypeSkill || skill.ScopeName != "Skill: query-optimizer" || skill.CallerScope != "Agent" {
-		t.Errorf("Unexpected skill node: type=%v scope=%q caller=%q", skill.Type, skill.ScopeName, skill.CallerScope)
+	// Path wrapped in JSON-escaped quotes (as emitted by Antigravity CLI)
+	skillQuoted := models.CallNode{Name: "view_file", Arguments: map[string]interface{}{"AbsolutePath": "\"/x/skills/query-optimizer/SKILL.md\""}}
+	tracker.Apply(&skillQuoted)
+	if skillQuoted.Type != models.NodeTypeSkill || skillQuoted.ScopeName != "Skill: query-optimizer" || skillQuoted.CallerScope != "Agent" {
+		t.Errorf("Unexpected skill node from quoted path: type=%v scope=%q caller=%q", skillQuoted.Type, skillQuoted.ScopeName, skillQuoted.CallerScope)
 	}
 
-	plainView := models.CallNode{Name: "view_file", Arguments: map[string]interface{}{"AbsolutePath": "/x/README.md"}}
+	plainView := models.CallNode{Name: "view_file", Arguments: map[string]interface{}{"AbsolutePath": "\"/x/README.md\""}}
 	tracker.Apply(&plainView)
 	if plainView.ScopeName != "" || plainView.CallerScope != "Skill: query-optimizer" {
 		t.Errorf("Plain view_file must not open a scope: scope=%q caller=%q", plainView.ScopeName, plainView.CallerScope)
 	}
 
-	// A subagent spawned while a skill is active belongs to the enclosing agent
+	// Subagent defined inside Subagents array (as in Antigravity invoke_subagent declaration)
+	subArray := models.CallNode{
+		Name: "invoke_subagent",
+		Arguments: map[string]interface{}{
+			"Subagents": []interface{}{
+				map[string]interface{}{"Role": "\"Codebase Researcher\"", "TypeName": "researcher"},
+			},
+		},
+	}
+	tracker.Apply(&subArray)
+	if subArray.CallerScope != "Agent" || subArray.ScopeName != "Subagent: Codebase Researcher" || tracker.Active != "Subagent: Codebase Researcher" {
+		t.Errorf("Unexpected Subagents array attribution: caller=%q scope=%q active=%q", subArray.CallerScope, subArray.ScopeName, tracker.Active)
+	}
+
+	tracker.Reset()
+
+	// A subagent spawned with direct TypeName
 	sub := models.CallNode{Name: "invoke_subagent", Arguments: map[string]interface{}{"TypeName": "researcher"}}
 	tracker.Apply(&sub)
 	if sub.CallerScope != "Agent" || sub.ScopeName != "Subagent: researcher" || tracker.Active != "Subagent: researcher" {
