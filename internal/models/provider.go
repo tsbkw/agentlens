@@ -56,6 +56,9 @@ type ExtractionConfig struct {
 	Turns   TurnExtraction    `json:"turns,omitempty" yaml:"turns,omitempty"`
 	Results ResultExtraction  `json:"results,omitempty" yaml:"results,omitempty"`
 	Scopes  []ScopeRule       `json:"scopes,omitempty" yaml:"scopes,omitempty"`
+	// AuxiliaryTools lists bookkeeping tools of the agent (exact names or "prefix*"), marked
+	// CallNode.Auxiliary.
+	AuxiliaryTools []string `json:"auxiliary_tools,omitempty" yaml:"auxiliary_tools,omitempty"`
 }
 
 // Scope kinds a ScopeRule can open.
@@ -123,6 +126,9 @@ type ResultExtraction struct {
 	StatusField string `json:"status_field,omitempty" yaml:"status_field,omitempty"`
 	// TimestampField is the dot-path of the result timestamp, used to derive call duration.
 	TimestampField string `json:"timestamp_field,omitempty" yaml:"timestamp_field,omitempty"`
+	// DeniedRegex matches the text of an error result reporting that the call was refused by
+	// the user or a permission policy and never ran; such calls get status "denied".
+	DeniedRegex []string `json:"denied_regex,omitempty" yaml:"denied_regex,omitempty"`
 }
 
 // SessionExtraction specifies rules to find the session or conversation ID.

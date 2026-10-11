@@ -125,14 +125,17 @@ type CallNode struct {
     MCPServer    string                 `json:"mcp_server,omitempty"`
     Timestamp    time.Time              `json:"timestamp"`
     DurationMs   int64                  `json:"duration_ms"`
-    Status       string                 `json:"status"` // "success", "failed", "timeout"
+    Status       string                 `json:"status"` // "success", "failed", "timeout", "denied"
     Arguments    map[string]interface{} `json:"arguments,omitempty"`
     Output       interface{}            `json:"output,omitempty"`
     ErrorMessage string                 `json:"error_message,omitempty"`
     Anomalies    []AnomalyRecord        `json:"anomalies,omitempty"`
     ParentLink   string                 `json:"parent_link,omitempty"` // "sidecar", "result", "inferred"
+    Auxiliary    bool                   `json:"auxiliary,omitempty"`
 }
 ```
+
+`Status` is `denied` when the call never ran because the user or a permission policy refused it (`results.denied_regex`); it is not a failure. `Auxiliary` marks agent bookkeeping such as tool discovery, task tracking or planning (`extraction.auxiliary_tools`). Neither denied nor auxiliary calls take part in fallback and retry-loop detection: "MCP failed → tool search → shell" is still a fallback from the MCP call to the shell call.
 
 `ParentLink` is set on calls stitched from a child (subagent) trace and records the evidence for their placement:
 

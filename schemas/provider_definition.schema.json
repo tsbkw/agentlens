@@ -123,8 +123,14 @@
             "output_field": { "type": "string" },
             "error_flag_field": { "type": "string", "description": "Dot-path of a boolean that is true when the call failed." },
             "status_field": { "type": "string", "description": "Dot-path of a status string; 'error'/'failed' marks the call as failed." },
-            "timestamp_field": { "type": "string", "description": "Dot-path of the result timestamp, used to derive call duration." }
+            "timestamp_field": { "type": "string", "description": "Dot-path of the result timestamp, used to derive call duration." },
+            "denied_regex": { "type": "array", "items": { "type": "string" }, "description": "Patterns matching the text of an error result that reports the call was refused by the user or a permission policy and never ran. Such calls get status 'denied' instead of 'failed'." }
           }
+        },
+        "auxiliary_tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Bookkeeping tools of the agent (tool discovery, planning, task tracking, questions to the user), exact names or 'prefix*'. They are never treated as a substitute for a failed call and do not break a sequence of attempts."
         },
         "scopes": {
           "type": "array",

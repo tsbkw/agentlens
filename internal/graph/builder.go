@@ -194,6 +194,9 @@ func (b *GraphBuilder) BuildWithTurns(
 					b.AddEdge(parentTarget, callNode.ID, models.EdgeTypeCalls)
 				}
 
+				if !takesPartInAttempts(callNode) {
+					continue
+				}
 				if lastFailed := lastFailedByActor[callNode.ParentID]; lastFailed != nil {
 					b.AddEdge(lastFailed.ID, callNode.ID, transitionAfterFailure(lastFailed, callNode))
 					delete(lastFailedByActor, callNode.ParentID)
@@ -216,6 +219,9 @@ func (b *GraphBuilder) BuildWithTurns(
 		// 2. Sequential fallback transition linking (per actor, see BuildWithTurns)
 		prevByActor := make(map[string]*models.CallNode)
 		for _, node := range sortedNodes {
+			if !takesPartInAttempts(node) {
+				continue
+			}
 			if prevNode := prevByActor[node.ParentID]; prevNode != nil {
 				if prevNode.Status == models.StatusFailed {
 					b.AddEdge(prevNode.ID, node.ID, transitionAfterFailure(prevNode, node))
@@ -464,6 +470,13 @@ func (b *GraphBuilder) computeDependencies(nodes []models.CallNode) []models.Cal
 	return result
 }
 
+// takesPartInAttempts reports whether a call counts in a sequence of attempts at the user's
+// task. Bookkeeping calls and calls that were denied before running are skipped, so that
+// "MCP failed -> tool search -> shell" still links the failed MCP call to the shell call.
+func takesPartInAttempts(node *models.CallNode) bool {
+	return !node.Auxiliary && node.Status != models.StatusDenied
+}
+
 // transitionAfterFailure classifies the edge from a failed call to the call that follows it:
 // re-running the same tool is a retry, switching to another tool is a fallback candidate.
 func transitionAfterFailure(failed, next *models.CallNode) models.CallEdgeType {
@@ -519,6 +532,7 @@ type GraphMetrics struct {
 	MCPToolCalls  int           `json:"mcp_tool_calls"`
 	SystemCalls   int           `json:"system_calls"`
 	FailedCalls   int           `json:"failed_calls"`
+	DeniedCalls   int           `json:"denied_calls"`
 	MaxDepth      int           `json:"max_depth"`
 	TotalDuration time.Duration `json:"total_duration"`
 }
@@ -539,8 +553,11 @@ func (g *Graph) ComputeMetrics() GraphMetrics {
 			m.SystemCalls++
 		}
 
-		if node.Status == models.StatusFailed {
+		switch node.Status {
+		case models.StatusFailed:
 			m.FailedCalls++
+		case models.StatusDenied:
+			m.DeniedCalls++
 		}
 	}
 

@@ -37,6 +37,10 @@ func (ld *LoopDetector) Check(g *graph.Graph) []models.AnomalyRecord {
 	streaks := make(map[string]*streak)
 
 	for _, node := range sortedNodes {
+		// Bookkeeping and denied calls neither extend nor break a streak of attempts
+		if node.Auxiliary || node.Status == models.StatusDenied {
+			continue
+		}
 		st := streaks[node.ParentID]
 		if st == nil {
 			st = &streak{record: -1}

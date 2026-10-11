@@ -140,6 +140,7 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 
 	for i := range nodes {
 		nodes[i].TurnIndex = a.currentTurnIndex
+		nodes[i].Auxiliary = a.provider.IsAuxiliaryTool(nodes[i].Name)
 		a.scopes.Apply(&nodes[i])
 
 		a.nodes = append(a.nodes, nodes[i])
@@ -160,7 +161,7 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 	case models.CorrelationPreviousStep:
 		if stepIdx > 0 {
 			if idx, exists := a.stepNodeMap[stepIdx-1]; exists && a.nodes[idx].Output == nil {
-				if applyResult(&a.nodes[idx], resultCfg, payload, false) {
+				if applyResult(&a.nodes[idx], resultCfg, a.provider.DeniedRegex, payload, false) {
 					res.Results = append(res.Results, idx)
 				}
 			}
@@ -171,7 +172,7 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 			callID := fmt.Sprintf("%v", providers.ResolveField(item, resultCfg.CallIDField))
 			if idx, exists := a.callNodeMap[callID]; exists {
 				answered = append(answered, callID)
-				if applyResult(&a.nodes[idx], resultCfg, item, true) {
+				if applyResult(&a.nodes[idx], resultCfg, a.provider.DeniedRegex, item, true) {
 					applyResultTiming(&a.nodes[idx], resultCfg, payload)
 					res.Results = append(res.Results, idx)
 				}

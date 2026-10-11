@@ -71,10 +71,10 @@ func RenderCallGraph(w io.Writer, g *graph.Graph) {
 	// Print summary metrics
 	metrics := g.ComputeMetrics()
 	fmt.Fprintln(w, strings.Repeat("─", 65))
-	fmt.Fprintf(w, "%sSummary:%s Nodes: %d | Edges: %d | MCP Calls: %d | Skill Calls: %d | System Calls: %d | Failed: %d\n",
+	fmt.Fprintf(w, "%sSummary:%s Nodes: %d | Edges: %d | MCP Calls: %d | Skill Calls: %d | System Calls: %d | Failed: %d | Denied: %d\n",
 		colorBold, colorReset,
 		metrics.TotalNodes, metrics.TotalEdges,
-		metrics.MCPToolCalls, metrics.SkillCalls, metrics.SystemCalls, metrics.FailedCalls,
+		metrics.MCPToolCalls, metrics.SkillCalls, metrics.SystemCalls, metrics.FailedCalls, metrics.DeniedCalls,
 	)
 
 	// Anomaly highlights
@@ -268,6 +268,8 @@ func renderNodeRecursive(w io.Writer, g *graph.Graph, nodeID string, prefix stri
 		statusBadge = fmt.Sprintf("%s✗%s", colorRed, colorReset)
 	} else if node.Status == models.StatusTimeout {
 		statusBadge = fmt.Sprintf("%s⏱%s", colorYellow, colorReset)
+	} else if node.Status == models.StatusDenied {
+		statusBadge = fmt.Sprintf("%s⊘%s", colorYellow, colorReset)
 	}
 
 	// Type badge
