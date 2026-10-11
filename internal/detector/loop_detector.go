@@ -32,13 +32,14 @@ func (ld *LoopDetector) Check(g *graph.Graph) []models.AnomalyRecord {
 		consecutiveFailures int
 		lastFailedTool      string
 		failingNodeIDs      []string
+		record              int // index in records of this streak's anomaly, -1 before the threshold
 	}
 	streaks := make(map[string]*streak)
 
 	for _, node := range sortedNodes {
 		st := streaks[node.ParentID]
 		if st == nil {
-			st = &streak{}
+			st = &streak{record: -1}
 			streaks[node.ParentID] = st
 		}
 		consecutiveFailures, lastFailedTool, failingNodeIDs := st.consecutiveFailures, st.lastFailedTool, st.failingNodeIDs
@@ -49,28 +50,35 @@ func (ld *LoopDetector) Check(g *graph.Graph) []models.AnomalyRecord {
 				lastFailedTool = node.Name
 				failingNodeIDs = append(failingNodeIDs, node.ID)
 
-				if consecutiveFailures >= ld.Threshold {
+				// One anomaly per streak: raised at the threshold, its count updated as it grows
+				if consecutiveFailures == ld.Threshold {
+					st.record = len(records)
 					records = append(records, models.AnomalyRecord{
-						ID:       fmt.Sprintf("loop-%s-%d", node.ID, consecutiveFailures),
-						Type:     models.AnomalyRetryLoop,
-						Severity: models.SeverityWarning,
-						NodeID:   node.ID,
-						Title:    fmt.Sprintf("Retry Loop / Thrashing: %s failed %d times", node.Name, consecutiveFailures),
-						Description: fmt.Sprintf(
-							"Tool %q failed %d times consecutively. The agent appears stuck in a retry loop without progress.",
-							node.Name, consecutiveFailures,
-						),
+						ID:             fmt.Sprintf("loop-%s", node.ID),
+						Type:           models.AnomalyRetryLoop,
+						Severity:       models.SeverityWarning,
+						NodeID:         node.ID,
 						Recommendation: "Inspect input arguments or environment state causing repeated failures.",
 					})
 				}
+				if st.record >= 0 {
+					r := &records[st.record]
+					r.Title = fmt.Sprintf("Retry Loop / Thrashing: %s failed %d times", node.Name, consecutiveFailures)
+					r.Description = fmt.Sprintf(
+						"Tool %q failed %d times consecutively. The agent appears stuck in a retry loop without progress.",
+						node.Name, consecutiveFailures,
+					)
+				}
 			} else {
 				// Different tool failed, reset counter
+				st.record = -1
 				consecutiveFailures = 1
 				lastFailedTool = node.Name
 				failingNodeIDs = []string{node.ID}
 			}
 		} else {
 			// Succeeded, reset counter
+			st.record = -1
 			consecutiveFailures = 0
 			lastFailedTool = ""
 			failingNodeIDs = nil

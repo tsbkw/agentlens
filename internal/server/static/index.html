@@ -1104,9 +1104,9 @@
       const record = (node, anom) => { node.anomalies.push(anom); currentAnomalies.push(anom); };
 
       nodes.forEach(node => {
-        // Successful system tools print arbitrary text, so only failed calls and MCP tools are scanned
+        // A successful call's output is arbitrary content that often mentions 401; only failed calls are scanned
         const parts = [node.errorMessage || ''];
-        if (node.output != null && (isFailed(node) || node.type === 'mcp_tool')) parts.push(textContent(node.output));
+        if (node.output != null && isFailed(node)) parts.push(textContent(node.output));
         const outStr = parts.join(' ').trim();
         if (outStr && authRegexes.some(re => re.test(outStr))) {
           record(node, {
@@ -1152,27 +1152,31 @@
         }
 
         // Retry loop: the same tool failing 3+ times in a row
+        // One anomaly per streak: raised at the third failure, its count updated as it grows
         let consecutiveFails = 0;
         let lastFailedName = '';
+        let loop = null;
         seq.forEach(node => {
-          if (!isFailed(node)) { consecutiveFails = 0; lastFailedName = ''; return; }
+          if (!isFailed(node)) { consecutiveFails = 0; lastFailedName = ''; loop = null; return; }
           if (node.name === lastFailedName || !lastFailedName) {
             consecutiveFails++;
             lastFailedName = node.name;
-            if (consecutiveFails >= 3) {
-              record(node, {
-                id: `loop-${node.id}-${consecutiveFails}`,
+            if (consecutiveFails === 3) {
+              loop = {
+                id: `loop-${node.id}`,
                 type: 'retry_loop',
                 severity: 'warning',
                 nodeId: node.id,
-                title: `Retry Loop: ${node.name} failed ${consecutiveFails} times consecutively`,
                 description: `Tool ${node.name} failed repeatedly without backoff. Agent appears stuck in an error loop.`,
                 recommendation: `Inspect tool parameters or environment state causing repeated execution failure.`
-              });
+              };
+              record(node, loop);
             }
+            if (loop) loop.title = `Retry Loop: ${node.name} failed ${consecutiveFails} times consecutively`;
           } else {
             consecutiveFails = 1;
             lastFailedName = node.name;
+            loop = null;
           }
         });
       });
