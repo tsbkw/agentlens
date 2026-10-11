@@ -1,8 +1,10 @@
 package server
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -25,7 +27,27 @@ var indexHTML []byte
 type Server struct {
 	Providers []*providers.LoadedProvider
 	Port      int
+
+	started  time.Time
+	shutdown func() // set by Start; stops the running server
 }
+
+// Instance identifies a running agentlens ui to another agentlens process (GET /api/instance).
+type Instance struct {
+	App     string    `json:"app"`
+	PID     int       `json:"pid"`
+	Started time.Time `json:"started"`
+}
+
+// AppName is the value of Instance.App a real agentlens ui reports.
+const AppName = "agentlens"
+
+// shutdownHeader must be sent with POST /api/shutdown. A custom header makes the request a
+// CORS preflighted one, so a web page cannot stop the server; a program on this machine can.
+const shutdownHeader = "X-Agentlens-Shutdown"
+
+// replaceTimeout bounds how long Start waits for a previous instance to release the port.
+const replaceTimeout = 5 * time.Second
 
 // NewServer creates a new local Server serving sessions from the given providers.
 func NewServer(port int, provs ...*providers.LoadedProvider) *Server {
@@ -45,17 +67,83 @@ func (s *Server) providerByID(id string) *providers.LoadedProvider {
 }
 
 // Start launches the local HTTP server. It listens on the loopback interface only, because
-// the API serves full session transcripts.
+// the API serves full session transcripts. When the port is held by another agentlens ui,
+// that instance is asked to stop and this one takes the port over; any other program keeps
+// it and Start fails. Start returns nil once this instance is stopped the same way.
 func (s *Server) Start() error {
 	addr := net.JoinHostPort("127.0.0.1", fmt.Sprint(s.Port))
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("cannot listen on %s (is another agentlens ui running? try --port): %w", addr, err)
+		pid, rerr := stopInstance(addr)
+		if rerr != nil {
+			return fmt.Errorf("cannot listen on %s: %w (%v; try --port)", addr, err, rerr)
+		}
+		fmt.Printf("↻ Stopped the agentlens ui that was running on port %d (pid %d).\n", s.Port, pid)
+		if ln, err = listenUntilFree(addr, replaceTimeout); err != nil {
+			return fmt.Errorf("cannot listen on %s: %w (try --port)", addr, err)
+		}
 	}
 	fmt.Printf("🚀 AgentLens Web UI is live at: http://localhost:%d\n", s.Port)
 	fmt.Println("Press Ctrl+C to stop.")
 
-	return http.Serve(ln, s.Handler())
+	s.started = time.Now()
+	httpSrv := &http.Server{Handler: s.Handler()}
+	s.shutdown = func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		httpSrv.Shutdown(ctx)
+	}
+	if err := httpSrv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	fmt.Printf("👋 Stopped: another agentlens ui took over port %d.\n", s.Port)
+	return nil
+}
+
+// stopInstance asks the agentlens ui listening at addr to stop and returns its PID. It fails
+// when whatever listens there is not an agentlens ui.
+func stopInstance(addr string) (int, error) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	base := "http://" + addr
+	resp, err := client.Get(base + "/api/instance")
+	if err != nil {
+		return 0, fmt.Errorf("no agentlens ui answered on that port")
+	}
+	defer resp.Body.Close()
+	var inst Instance
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&inst) != nil || inst.App != AppName {
+		return 0, fmt.Errorf("the port is used by a program that is not an agentlens ui, or by one too old to be replaced")
+	}
+
+	req, err := http.NewRequest(http.MethodPost, base+"/api/shutdown", nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set(shutdownHeader, "1")
+	resp2, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("the agentlens ui on that port (pid %d) did not answer the stop request: %w", inst.PID, err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusAccepted {
+		return 0, fmt.Errorf("the agentlens ui on that port (pid %d) refused to stop (HTTP %d)", inst.PID, resp2.StatusCode)
+	}
+	return inst.PID, nil
+}
+
+// listenUntilFree retries net.Listen on addr until it succeeds or timeout passes.
+func listenUntilFree(addr string, timeout time.Duration) (net.Listener, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			return ln, nil
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("the previous agentlens ui did not release the port: %w", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // Handler returns the HTTP handler serving the UI and the session API. Requests whose Host
@@ -68,6 +156,29 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(indexHTML)
+	})
+
+	// API: Identity of this instance, so a newer `agentlens ui` can tell us from another program
+	mux.HandleFunc("/api/instance", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, Instance{App: AppName, PID: os.Getpid(), Started: s.started})
+	})
+
+	// API: Stop this instance (used by a newer `agentlens ui` taking over the port)
+	mux.HandleFunc("/api/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if r.Header.Get(shutdownHeader) == "" {
+			http.Error(w, "missing "+shutdownHeader+" header", http.StatusForbidden)
+			return
+		}
+		if s.shutdown == nil {
+			http.Error(w, "this server cannot be stopped remotely", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		go s.shutdown()
 	})
 
 	// API: Sessions list
