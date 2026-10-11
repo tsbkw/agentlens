@@ -1,0 +1,86 @@
+# Provider-independent catalog of public services and the command-line tools and hosts an
+# agent can use in place of their MCP server. A call that fails on one of these MCP servers
+# and is followed by a shell or HTTP call using the matching CLI or host is reported as a
+# silent fallback with high confidence.
+#
+# Only widely used public services belong here. Keep organization-specific or internal
+# tools out of this file; such fallbacks are still detected with low confidence.
+#
+#   mcp_servers: words that identify the service in an MCP server name
+#                (e.g. "github" matches mcp__github__*, mcp__plugin_github_x__*)
+#   commands:    CLI executables that reach the service
+#   hosts:       hostnames of its web or API endpoints
+
+services:
+  - name: GitHub
+    mcp_servers: [github]
+    commands: [gh]
+    hosts: [github.com, api.github.com, raw.githubusercontent.com]
+  - name: GitLab
+    mcp_servers: [gitlab]
+    commands: [glab]
+    hosts: [gitlab.com]
+  - name: BigQuery
+    mcp_servers: [bigquery]
+    commands: [bq]
+    hosts: [bigquery.googleapis.com]
+  - name: Google Cloud
+    mcp_servers: [gcloud, gcp]
+    commands: [gcloud, gsutil]
+    hosts: [googleapis.com]
+  - name: Google Drive
+    mcp_servers: [gdrive, drive, gdocs]
+    commands: []
+    hosts: [drive.google.com, docs.google.com, www.googleapis.com/drive]
+  - name: AWS
+    mcp_servers: [aws]
+    commands: [aws]
+    hosts: [amazonaws.com]
+  - name: Kubernetes
+    mcp_servers: [kubernetes, k8s]
+    commands: [kubectl, helm]
+    hosts: []
+  - name: PostgreSQL
+    mcp_servers: [postgres, postgresql]
+    commands: [psql]
+    hosts: []
+  - name: Slack
+    mcp_servers: [slack]
+    commands: []
+    hosts: [slack.com]
+  - name: Notion
+    mcp_servers: [notion]
+    commands: []
+    hosts: [api.notion.com, notion.so, notion.site]
+  - name: Atlassian (Jira, Confluence)
+    mcp_servers: [atlassian, jira, confluence]
+    commands: [jira, acli]
+    hosts: [atlassian.net]
+  - name: Linear
+    mcp_servers: [linear]
+    commands: []
+    hosts: [api.linear.app, linear.app]
+  - name: Datadog
+    mcp_servers: [datadog]
+    commands: [datadog-ci]
+    hosts: [datadoghq.com, datadoghq.eu]
+  - name: Sentry
+    mcp_servers: [sentry]
+    commands: [sentry-cli]
+    hosts: [sentry.io]
+  - name: Sourcegraph
+    mcp_servers: [sourcegraph]
+    commands: [src]
+    hosts: [sourcegraph.com]
+  - name: Figma
+    mcp_servers: [figma]
+    commands: []
+    hosts: [api.figma.com, figma.com]
+  - name: Stripe
+    mcp_servers: [stripe]
+    commands: [stripe]
+    hosts: [api.stripe.com]
+  - name: Cloudflare
+    mcp_servers: [cloudflare]
+    commands: [wrangler]
+    hosts: [api.cloudflare.com]

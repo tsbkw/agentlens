@@ -59,7 +59,20 @@ type AnomalyRecord struct {
 	Title          string          `json:"title"`
 	Description    string          `json:"description"`
 	Recommendation string          `json:"recommendation,omitempty"`
+	// Confidence and Evidence qualify heuristic findings such as silent fallbacks.
+	Confidence Confidence `json:"confidence,omitempty"`
+	Evidence   string     `json:"evidence,omitempty"`
 }
+
+// Confidence rates how strongly the trace supports a heuristic finding.
+type Confidence string
+
+const (
+	// ConfidenceHigh: the trace shows concrete evidence (same service, CLI or identifiers).
+	ConfidenceHigh Confidence = "high"
+	// ConfidenceLow: only the order of calls suggests it; treat it as a lead to check.
+	ConfidenceLow Confidence = "low"
+)
 
 // CallNode represents a single vertex in the execution graph.
 type CallNode struct {
@@ -127,6 +140,8 @@ type CallerDependency struct {
 	FailCount    int          `json:"fail_count"`
 	IsFallback   bool               `json:"is_fallback"`
 	FallbackTo   string             `json:"fallback_to,omitempty"`
+	// FallbackConfidence qualifies IsFallback ("high" or "low").
+	FallbackConfidence Confidence `json:"fallback_confidence,omitempty"`
 	// Inferred marks a caller -> callee relation that no record states, e.g. a subagent whose
 	// spawning call is not recorded and was placed under the agent by time.
 	Inferred bool               `json:"inferred,omitempty"`

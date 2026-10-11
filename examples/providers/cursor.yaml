@@ -37,7 +37,7 @@ extraction:
 anomaly_rules:
   auth_failure_regex:
     - "(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"
-  known_fallbacks:
-    - original_tool: "mcp_*"
-      fallback_tool: "terminal_cmd"
-      description: "Cursor Composer MCP failed; agent silently attempted terminal execution."
+  # Failed MCP / Skill calls followed by a shell or HTTP call are detected by the core for
+  # every provider (with rules/substitutes.yaml raising confidence). List only pairs that are
+  # specific to this agent here.
+  known_fallbacks: []

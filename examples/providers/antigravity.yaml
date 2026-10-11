@@ -63,7 +63,7 @@ extraction:
 anomaly_rules:
   auth_failure_regex:
     - "(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"
-  known_fallbacks:
-    - original_tool: "mcp_*"
-      fallback_tool: "run_command"
-      description: "MCP tool failed or unauthenticated; model fell back to raw shell execution."
+  # Failed MCP / Skill calls followed by a shell or HTTP call are detected by the core for
+  # every provider (with rules/substitutes.yaml raising confidence). List only pairs that are
+  # specific to this agent here.
+  known_fallbacks: []
