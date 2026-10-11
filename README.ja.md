@@ -114,7 +114,7 @@ agentlens trace ~/.claude/projects/-Users-me-repo/5b0c8f2e-....jsonl
 agentlens --provider claude-code watch      # 最新の Claude Code セッションを追跡
 ```
 
-- `Skill` 呼び出しは **Skill** スコープを開き、`Agent` / `Task` 呼び出しは **Subagent** として表示されます。各サブエージェント自身のトランスクリプト (`<session-id>/subagents/agent-*.jsonl`) は、それを起動した呼び出しの配下に統合されます。`agentlens watch` もサブエージェントの起動と同時にこれらのファイルを追跡し、その呼び出しを `↳` 付きでインデントして表示します。Skill から fork されたサブエージェントは、Skill のツール結果に記録された `agentId` で紐付けます。どの呼び出しとも紐付ける記録がないサブエージェントは時刻から配置し、CLI・Web UI・JSON データのすべてで **inferred（推定）** (`parent_link: "inferred"`) と表示します。
+- `Skill` 呼び出しは **Skill** スコープを開き、`Agent` / `Task` 呼び出しは **Subagent** として表示されます。各サブエージェント自身のトランスクリプト (`<session-id>/subagents/agent-*.jsonl`) は、それを起動した呼び出しの配下に統合されます。`agentlens watch` もサブエージェントの起動と同時にこれらのファイルを追跡し、その呼び出しを `↳` 付きでインデントして表示します。Skill から fork されたサブエージェントは、Skill のツール結果に記録された `agentId` で紐付けます。どの呼び出しとも紐付ける記録がないサブエージェントは時刻から配置し、CLI・Web UI・JSON データのすべてで **inferred（推定）** (`parent_link: "inferred"`) と表示します。`agentlens watch` で紐付けの記録がまだ書かれていなかったために推定で表示した場合は、記録が届いた時点で紐付け直します。
 - `mcp__<server>__<tool>` 形式の呼び出しは `<server>` の **MCP** ツールとして分類されます。
 - `tool_result` ブロックは ID で `tool_use` に紐付けられ、出力・`is_error` による失敗・所要時間が記録されます。MCP 呼び出しの失敗直後に `Bash` / `WebFetch` が実行された場合は **暗黙のフォールバック** として検出されます。
 - 同梱サンプルで試せます: `agentlens graph examples/traces/sample_claude_code_session.jsonl`

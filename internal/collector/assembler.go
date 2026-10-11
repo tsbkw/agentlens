@@ -71,6 +71,21 @@ func (a *Assembler) Nodes() []models.CallNode {
 	return a.nodes
 }
 
+// Rescope moves the calls attributed to the default scope to scope and makes it the default
+// for later calls, e.g. when the spawning call of a subagent trace is identified late.
+func (a *Assembler) Rescope(scope string) {
+	old := a.scopes.Default
+	for i := range a.nodes {
+		if a.nodes[i].CallerScope == old {
+			a.nodes[i].CallerScope = scope
+		}
+	}
+	if a.scopes.Active == old {
+		a.scopes.Active = scope
+	}
+	a.scopes.Default = scope
+}
+
 // ChildLinks maps child trace IDs to the calls that spawned them, as named by tool results
 // (source.child_traces.result_child_id_field).
 func (a *Assembler) ChildLinks() map[string]string {

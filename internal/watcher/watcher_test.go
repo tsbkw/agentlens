@@ -3,6 +3,7 @@ package watcher
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tsbkw/agentlens/internal/collector"
+	"github.com/tsbkw/agentlens/internal/models"
 	"github.com/tsbkw/agentlens/internal/providers"
 )
 
@@ -330,5 +333,100 @@ func TestWatcherLinksForkedAndUnrecordedSubagents(t *testing.T) {
 	}
 	if l := find("Grep"); !strings.Contains(l, "(inferred parent)") {
 		t.Errorf("Expected the unrecorded subagent's call marked as inferred, got %q in:\n%s", l, out)
+	}
+}
+
+func TestWatcherRelinksInferredSubagentWhenResultArrivesLate(t *testing.T) {
+	provider := loadClaudeProvider(t)
+
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "session.jsonl")
+	appendLine(t, logPath, "")
+	subDir := filepath.Join(dir, "session", "subagents")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	w := NewWatcher(provider, logPath)
+	w.PollInterval = 20 * time.Millisecond
+	w.InferAfter = 60 * time.Millisecond
+
+	child := filepath.Join(subDir, "agent-forked.jsonl")
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		appendLine(t, logPath, `{"type":"user","message":{"content":"Check the page"},"timestamp":"2026-10-07T14:01:00Z"}`+"\n")
+		appendLine(t, logPath, `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"call_skill","name":"Skill","input":{"skill":"use-browser"}}]},"timestamp":"2026-10-07T14:01:01Z"}`+"\n")
+		appendLine(t, filepath.Join(subDir, "agent-forked.meta.json"), `{"agentType":"general-purpose","name":"use-browser"}`)
+		appendLine(t, child, `{"agentId":"forked","type":"assistant","message":{"content":[{"type":"tool_use","id":"f_early","name":"WebFetch","input":{}}]},"timestamp":"2026-10-07T14:01:02Z"}`+"\n")
+
+		// The Skill's result naming the subagent arrives well after InferAfter
+		time.Sleep(250 * time.Millisecond)
+		appendLine(t, logPath, `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"call_skill","content":"launched"}]},"toolUseResult":{"status":"forked","agentId":"forked"},"timestamp":"2026-10-07T14:01:03Z"}`+"\n")
+		time.Sleep(100 * time.Millisecond)
+		appendLine(t, child, `{"agentId":"forked","type":"assistant","message":{"content":[{"type":"tool_use","id":"f_late","name":"Grep","input":{}}]},"timestamp":"2026-10-07T14:01:04Z"}`+"\n")
+	}()
+
+	var buf bytes.Buffer
+	ctx, cancel := context.WithTimeout(context.Background(), 900*time.Millisecond)
+	defer cancel()
+	if err := w.Watch(ctx, &buf); err != nil {
+		t.Fatalf("Watch returned error: %v", err)
+	}
+
+	out := buf.String()
+	var early, relinked, late int = -1, -1, -1
+	for i, l := range strings.Split(out, "\n") {
+		switch {
+		case strings.Contains(l, "WebFetch"):
+			early = i
+			if !strings.Contains(l, "(inferred parent)") {
+				t.Errorf("Before its result arrives the subagent must be shown as inferred, got %q", l)
+			}
+		case strings.Contains(l, "linked to its spawning call Skill (result)"):
+			relinked = i
+			if !strings.Contains(l, "[Skill: use-browser]") {
+				t.Errorf("Expected the relink to name the Skill scope, got %q", l)
+			}
+		case strings.Contains(l, "Grep"):
+			late = i
+			if strings.Contains(l, "inferred") || !strings.Contains(l, "[Skill: use-browser]") {
+				t.Errorf("After the relink calls belong to the Skill call, got %q", l)
+			}
+		}
+	}
+	if !(early >= 0 && early < relinked && relinked < late) {
+		t.Errorf("Expected inferred call, then relink, then linked call, got lines %d/%d/%d in:\n%s", early, relinked, late, out)
+	}
+}
+
+func TestAssemblerRescope(t *testing.T) {
+	provider := loadClaudeProvider(t)
+	parent := models.CallNode{ID: "p", Name: "Subagent", ScopeName: "Subagent: guess"}
+	asm := collector.NewChildAssembler(provider, "agent-x.jsonl", parent)
+	for _, line := range []string{
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"a","name":"Read","input":{}}]},"timestamp":"2026-10-07T14:01:02Z"}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"b","name":"Skill","input":{"skill":"inner"}}]},"timestamp":"2026-10-07T14:01:03Z"}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"c","name":"Bash","input":{}}]},"timestamp":"2026-10-07T14:01:04Z"}`,
+	} {
+		var payload map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := asm.Feed(payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	asm.Rescope("Skill: use-browser")
+
+	got := map[string]string{}
+	for _, n := range asm.Nodes() {
+		got[n.ID] = n.CallerScope
+	}
+	// Calls inside the nested skill keep their scope; direct calls move to the new one
+	want := map[string]string{"a": "Skill: use-browser", "b": "Skill: use-browser", "c": "Skill: inner"}
+	for id, scope := range want {
+		if got[id] != scope {
+			t.Errorf("%s: scope %q, want %q", id, got[id], scope)
+		}
 	}
 }
