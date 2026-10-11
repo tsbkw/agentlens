@@ -375,7 +375,8 @@ Available Commands:
   report [flags]       Aggregate calls and anomalies of all sessions over a period:
                        --since <YYYY-MM-DD|Nd> (default 7d) --until <YYYY-MM-DD>
                        --project <name> --top <n> --json
-  ui [--port <n>]      Launch the local Web UI dashboard on 127.0.0.1 (default port 8000)
+  ui [--port <n>]      Launch the local Web UI dashboard on 127.0.0.1 (default port 8000);
+                       an agentlens ui already running on that port is stopped and replaced
   version              Print version of agentlens
   help                 Print this help message
 
