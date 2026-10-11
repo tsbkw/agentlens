@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
@@ -39,8 +40,20 @@ func (s *Server) providerByID(id string) *providers.LoadedProvider {
 	return nil
 }
 
-// Start launches the local HTTP server.
+// Start launches the local HTTP server. It listens on the loopback interface only, because
+// the API serves full session transcripts.
 func (s *Server) Start() error {
+	addr := net.JoinHostPort("127.0.0.1", fmt.Sprint(s.Port))
+	fmt.Printf("🚀 AgentLens Web UI is live at: http://localhost:%d\n", s.Port)
+	fmt.Println("Press Ctrl+C to stop.")
+
+	return http.ListenAndServe(addr, s.Handler())
+}
+
+// Handler returns the HTTP handler serving the UI and the session API. Requests whose Host
+// header does not name the loopback interface are rejected, so a page on another site cannot
+// read the API through DNS rebinding.
+func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// Static UI
@@ -110,9 +123,29 @@ func (s *Server) Start() error {
 		json.NewEncoder(w).Encode(g)
 	})
 
-	addr := fmt.Sprintf(":%d", s.Port)
-	fmt.Printf("🚀 AgentLens Web UI is live at: http://localhost:%d\n", s.Port)
-	fmt.Println("Press Ctrl+C to stop.")
+	return localOnly(mux)
+}
 
-	return http.ListenAndServe(addr, mux)
+// localOnly rejects requests that were not addressed to localhost or a loopback IP.
+func localOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackHost(r.Host) {
+			http.Error(w, "forbidden host", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isLoopbackHost(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

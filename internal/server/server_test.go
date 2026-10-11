@@ -10,34 +10,58 @@ import (
 	"github.com/tsbkw/agentlens/internal/providers"
 )
 
-func TestServerEndpoints(t *testing.T) {
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
 	providerPath := filepath.Join("..", "..", "examples", "providers", "antigravity.yaml")
 	provider, err := providers.LoadProviderFromFile(providerPath)
 	if err != nil {
 		t.Fatalf("Failed to load provider: %v", err)
 	}
+	return NewServer(8000, provider)
+}
 
-	srv := NewServer(8000, provider)
+func TestServerEndpoints(t *testing.T) {
+	h := newTestServer(t).Handler()
 
-	// Test GET /
-	req := httptest.NewRequest("GET", "/", nil)
+	req := httptest.NewRequest("GET", "http://localhost:8000/", nil)
 	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
-		rw.Write(indexHTML)
-	})
-	mux.ServeHTTP(w, req)
-
-	resp := w.Result()
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected 200 OK for /, got %d", resp.StatusCode)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200 OK for /, got %d", w.Code)
 	}
-	body := w.Body.String()
-	if !strings.Contains(body, "AgentLens") {
+	if !strings.Contains(w.Body.String(), "AgentLens") {
 		t.Errorf("Expected 'AgentLens' in index.html body")
 	}
+}
 
-	_ = srv
+// A page on another site can point its own hostname at 127.0.0.1 (DNS rebinding); the
+// browser then sends that hostname in Host, which the server must refuse.
+func TestServerRejectsNonLoopbackHost(t *testing.T) {
+	h := newTestServer(t).Handler()
+
+	cases := map[string]int{
+		"localhost:8000":     http.StatusOK,
+		"LOCALHOST":          http.StatusOK,
+		"127.0.0.1:8000":     http.StatusOK,
+		"[::1]:8000":         http.StatusOK,
+		"evil.example:8000":  http.StatusForbidden,
+		"192.168.1.20:8000":  http.StatusForbidden,
+		"localhost.evil.com": http.StatusForbidden,
+		"":                   http.StatusForbidden,
+	}
+	for host, want := range cases {
+		for _, path := range []string{"/", "/api/sessions"} {
+			req := httptest.NewRequest("GET", path, nil)
+			req.Host = host
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			if w.Code == http.StatusForbidden && want != http.StatusForbidden {
+				t.Errorf("Host %q %s: got 403, want allowed", host, path)
+			}
+			if want == http.StatusForbidden && w.Code != http.StatusForbidden {
+				t.Errorf("Host %q %s: got %d, want 403", host, path, w.Code)
+			}
+		}
+	}
 }
