@@ -603,6 +603,76 @@ async function runTestSuite() {
   console.log('  ✓ Report renders escaped, filters reach the API, a session opens with its subagent');
 
   // -------------------------------------------------------------
+  // Test 9: Viewer behaviour (filters, selection, state reset, alerts, unknown format, phone width)
+  // -------------------------------------------------------------
+  console.log('\nTest 9: Viewer behaviour...');
+  await page.click('#resetBtn');
+  const unknown = await page.evaluate(() => {
+    processTraceFiles([{ path: '/notes.txt', text: '{"foo":1}\n[1,2,3]\nnot json' }]);
+    return { error: document.getElementById('dropError').textContent, graph: document.getElementById('graphSection').style.display };
+  });
+  if (!unknown.error.includes('No tool calls or prompts recognised') || unknown.graph !== 'none') throw new Error(`Unknown format not reported: ${JSON.stringify(unknown)}`);
+
+  await page.click('#loadClaudeSampleBtn');
+  await page.waitForSelector('.callee-row');
+  const behaviour = await page.evaluate(() => {
+    const out = {};
+    out.denied = document.getElementById('statDeniedCalls').textContent;
+    // Filters apply to the trace view and 'anomalies' means nodes with anomalies
+    filterSelect.value = 'anomalies'; refreshViews();
+    out.anomalyRows = [...document.querySelectorAll('#traceViewContainer .node-row .node-title')].map(e => e.textContent.trim());
+    out.anomalyDeps = [...document.querySelectorAll('.callee-row .callee-name')].map(e => e.textContent.trim().split(/\s+/)[0]);
+    filterSelect.value = 'all'; searchInput.value = 'deploy-prod'; refreshViews();
+    out.searchRows = document.querySelectorAll('#traceViewContainer .node-row').length;
+    // Clicking a row highlights it
+    document.querySelector('#traceViewContainer .node-row').click();
+    out.selected = document.querySelectorAll('.node-row.selected').length;
+    out.drawerOpen = drawer.classList.contains('open');
+    return out;
+  });
+  if (behaviour.denied !== '0') throw new Error(`Expected a Denied stat, got ${behaviour.denied}`);
+  if (!behaviour.anomalyRows.includes('mcp__github__create_issue') || !behaviour.anomalyRows.includes('Bash') || behaviour.anomalyRows.includes('Read')) throw new Error(`Unexpected anomaly rows ${behaviour.anomalyRows}`);
+  if (!behaviour.anomalyDeps.includes('mcp__github__create_issue')) throw new Error(`Unexpected anomaly deps ${behaviour.anomalyDeps}`);
+  if (behaviour.searchRows < 1) throw new Error('Search must apply to the trace view');
+  if (behaviour.selected !== 1 || !behaviour.drawerOpen) throw new Error(`Expected one highlighted row and an open drawer, got ${JSON.stringify(behaviour)}`);
+  await page.keyboard.press('Escape');
+  if (await page.$eval('#drawer', el => el.classList.contains('open'))) throw new Error('Escape must close the drawer');
+
+  // A new session starts with a clean view, and repeated findings are grouped and capped
+  const reset = await page.evaluate(() => {
+    const lines = [{ type: 'user', message: { content: 'go' }, timestamp: '2026-10-07T10:00:00Z' }];
+    for (let i = 0; i < 8; i++) {
+      for (let k = 0; k < 3; k++) {
+        const id = `c${i}-${k}`;
+        lines.push({ type: 'assistant', timestamp: `2026-10-07T10:0${i}:${String(k * 10).padStart(2, '0')}Z`, message: { content: [{ type: 'tool_use', id, name: `tool_${i}`, input: {} }] } });
+        lines.push({ type: 'user', timestamp: `2026-10-07T10:0${i}:${String(k * 10 + 5).padStart(2, '0')}Z`, message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'boom', is_error: true }] } });
+      }
+    }
+    processTraceText(lines.map(l => JSON.stringify(l)).join('\n'));
+    return {
+      search: searchInput.value, filter: filterSelect.value, drawer: drawer.classList.contains('open'),
+      cards: document.querySelectorAll('.alert-card').length, more: !!document.getElementById('alertsMoreBtn'),
+      anomalies: currentAnomalies.length
+    };
+  });
+  if (reset.search !== '' || reset.filter !== 'all' || reset.drawer) throw new Error(`State not reset: ${JSON.stringify(reset)}`);
+  if (reset.anomalies !== 8 || reset.cards !== 5 || !reset.more) throw new Error(`Expected 5 of 8 alert cards and a show-all button, got ${JSON.stringify(reset)}`);
+  await page.click('#alertsMoreBtn');
+  if (await page.$$eval('.alert-card', els => els.length) !== 8) throw new Error('Show all must render every alert');
+
+  // Phone width: no horizontal page scroll, drawer fits
+  await page.setViewport({ width: 390, height: 844 });
+  await page.click('#loadClaudeSampleBtn');
+  await page.waitForSelector('.callee-row');
+  await page.evaluate(() => document.querySelector('#traceViewContainer .node-row').click());
+  const phone = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, drawerLeft: document.getElementById('drawer').getBoundingClientRect().left }));
+  if (phone.scrollWidth > 390) throw new Error(`Horizontal page scroll at 390px: ${phone.scrollWidth}px`);
+  if (phone.drawerLeft < 0) throw new Error(`Drawer overflows the viewport at 390px: left ${phone.drawerLeft}`);
+  await page.keyboard.press('Escape');
+  await page.setViewport({ width: 1280, height: 800 });
+  console.log('  ✓ Unknown files are reported, filters reach the trace view, rows highlight, state resets, alerts group, phone width fits');
+
+  // -------------------------------------------------------------
   // Test 7: Console & Runtime Errors
   // -------------------------------------------------------------
   console.log('\nTest 7: Uncaught Errors Check...');
