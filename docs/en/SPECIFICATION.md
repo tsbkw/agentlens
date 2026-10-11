@@ -71,7 +71,7 @@ Layers 2 through 5 operate entirely on normalized internal data models (`CallNod
 ## 3. Detailed Component Specifications
 
 ### 3.1 Layer 1: Provider Definition Layer
-Declarative YAML/JSON files adhering to [`provider_definition.schema.json`](file:///home/tsbkw0/development/agentlens/schemas/provider_definition.schema.json).
+Declarative YAML/JSON files adhering to [`provider_definition.schema.json`](../../schemas/provider_definition.schema.json).
 
 - **Source Configuration**: Defines where and how trace data is read (`file`, `directory_watch`, `command`, `otel_collector`).
 - **Extraction Rules**:

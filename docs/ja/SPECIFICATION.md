@@ -75,7 +75,7 @@ flowchart TD
 ## 3. コンポーネント別詳細仕様 (Detailed Component Specifications)
 
 ### 3.1 第1層: プロバイダ定義層 (Provider Definition Layer)
-[`provider_definition.schema.json`](file:///home/tsbkw0/development/agentlens/schemas/provider_definition.schema.json) に準拠する宣言的YAML/JSONファイル。
+[`provider_definition.schema.json`](../../schemas/provider_definition.schema.json) に準拠する宣言的YAML/JSONファイル。
 
 - **データソース設定**: トレースデータの場所・取得方法（`file`, `directory_watch`, `command`, `otel_collector`）。
 - **抽出ルール**:
