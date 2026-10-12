@@ -1,0 +1,730 @@
+{
+  "provider": "claude-code",
+  "skipped_lines": 1,
+  "turns": [
+    {
+      "index": 1,
+      "prompt": "/pr-review",
+      "calls": [
+        "toolu_skill_01",
+        "toolu_gh_pr",
+        "toolu_gh_files",
+        "toolu_read_ci",
+        "toolu_bash_ghpr",
+        "toolu_bash_ghdiff",
+        "toolu_agent_review",
+        "toolu_ask",
+        "toolu_sub_read_a",
+        "toolu_sub_read_b",
+        "toolu_sub_grep",
+        "toolu_sub_vet",
+        "toolu_sub_build",
+        "toolu_sub_agent_nested",
+        "toolu_nested_grep",
+        "toolu_nested_read"
+      ]
+    },
+    {
+      "index": 2,
+      "prompt": "注文エクスポートのバッチが本番で失敗している原因を調べて。",
+      "calls": [
+        "toolu_toolsearch",
+        "toolu_slack_search",
+        "toolu_pg_1",
+        "toolu_pg_2",
+        "toolu_pg_3",
+        "toolu_bash_psql",
+        "toolu_bash_compose",
+        "toolu_pg_4",
+        "toolu_bash_rm",
+        "toolu_edit_denied",
+        "toolu_write",
+        "toolu_webfetch",
+        "toolu_bash_curl"
+      ]
+    },
+    {
+      "index": 3,
+      "prompt": "Now commit the fix and open a draft PR.",
+      "calls": [
+        "toolu_skill_commit",
+        "toolu_fork_status",
+        "toolu_fork_commit",
+        "toolu_fork_pr",
+        "toolu_fork_auth"
+      ]
+    },
+    {
+      "index": 4,
+      "prompt": "Use the SSH remote instead, then push.",
+      "calls": [
+        "toolu_bash_remote",
+        "toolu_bash_push2",
+        "toolu_bash_prcreate"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "toolu_skill_01",
+      "name": "Skill",
+      "type": "skill",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Agent",
+      "scope_name": "Skill: pr-review",
+      "duration_ms": 300,
+      "output_head": "Launching skill: pr-review"
+    },
+    {
+      "id": "toolu_gh_pr",
+      "name": "mcp__github__get_pull_request",
+      "type": "mcp_tool",
+      "mcp_server": "github",
+      "status": "failed",
+      "turn_index": 1,
+      "caller_scope": "Skill: pr-review",
+      "duration_ms": 900,
+      "output_head": "Authentication Failed: Bad credentials",
+      "error": "Authentication Failed: Bad credentials"
+    },
+    {
+      "id": "toolu_gh_files",
+      "name": "mcp__github__get_pull_request_files",
+      "type": "mcp_tool",
+      "mcp_server": "github",
+      "status": "failed",
+      "turn_index": 1,
+      "caller_scope": "Skill: pr-review",
+      "duration_ms": 1090,
+      "output_head": "… (https://api.github.com/repos/acme/shop-api/pulls/42/files)",
+      "error": "HTTP 401: Bad credentials (https://api.github.com/repos/acme/shop-api/pulls/42/files)"
+    },
+    {
+      "id": "toolu_read_ci",
+      "name": "Read",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Skill: pr-review",
+      "duration_ms": 580,
+      "output_head": "1→name: CI"
+    },
+    {
+      "id": "toolu_bash_ghpr",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Skill: pr-review",
+      "duration_ms": 1200,
+      "output_head": "… orders to CSV\",\"files\":[{\"path\":\"internal/export/job.go\"}]}"
+    },
+    {
+      "id": "toolu_bash_ghdiff",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Skill: pr-review",
+      "duration_ms": 1400,
+      "output_head": "diff --git a/internal/export/job.go b/internal/export/job.go"
+    },
+    {
+      "id": "toolu_agent_review",
+      "name": "Agent",
+      "type": "subagent",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Skill: pr-review",
+      "scope_name": "Subagent: code-reviewer",
+      "duration_ms": 34000,
+      "output_head": "… nil check in job.go:88 and an unbounded retry in client.go."
+    },
+    {
+      "id": "toolu_ask",
+      "name": "AskUserQuestion",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Skill: pr-review",
+      "auxiliary": true,
+      "duration_ms": 135000,
+      "output_head": "User selected: Yes"
+    },
+    {
+      "id": "toolu_toolsearch",
+      "name": "ToolSearch",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "auxiliary": true,
+      "duration_ms": 400
+    },
+    {
+      "id": "toolu_slack_search",
+      "name": "mcp__slack__slack_search_public",
+      "type": "mcp_tool",
+      "mcp_server": "slack",
+      "status": "success",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "duration_ms": 2800,
+      "output_head": "\u003cpersisted-output\u003e"
+    },
+    {
+      "id": "toolu_pg_1",
+      "name": "mcp__postgres__query",
+      "type": "mcp_tool",
+      "mcp_server": "postgres",
+      "status": "failed",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "duration_ms": 1200,
+      "output_head": "….internal\" (10.0.0.12), port 5432 failed: Connection refused",
+      "error": "Error executing tool query: connection to server at \"db.internal\" (10.0.0.12), port 5432 failed: Connection refused"
+    },
+    {
+      "id": "toolu_pg_2",
+      "name": "mcp__postgres__query",
+      "type": "mcp_tool",
+      "mcp_server": "postgres",
+      "status": "failed",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "duration_ms": 1200,
+      "output_head": "….internal\" (10.0.0.12), port 5432 failed: Connection refused",
+      "error": "Error executing tool query: connection to server at \"db.internal\" (10.0.0.12), port 5432 failed: Connection refused"
+    },
+    {
+      "id": "toolu_pg_3",
+      "name": "mcp__postgres__query",
+      "type": "mcp_tool",
+      "mcp_server": "postgres",
+      "status": "failed",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "duration_ms": 1200,
+      "output_head": "….internal\" (10.0.0.12), port 5432 failed: Connection refused",
+      "error": "Error executing tool query: connection to server at \"db.internal\" (10.0.0.12), port 5432 failed: Connection refused"
+    },
+    {
+      "id": "toolu_bash_psql",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "failed",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "duration_ms": 1000,
+      "output_head": "Exit code 2",
+      "error": "Exit code 2\npsql: error: connection to server at \"db.internal\" (10.0.0.12), port 5432 failed: Connection refused"
+    },
+    {
+      "id": "toolu_bash_compose",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "duration_ms": 9500,
+      "output_head": "Container shop-db Started"
+    },
+    {
+      "id": "toolu_pg_4",
+      "name": "mcp__postgres__query",
+      "type": "mcp_tool",
+      "mcp_server": "postgres",
+      "status": "success",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "duration_ms": 600,
+      "output_head": "id   | status | last_error"
+    },
+    {
+      "id": "toolu_bash_rm",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "denied",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "duration_ms": 4000,
+      "output_head": "… are doing and wait for the user to tell you how to proceed.",
+      "error": "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed."
+    },
+    {
+      "id": "toolu_edit_denied",
+      "name": "Edit",
+      "type": "system_tool",
+      "status": "denied",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "duration_ms": 900,
+      "output_head": "…son: the edit changes error handling the user asked to keep.",
+      "error": "Permission for this action was denied by the Claude Code auto mode classifier. Reason: the edit changes error handling the user asked to keep."
+    },
+    {
+      "id": "toolu_write",
+      "name": "Write",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "duration_ms": 500,
+      "output_head": "…ly at: /home/dev/workspace/shop-api/internal/export/retry.go"
+    },
+    {
+      "id": "toolu_webfetch",
+      "name": "WebFetch",
+      "type": "system_tool",
+      "status": "failed",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "duration_ms": 1200,
+      "output_head": "Error: Request failed with status code 403",
+      "error": "Error: Request failed with status code 403"
+    },
+    {
+      "id": "toolu_bash_curl",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 2,
+      "caller_scope": "Agent",
+      "duration_ms": 1100,
+      "output_head": "… API limits\u003c/title\u003e\u003cp\u003e100 requests per minute per token.\u003c/p\u003e"
+    },
+    {
+      "id": "toolu_skill_commit",
+      "name": "Skill",
+      "type": "skill",
+      "status": "success",
+      "turn_index": 3,
+      "caller_scope": "Agent",
+      "scope_name": "Skill: commit-helper",
+      "duration_ms": 500,
+      "output_head": "Launching skill: commit-helper"
+    },
+    {
+      "id": "toolu_bash_remote",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "failed",
+      "turn_index": 4,
+      "caller_scope": "Agent",
+      "duration_ms": 120000,
+      "output_head": "Command timed out after 2m 0.0s",
+      "error": "Command timed out after 2m 0.0s\nEnumerating objects: 12, done."
+    },
+    {
+      "id": "toolu_bash_push2",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 4,
+      "caller_scope": "Agent",
+      "duration_ms": 6000,
+      "output_head": "To github.com:acme/shop-api.git"
+    },
+    {
+      "id": "toolu_bash_prcreate",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 4,
+      "caller_scope": "Agent",
+      "duration_ms": 3000,
+      "output_head": "https://github.com/acme/shop-api/pull/43"
+    },
+    {
+      "id": "toolu_sub_read_a",
+      "name": "Read",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Subagent: code-reviewer",
+      "parent_id": "toolu_agent_review",
+      "parent_link": "sidecar",
+      "duration_ms": 500,
+      "output_head": "88→\tresult := fmt.Sprintf(\"exported %d rows\", n)"
+    },
+    {
+      "id": "toolu_sub_read_b",
+      "name": "Read",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Subagent: code-reviewer",
+      "parent_id": "toolu_agent_review",
+      "parent_link": "sidecar",
+      "duration_ms": 690,
+      "output_head": "40→\tfor {"
+    },
+    {
+      "id": "toolu_sub_grep",
+      "name": "Grep",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Subagent: code-reviewer",
+      "parent_id": "toolu_agent_review",
+      "parent_link": "sidecar",
+      "duration_ms": 300,
+      "output_head": "No matches found"
+    },
+    {
+      "id": "toolu_sub_vet",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "failed",
+      "turn_index": 1,
+      "caller_scope": "Subagent: code-reviewer",
+      "parent_id": "toolu_agent_review",
+      "parent_link": "sidecar",
+      "duration_ms": 2800,
+      "output_head": "Exit code 1",
+      "error": "Exit code 1\n# acme/shop-api/internal/export\ninternal/export/job.go:88:2: result of fmt.Sprintf call not used"
+    },
+    {
+      "id": "toolu_sub_build",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Subagent: code-reviewer",
+      "parent_id": "toolu_agent_review",
+      "parent_link": "sidecar",
+      "duration_ms": 2100
+    },
+    {
+      "id": "toolu_sub_agent_nested",
+      "name": "Agent",
+      "type": "subagent",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Subagent: code-reviewer",
+      "scope_name": "Subagent: Explore",
+      "parent_id": "toolu_agent_review",
+      "parent_link": "sidecar",
+      "duration_ms": 12000,
+      "output_head": "No retry helper exists; pkg/util has only a sleep wrapper."
+    },
+    {
+      "id": "toolu_nested_grep",
+      "name": "Grep",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Subagent: Explore",
+      "parent_id": "toolu_sub_agent_nested",
+      "parent_link": "sidecar",
+      "duration_ms": 400,
+      "output_head": "No matches found"
+    },
+    {
+      "id": "toolu_nested_read",
+      "name": "Read",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 1,
+      "caller_scope": "Subagent: Explore",
+      "parent_id": "toolu_sub_agent_nested",
+      "parent_link": "sidecar",
+      "duration_ms": 300,
+      "output_head": "1→package util"
+    },
+    {
+      "id": "toolu_fork_status",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 3,
+      "caller_scope": "Skill: commit-helper",
+      "parent_id": "toolu_skill_commit",
+      "parent_link": "result",
+      "duration_ms": 400,
+      "output_head": "M internal/export/client.go"
+    },
+    {
+      "id": "toolu_fork_commit",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 3,
+      "caller_scope": "Skill: commit-helper",
+      "parent_id": "toolu_skill_commit",
+      "parent_link": "result",
+      "duration_ms": 900,
+      "output_head": "…/order-export 3f9a2c1] export: bound the upstream retry loop"
+    },
+    {
+      "id": "toolu_fork_pr",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "failed",
+      "turn_index": 3,
+      "caller_scope": "Skill: commit-helper",
+      "parent_id": "toolu_skill_commit",
+      "parent_link": "result",
+      "duration_ms": 2300,
+      "output_head": "Exit code 1",
+      "error": "Exit code 1\nGraphQL: Resource not accessible by personal access token (createPullRequest)"
+    },
+    {
+      "id": "toolu_fork_auth",
+      "name": "Bash",
+      "type": "system_tool",
+      "status": "success",
+      "turn_index": 3,
+      "caller_scope": "Skill: commit-helper",
+      "parent_id": "toolu_skill_commit",
+      "parent_link": "result",
+      "duration_ms": 1100,
+      "output_head": "github.com"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "silent_fallback",
+      "node_id": "toolu_bash_ghpr",
+      "related_node_id": "toolu_gh_files",
+      "confidence": "high",
+      "title": "Silent Fallback Detected: mcp__github__get_pull_request_files → Bash"
+    },
+    {
+      "type": "silent_fallback",
+      "node_id": "toolu_bash_psql",
+      "related_node_id": "toolu_pg_3",
+      "confidence": "high",
+      "title": "Silent Fallback Detected: mcp__postgres__query → Bash"
+    },
+    {
+      "type": "auth_expired",
+      "node_id": "toolu_gh_files",
+      "title": "Authentication Expired or Failed: mcp__github__get_pull_request_files"
+    },
+    {
+      "type": "auth_expired",
+      "node_id": "toolu_gh_pr",
+      "title": "Authentication Expired or Failed: mcp__github__get_pull_request"
+    },
+    {
+      "type": "retry_loop",
+      "node_id": "toolu_pg_3",
+      "title": "Retry Loop / Thrashing: mcp__postgres__query failed 3 times"
+    },
+    {
+      "type": "auth_expired",
+      "node_id": "toolu_webfetch",
+      "title": "Authentication Expired or Failed: WebFetch"
+    }
+  ],
+  "dependencies": [
+    {
+      "caller": "Agent",
+      "callee": "Bash",
+      "calls": 7,
+      "success": 4,
+      "failed": 2,
+      "denied": 1
+    },
+    {
+      "caller": "Agent",
+      "callee": "mcp__postgres__query",
+      "calls": 4,
+      "success": 1,
+      "failed": 3,
+      "fallback": true,
+      "fallback_to": "Bash",
+      "confidence": "high"
+    },
+    {
+      "caller": "Agent",
+      "callee": "Edit",
+      "calls": 1,
+      "success": 0,
+      "failed": 0,
+      "denied": 1
+    },
+    {
+      "caller": "Agent",
+      "callee": "Skill: commit-helper",
+      "calls": 1,
+      "success": 1,
+      "failed": 0,
+      "children": [
+        {
+          "caller": "Skill: commit-helper",
+          "callee": "Bash",
+          "calls": 4,
+          "success": 3,
+          "failed": 1
+        }
+      ]
+    },
+    {
+      "caller": "Agent",
+      "callee": "Skill: pr-review",
+      "calls": 1,
+      "success": 1,
+      "failed": 0,
+      "children": [
+        {
+          "caller": "Skill: pr-review",
+          "callee": "Bash",
+          "calls": 2,
+          "success": 2,
+          "failed": 0
+        },
+        {
+          "caller": "Skill: pr-review",
+          "callee": "AskUserQuestion",
+          "calls": 1,
+          "success": 1,
+          "failed": 0
+        },
+        {
+          "caller": "Skill: pr-review",
+          "callee": "Read",
+          "calls": 1,
+          "success": 1,
+          "failed": 0
+        },
+        {
+          "caller": "Skill: pr-review",
+          "callee": "Subagent: code-reviewer",
+          "calls": 1,
+          "success": 1,
+          "failed": 0,
+          "children": [
+            {
+              "caller": "Subagent: code-reviewer",
+              "callee": "Bash",
+              "calls": 2,
+              "success": 1,
+              "failed": 1
+            },
+            {
+              "caller": "Subagent: code-reviewer",
+              "callee": "Read",
+              "calls": 2,
+              "success": 2,
+              "failed": 0
+            },
+            {
+              "caller": "Subagent: code-reviewer",
+              "callee": "Grep",
+              "calls": 1,
+              "success": 1,
+              "failed": 0
+            },
+            {
+              "caller": "Subagent: code-reviewer",
+              "callee": "Subagent: Explore",
+              "calls": 1,
+              "success": 1,
+              "failed": 0,
+              "children": [
+                {
+                  "caller": "Subagent: Explore",
+                  "callee": "Grep",
+                  "calls": 1,
+                  "success": 1,
+                  "failed": 0
+                },
+                {
+                  "caller": "Subagent: Explore",
+                  "callee": "Read",
+                  "calls": 1,
+                  "success": 1,
+                  "failed": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "caller": "Skill: pr-review",
+          "callee": "mcp__github__get_pull_request",
+          "calls": 1,
+          "success": 0,
+          "failed": 1
+        },
+        {
+          "caller": "Skill: pr-review",
+          "callee": "mcp__github__get_pull_request_files",
+          "calls": 1,
+          "success": 0,
+          "failed": 1,
+          "fallback": true,
+          "fallback_to": "Bash",
+          "confidence": "high"
+        }
+      ]
+    },
+    {
+      "caller": "Agent",
+      "callee": "ToolSearch",
+      "calls": 1,
+      "success": 1,
+      "failed": 0
+    },
+    {
+      "caller": "Agent",
+      "callee": "WebFetch",
+      "calls": 1,
+      "success": 0,
+      "failed": 1
+    },
+    {
+      "caller": "Agent",
+      "callee": "Write",
+      "calls": 1,
+      "success": 1,
+      "failed": 0
+    },
+    {
+      "caller": "Agent",
+      "callee": "mcp__slack__slack_search_public",
+      "calls": 1,
+      "success": 1,
+      "failed": 0
+    }
+  ],
+  "metrics": {
+    "denied_calls": 2,
+    "failed_calls": 10,
+    "max_depth": 4,
+    "mcp_tool_calls": 7,
+    "skill_calls": 2,
+    "system_calls": 26,
+    "total_duration": 353360000000,
+    "total_edges": 47,
+    "total_nodes": 42
+  },
+  "report": {
+    "sessions": 1,
+    "total": {
+      "calls": 37,
+      "failed": 10,
+      "denied": 2,
+      "auth_expired": 3,
+      "silent_fallbacks": 2,
+      "possible_fallbacks": 0,
+      "retry_loops": 1
+    },
+    "session": {
+      "key": "7e3f9a2c-4b1d-4c8e-9f6a-0d2b5c7e8a91",
+      "project": "-home-dev-workspace-shop-api",
+      "provider": "claude-code",
+      "last_call": "2026-10-10T09:26:00Z",
+      "calls": 37,
+      "failed": 10,
+      "denied": 2,
+      "auth_expired": 3,
+      "silent_fallbacks": 2,
+      "possible_fallbacks": 0,
+      "retry_loops": 1
+    }
+  }
+}

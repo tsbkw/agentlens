@@ -125,6 +125,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] `agentlens ui` stops and replaces an agentlens ui already running on its port; other programs are left alone (PR #45)
 - [x] gofmt applied repo-wide and enforced in CI; `Makefile` with `make check`; git hooks for commit (gofmt, vet, build) and push (Go tests) via `make hooks` (PR #50)
 - [x] `turns.skip_regex`: a local command's output and interruption markers are not turns, so a slash command keeps its calls (PR #51)
+- [x] Synthetic Claude Code regression fixture (37 calls, nested and forked subagents, parallel calls, retry loop, fallbacks, denials, compaction, truncated line) with a golden file checked by the Go pipeline and the browser engine (PR #52)
 
 ### Phase 12: Deeper Analysis (Planned)
 - [ ] Indirect proxy routing detection (tool A reached through tool B)

@@ -1,0 +1,1 @@
+{"agentType": "code-reviewer", "description": "Review the diff", "toolUseId": "toolu_agent_review", "spawnDepth": 1, "isFork": false, "model": "claude-example-1", "requestNonInteractive": false, "requestShape": "agent"}
