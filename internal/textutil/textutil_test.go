@@ -2,6 +2,7 @@ package textutil
 
 import (
 	"testing"
+	"time"
 	"unicode/utf8"
 )
 
@@ -53,5 +54,17 @@ func TestFormatDurationAndSize(t *testing.T) {
 	}
 	if got := FormatSize(3 * 1024 * 1024); got != "3.0 MB" {
 		t.Errorf("FormatSize = %q", got)
+	}
+}
+
+func TestFormatAge(t *testing.T) {
+	cases := map[time.Duration]string{
+		30 * time.Second: "<1m", 45 * time.Minute: "45m", 5 * time.Hour: "5h", 47 * time.Hour: "47h",
+		3 * 24 * time.Hour: "3d", 20 * 24 * time.Hour: "20d", 6 * 7 * 24 * time.Hour: "6w",
+	}
+	for d, want := range cases {
+		if got := FormatAge(d); got != want {
+			t.Errorf("FormatAge(%v) = %q, want %q", d, got, want)
+		}
 	}
 }

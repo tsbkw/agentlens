@@ -19,6 +19,7 @@ type availabilityTracker struct {
 	skills   []string
 	tools    []string
 	servers  []string
+	serverAt map[string]time.Time
 	failed   []models.ServerFailure
 	pending  []string
 	seen     map[string]bool
@@ -32,6 +33,7 @@ func newAvailabilityTracker(provider *providers.LoadedProvider) *availabilityTra
 		fields:   provider.Definition.Extraction.Fields,
 		seen:     make(map[string]bool),
 		failedAt: make(map[string]int),
+		serverAt: make(map[string]time.Time),
 	}
 }
 
@@ -39,6 +41,12 @@ func newAvailabilityTracker(provider *providers.LoadedProvider) *availabilityTra
 func (t *availabilityTracker) Feed(payload map[string]interface{}, fallbackTime time.Time) {
 	if t.cfg == nil {
 		return
+	}
+	at := fallbackTime
+	if t.fields.Timestamp != "" {
+		if parsed, ok := providers.ParseTimestampValue(providers.ResolveField(payload, t.fields.Timestamp)); ok {
+			at = parsed
+		}
 	}
 	if rule := t.cfg.Skills; rule != nil && matches(rule.Filter, payload) {
 		for _, name := range stringList(providers.ResolveField(payload, rule.NamesField)) {
@@ -50,16 +58,14 @@ func (t *availabilityTracker) Feed(payload map[string]interface{}, fallbackTime 
 			t.add("tool", &t.tools, name)
 			if server := t.serverOf(name); server != "" {
 				t.add("server", &t.servers, server)
+				if !at.IsZero() && at.After(t.serverAt[server]) {
+					t.serverAt[server] = at
+				}
 			}
 		}
 	}
 	if rule := t.cfg.FailedServers; rule != nil && matches(rule.Filter, payload) {
-		ts := fallbackTime
-		if t.fields.Timestamp != "" {
-			if parsed, ok := providers.ParseTimestampValue(providers.ResolveField(payload, t.fields.Timestamp)); ok {
-				ts = parsed
-			}
-		}
+		ts := at
 		for _, item := range listItems(providers.ResolveField(payload, rule.ItemsField)) {
 			name, errText := itemNameAndError(item, rule)
 			if name == "" {
@@ -87,13 +93,17 @@ func (t *availabilityTracker) Result() *models.Availability {
 	if len(t.skills) == 0 && len(t.tools) == 0 && len(t.failed) == 0 && len(t.pending) == 0 {
 		return nil
 	}
-	return &models.Availability{
+	av := &models.Availability{
 		Skills:         t.skills,
 		Tools:          t.tools,
 		MCPServers:     t.servers,
 		FailedServers:  t.failed,
 		PendingServers: t.pending,
 	}
+	if len(t.serverAt) > 0 {
+		av.ServerAnnouncedAt = t.serverAt
+	}
+	return av
 }
 
 func (t *availabilityTracker) add(kind string, list *[]string, name string) {

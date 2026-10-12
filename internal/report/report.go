@@ -55,6 +55,31 @@ type Report struct {
 	MCPServers []Row  `json:"mcp_servers"`
 	Tools      []Row  `json:"tools"`
 	BySession  []Row  `json:"sessions_detail"`
+	// ToolHealth follows every Skill and MCP server seen or offered in the window, dormant
+	// ones first.
+	ToolHealth []ToolHealth `json:"tool_health,omitempty"`
+}
+
+// Dormant returns the Skills and MCP servers that are not working as of their last use.
+func (r *Report) Dormant() []ToolHealth {
+	var out []ToolHealth
+	for _, h := range r.ToolHealth {
+		if h.Dormant() {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+// Unused returns the Skills and MCP servers offered in the window and never called.
+func (r *Report) Unused() []ToolHealth {
+	var out []ToolHealth
+	for _, h := range r.ToolHealth {
+		if h.Reason == ReasonUnused {
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 // Builder accumulates analyzed session graphs into a Report.
@@ -64,11 +89,36 @@ type Builder struct {
 	servers  map[string]*Row
 	tools    map[string]*Row
 	total    Counts
+	health   *healthBuilder
+	// sessionStart is the earliest in-window time seen for each session, calls or
+	// availability events; health rows count sessions with it.
+	sessionStart map[string]time.Time
 }
 
 // NewBuilder creates a Builder for window.
 func NewBuilder(window Window) *Builder {
-	return &Builder{window: window, servers: make(map[string]*Row), tools: make(map[string]*Row)}
+	return &Builder{window: window, servers: make(map[string]*Row), tools: make(map[string]*Row),
+		health: newHealthBuilder(), sessionStart: make(map[string]time.Time)}
+}
+
+// startedAt records the earliest in-window time of a session.
+func (b *Builder) startedAt(sessionID string, at time.Time) {
+	if at.IsZero() || !b.window.Contains(at) {
+		return
+	}
+	if cur, ok := b.sessionStart[sessionID]; !ok || at.Before(cur) {
+		b.sessionStart[sessionID] = at
+	}
+}
+
+// AddAvailability records what the harness announced a session could call, at the session's
+// start time. Sessions outside the window are ignored.
+func (b *Builder) AddAvailability(sessionID string, at time.Time, av *models.Availability) {
+	if av == nil || !b.window.Contains(at) {
+		return
+	}
+	b.startedAt(sessionID, at)
+	b.health.availability(sessionID, at, av)
 }
 
 // Add counts the tool calls of a session that fall in the window, and the anomalies the
@@ -93,6 +143,16 @@ func (b *Builder) Add(sessionID, project string, calls []models.CallNode, g *gra
 		if n.Timestamp.After(session.LastCall) {
 			session.LastCall = n.Timestamp
 		}
+		b.startedAt(sessionID, n.Timestamp)
+		b.health.call(sessionID, n)
+		for _, a := range n.Anomalies {
+			if a.Type != models.AnomalySilentFallback || a.RelatedNodeID == "" {
+				continue
+			}
+			if from := g.Nodes[a.RelatedNodeID]; from != nil {
+				b.health.fallback(from, n.Name, n.Timestamp)
+			}
+		}
 	}
 	if session.Calls > 0 {
 		b.sessions = append(b.sessions, session)
@@ -106,6 +166,10 @@ func (b *Builder) Report() *Report {
 	r.Tools = sortedRows(b.tools)
 	r.BySession = append([]Row(nil), b.sessions...)
 	sortRows(r.BySession)
+	for _, start := range b.sessionStart {
+		b.health.session(start)
+	}
+	r.ToolHealth = b.health.rows()
 	return r
 }
 

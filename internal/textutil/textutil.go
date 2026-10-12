@@ -1,7 +1,10 @@
 // Package textutil holds small text helpers shared by the visualizers.
 package textutil
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // Truncate shortens s to at most max characters (runes, not bytes) and appends suffix when
 // anything was cut, so multi-byte text such as Japanese is never split mid-character.
@@ -41,6 +44,22 @@ func FormatDuration(ms int64) string {
 		return fmt.Sprintf("%.1fs", float64(ms)/1000)
 	default:
 		return fmt.Sprintf("%dm%02ds", ms/60_000, (ms%60_000)/1000)
+	}
+}
+
+// FormatAge renders how long ago something happened, coarsely: 45m, 5h, 3d, 6w.
+func FormatAge(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "<1m"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	case d < 21*24*time.Hour:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	default:
+		return fmt.Sprintf("%dw", int(d.Hours()/(24*7)))
 	}
 }
 

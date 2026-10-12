@@ -188,6 +188,9 @@ type Availability struct {
 	Tools []string `json:"tools,omitempty"`
 	// MCPServers are derived from Tools with fields.mcp_server_regex.
 	MCPServers []string `json:"mcp_servers,omitempty"`
+	// ServerAnnouncedAt is the last time tools of each MCP server were announced, i.e. the
+	// server was connected; a failure or sign-in wait announced before it is resolved.
+	ServerAnnouncedAt map[string]time.Time `json:"server_announced_at,omitempty"`
 	// FailedServers could not be connected to in this session.
 	FailedServers []ServerFailure `json:"failed_servers,omitempty"`
 	// PendingServers wait for the user to sign in.

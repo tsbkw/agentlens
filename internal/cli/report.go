@@ -148,6 +148,99 @@ func RenderReport(w io.Writer, r *report.Report, top int) {
 	table("MCP servers", "SERVER", r.MCPServers, false)
 	table("Tools", "TOOL", r.Tools, false)
 	table("Sessions", "SESSION", r.BySession, true)
+	renderDormant(w, r, top, reportNow())
 
 	fmt.Fprintf(w, "\n%s💡 Tip:%s Use `agentlens graph <session-id>` to see the anomalies of a session.\n\n", ansi.Cyan, ansi.Reset)
+}
+
+// reportNow is the clock used to say how long a tool has been silent; tests replace it.
+var reportNow = time.Now
+
+// reasonLabels are the short forms shown in the dormant tools table.
+var reasonLabels = map[string]string{
+	report.ReasonConnectionFailing: "server fails to connect",
+	report.ReasonPendingSignIn:     "waiting for sign-in",
+	report.ReasonAuthUnresolved:    "auth failed, not fixed",
+	report.ReasonDenied:            "denied",
+	report.ReasonReplaced:          "replaced by a substitute",
+	report.ReasonFailing:           "failing",
+	report.ReasonUnused:            "offered, never called",
+}
+
+// ReasonLabel is the short description of a dormancy reason.
+func ReasonLabel(reason string) string {
+	if label, ok := reasonLabels[reason]; ok {
+		return label
+	}
+	return reason
+}
+
+// renderDormant lists the Skills and MCP servers that are not working as of their last use,
+// and names the ones offered but never called.
+func renderDormant(w io.Writer, r *report.Report, top int, now time.Time) {
+	dormant := r.Dormant()
+	unused := r.Unused()
+	if len(dormant) == 0 && len(unused) == 0 {
+		return
+	}
+	if len(dormant) > 0 {
+		fmt.Fprintf(w, "\n%s%s⚠️  Dormant Skills & MCP servers%s (not working as of their last use)\n", ansi.Bold, ansi.Yellow, ansi.Reset)
+		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "  NAME\tKIND\tLAST SUCCESS\tSILENT FOR\tREASON\tLAST ERROR")
+		for i, h := range dormant {
+			if i == top {
+				break
+			}
+			lastSuccess, silent := "never", fmt.Sprintf("%d sessions", h.SessionsSinceLastSuccess)
+			if !h.LastSuccess.IsZero() {
+				lastSuccess = h.LastSuccess.Local().Format("2006-01-02")
+				silent = fmt.Sprintf("%s, %d sessions", textutil.FormatAge(now.Sub(h.LastSuccess)), h.SessionsSinceLastSuccess)
+			}
+			lastErr := h.LastError
+			if h.Reason == report.ReasonConnectionFailing {
+				lastErr = h.LastConnectError
+			}
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n", textutil.Truncate(h.Key, 40, "…"), kindLabel(h.Kind), lastSuccess, silent,
+				ReasonLabel(h.Reason), textutil.Truncate(lastErr, 60, "…"))
+		}
+		tw.Flush()
+		if len(dormant) > top {
+			fmt.Fprintf(w, "  %s… %d more (use --top or --json)%s\n", ansi.Dim, len(dormant)-top, ansi.Reset)
+		}
+		fmt.Fprintf(w, "  %sRun `agentlens why <name>` for the timeline and a diagnosis.%s\n", ansi.Dim, ansi.Reset)
+	}
+	if len(unused) > 0 {
+		byKind := map[string][]string{}
+		for _, h := range unused {
+			byKind[h.Kind] = append(byKind[h.Kind], h.Key)
+		}
+		fmt.Fprintln(w)
+		for _, kind := range []string{report.KindMCPServer, report.KindSkill} {
+			names := byKind[kind]
+			if len(names) == 0 {
+				continue
+			}
+			const shown = 8
+			more := ""
+			if len(names) > shown {
+				more = fmt.Sprintf(", … %d more (use --json)", len(names)-shown)
+				names = names[:shown]
+			}
+			label := "MCP servers"
+			if kind == report.KindSkill {
+				label = "Skills"
+			}
+			fmt.Fprintf(w, "%s%s offered but never called (%d):%s %s%s\n", ansi.Dim, label, len(byKind[kind]), ansi.Reset, strings.Join(names, ", "), more)
+		}
+	}
+}
+
+func kindLabel(kind string) string {
+	switch kind {
+	case report.KindMCPServer:
+		return "MCP"
+	case report.KindSkill:
+		return "Skill"
+	}
+	return kind
 }

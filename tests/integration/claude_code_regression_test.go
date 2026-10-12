@@ -90,9 +90,10 @@ type ccDependency struct {
 }
 
 type ccReport struct {
-	Sessions int           `json:"sessions"`
-	Total    report.Counts `json:"total"`
-	Session  report.Row    `json:"session"`
+	Sessions int                 `json:"sessions"`
+	Total    report.Counts       `json:"total"`
+	Session  report.Row          `json:"session"`
+	Health   []report.ToolHealth `json:"tool_health"`
 }
 
 func TestClaudeCodeRegressionFixture(t *testing.T) {
@@ -191,7 +192,7 @@ func collectReport(t *testing.T, builtins []*providers.LoadedProvider, fixtureDi
 	if err != nil {
 		t.Fatalf("report.Collect failed: %v", err)
 	}
-	out := ccReport{Sessions: rep.Sessions, Total: rep.Total}
+	out := ccReport{Sessions: rep.Sessions, Total: rep.Total, Health: rep.ToolHealth}
 	if len(rep.BySession) == 1 {
 		out.Session = rep.BySession[0]
 	} else {
