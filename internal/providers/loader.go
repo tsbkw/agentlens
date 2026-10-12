@@ -186,11 +186,15 @@ func validateDefinition(def *models.ProviderDefinition) error {
 		return fmt.Errorf("extraction.results.correlation must be %q or %q, got %q", models.CorrelationCallID, models.CorrelationPreviousStep, def.Extraction.Results.Correlation)
 	}
 	for name, filter := range map[string]string{
-		"extraction.events.tool_call_filter":      def.Extraction.Events.ToolCallFilter,
-		"extraction.events.tool_call_item_filter": def.Extraction.Events.ToolCallItemFilter,
-		"extraction.turns.filter":                 def.Extraction.Turns.Filter,
-		"extraction.results.filter":               def.Extraction.Results.Filter,
-		"extraction.results.item_filter":          def.Extraction.Results.ItemFilter,
+		"extraction.events.tool_call_filter":             def.Extraction.Events.ToolCallFilter,
+		"extraction.events.tool_call_item_filter":        def.Extraction.Events.ToolCallItemFilter,
+		"extraction.turns.filter":                        def.Extraction.Turns.Filter,
+		"extraction.results.filter":                      def.Extraction.Results.Filter,
+		"extraction.results.item_filter":                 def.Extraction.Results.ItemFilter,
+		"extraction.availability.skills.filter":          availabilityFilter(def, "skills"),
+		"extraction.availability.tools.filter":           availabilityFilter(def, "tools"),
+		"extraction.availability.failed_servers.filter":  availabilityFilter(def, "failed_servers"),
+		"extraction.availability.pending_servers.filter": availabilityFilter(def, "pending_servers"),
 	} {
 		if err := validateFilter(filter); err != nil {
 			return fmt.Errorf("%s: %v", name, err)
@@ -205,6 +209,34 @@ func validateDefinition(def *models.ProviderDefinition) error {
 		}
 	}
 	return nil
+}
+
+// availabilityFilter returns the filter of one extraction.availability rule, or "" when the
+// rule is absent.
+func availabilityFilter(def *models.ProviderDefinition, rule string) string {
+	cfg := def.Extraction.Availability
+	if cfg == nil {
+		return ""
+	}
+	switch rule {
+	case "skills":
+		if cfg.Skills != nil {
+			return cfg.Skills.Filter
+		}
+	case "tools":
+		if cfg.Tools != nil {
+			return cfg.Tools.Filter
+		}
+	case "failed_servers":
+		if cfg.FailedServers != nil {
+			return cfg.FailedServers.Filter
+		}
+	case "pending_servers":
+		if cfg.PendingServers != nil {
+			return cfg.PendingServers.Filter
+		}
+	}
+	return ""
 }
 
 // validateFilter rejects a filter clause that uses a single "=", which the evaluator would

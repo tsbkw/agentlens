@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tsbkw/agentlens/internal/providers"
 )
@@ -139,4 +140,66 @@ func TestOutputOnlyMessagesAndInterruptionsAreNotTurns(t *testing.T) {
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Errorf("Turns = %v, want %v", got, want)
 	}
+}
+
+// The harness announces what the agent can call: skill listings, tool deltas as MCP servers
+// connect, servers that failed to connect and servers waiting for a sign-in
+// (extraction.availability). They are collected per session, deduplicated, with the MCP
+// servers derived from the tool names.
+func TestAvailabilityEventsAreCollected(t *testing.T) {
+	lines := []string{
+		`{"type":"attachment","timestamp":"2026-10-07T10:00:00Z","attachment":{"type":"skill_listing","names":["pr-review","plugin:deploy"]}}`,
+		`{"type":"user","timestamp":"2026-10-07T10:00:01Z","message":{"content":"go"}}`,
+		`{"type":"attachment","timestamp":"2026-10-07T10:00:02Z","attachment":{"type":"deferred_tools_delta","addedNames":["mcp__github__get_issue","mcp__github__list_prs","mcp__slack__search","ListMcpResourcesTool"],"failedMcpServers":[{"name":"jira","error":"HTTP 401"}],"pendingMcpServers":["datadog"]}}`,
+		`{"type":"attachment","timestamp":"2026-10-07T10:05:00Z","attachment":{"type":"deferred_tools_delta","addedNames":["mcp__github__get_issue","mcp__datadog__get_logs"],"failedMcpServers":[{"name":"jira","error":"HTTP 401"},{"name":"wiki","error":"connect ECONNREFUSED"}],"pendingMcpServers":[]}}`,
+		`{"type":"attachment","timestamp":"2026-10-07T10:06:00Z","attachment":{"type":"skill_listing","names":["pr-review"]}}`,
+	}
+	data, err := NewCollector(claudeProvider(t)).IngestSessionReader(strings.NewReader(strings.Join(lines, "\n")), "s.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	av := data.Availability
+	if av == nil {
+		t.Fatal("Expected availability to be collected")
+	}
+	if got := strings.Join(av.Skills, ","); got != "pr-review,plugin:deploy" {
+		t.Errorf("Skills = %q", got)
+	}
+	if got := strings.Join(av.Tools, ","); got != "mcp__github__get_issue,mcp__github__list_prs,mcp__slack__search,ListMcpResourcesTool,mcp__datadog__get_logs" {
+		t.Errorf("Tools = %q", got)
+	}
+	if got := strings.Join(av.MCPServers, ","); got != "github,slack,datadog" {
+		t.Errorf("MCPServers = %q", got)
+	}
+	if len(av.FailedServers) != 2 || av.FailedServers[0].Name != "jira" || av.FailedServers[0].Occurrences != 2 || av.FailedServers[0].Error != "HTTP 401" ||
+		av.FailedServers[1].Name != "wiki" || av.FailedServers[1].Occurrences != 1 {
+		t.Errorf("FailedServers = %+v", av.FailedServers)
+	}
+	if !av.FailedServers[0].Timestamp.Equal(mustTime(t, "2026-10-07T10:00:02Z")) {
+		t.Errorf("The first failure keeps the time it was announced, got %v", av.FailedServers[0].Timestamp)
+	}
+	if got := strings.Join(av.PendingServers, ","); got != "datadog" {
+		t.Errorf("PendingServers = %q", got)
+	}
+	if len(data.Nodes) != 0 || len(data.Turns) != 1 {
+		t.Errorf("Availability events must not become calls or turns: %d nodes, %d turns", len(data.Nodes), len(data.Turns))
+	}
+
+	// A provider without availability rules collects nothing
+	plain, err := NewCollector(claudeProvider(t)).IngestSessionReader(strings.NewReader(lines[1]), "s.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.Availability != nil {
+		t.Errorf("Expected nil availability when nothing was announced, got %+v", plain.Availability)
+	}
+}
+
+func mustTime(t *testing.T, s string) time.Time {
+	t.Helper()
+	ts, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ts
 }

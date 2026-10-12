@@ -726,5 +726,40 @@
       "possible_fallbacks": 0,
       "retry_loops": 1
     }
+  },
+  "availability": {
+    "skills": [
+      "pr-review",
+      "db-migrate",
+      "commit-helper"
+    ],
+    "tools": [
+      "mcp__github__get_pull_request",
+      "mcp__github__get_pull_request_files",
+      "mcp__github__create_issue",
+      "mcp__slack__slack_search_public",
+      "mcp__postgres__query",
+      "mcp__linear__list_issues",
+      "ListMcpResourcesTool",
+      "mcp__datadog__get_logs"
+    ],
+    "mcp_servers": [
+      "github",
+      "slack",
+      "postgres",
+      "linear",
+      "datadog"
+    ],
+    "failed_servers": [
+      {
+        "name": "jira",
+        "error": "Dynamic Client Registration rejected (HTTP 401): session is not valid",
+        "timestamp": "2026-10-10T09:00:03Z",
+        "occurrences": 2
+      }
+    ],
+    "pending_servers": [
+      "datadog"
+    ]
   }
 }

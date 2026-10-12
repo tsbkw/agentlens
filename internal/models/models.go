@@ -179,3 +179,26 @@ type ExecutionSession struct {
 	Dependencies []CallerDependency `json:"dependencies,omitempty"`
 	Anomalies    []AnomalyRecord    `json:"anomalies,omitempty"`
 }
+
+// Availability is what the harness announced the agent could call in a session
+// (extraction.availability). Names are unique and in first-seen order.
+type Availability struct {
+	Skills []string `json:"skills,omitempty"`
+	// Tools holds every announced tool name, MCP tools included.
+	Tools []string `json:"tools,omitempty"`
+	// MCPServers are derived from Tools with fields.mcp_server_regex.
+	MCPServers []string `json:"mcp_servers,omitempty"`
+	// FailedServers could not be connected to in this session.
+	FailedServers []ServerFailure `json:"failed_servers,omitempty"`
+	// PendingServers wait for the user to sign in.
+	PendingServers []string `json:"pending_servers,omitempty"`
+}
+
+// ServerFailure is an MCP server the harness could not connect to.
+type ServerFailure struct {
+	Name      string    `json:"name"`
+	Error     string    `json:"error,omitempty"`
+	Timestamp time.Time `json:"timestamp,omitempty"`
+	// Occurrences counts how many times the failure was announced in the session.
+	Occurrences int `json:"occurrences,omitempty"`
+}

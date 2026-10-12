@@ -59,6 +59,8 @@ type ExtractionConfig struct {
 	// AuxiliaryTools lists bookkeeping tools of the agent (exact names or "prefix*"), marked
 	// CallNode.Auxiliary.
 	AuxiliaryTools []string `json:"auxiliary_tools,omitempty" yaml:"auxiliary_tools,omitempty"`
+	// Availability names the events announcing what the agent could call in a session.
+	Availability *AvailabilityConfig `json:"availability,omitempty" yaml:"availability,omitempty"`
 }
 
 // Scope kinds a ScopeRule can open.
@@ -181,4 +183,36 @@ type FallbackRule struct {
 	OriginalTool string `json:"original_tool" yaml:"original_tool"`
 	FallbackTool string `json:"fallback_tool" yaml:"fallback_tool"`
 	Description  string `json:"description,omitempty" yaml:"description,omitempty"`
+}
+
+// AvailabilityConfig names the events in which the harness announces the skills and tools
+// the agent can call, the MCP servers that failed to connect and those waiting for a sign-in.
+// Every rule is optional; a rule's filter selects its events.
+type AvailabilityConfig struct {
+	Skills         *NameListRule   `json:"skills,omitempty" yaml:"skills,omitempty"`
+	Tools          *ToolListRule   `json:"tools,omitempty" yaml:"tools,omitempty"`
+	FailedServers  *ServerListRule `json:"failed_servers,omitempty" yaml:"failed_servers,omitempty"`
+	PendingServers *ServerListRule `json:"pending_servers,omitempty" yaml:"pending_servers,omitempty"`
+}
+
+// NameListRule reads a list of names (strings) from the events matching Filter.
+type NameListRule struct {
+	Filter     string `json:"filter,omitempty" yaml:"filter,omitempty"`
+	NamesField string `json:"names_field" yaml:"names_field"`
+}
+
+// ToolListRule reads the tool names a delta event adds. MCP servers are derived from them
+// with fields.mcp_server_regex.
+type ToolListRule struct {
+	Filter     string `json:"filter,omitempty" yaml:"filter,omitempty"`
+	AddedField string `json:"added_field" yaml:"added_field"`
+}
+
+// ServerListRule reads a list of servers that are either plain names or objects whose
+// NameField and ErrorField hold the server and the reason.
+type ServerListRule struct {
+	Filter     string `json:"filter,omitempty" yaml:"filter,omitempty"`
+	ItemsField string `json:"items_field" yaml:"items_field"`
+	NameField  string `json:"name_field,omitempty" yaml:"name_field,omitempty"`
+	ErrorField string `json:"error_field,omitempty" yaml:"error_field,omitempty"`
 }
