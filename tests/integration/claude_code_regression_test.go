@@ -41,6 +41,7 @@ type ccGolden struct {
 	Dependencies []ccDependency         `json:"dependencies"`
 	Metrics      map[string]interface{} `json:"metrics"`
 	Report       ccReport               `json:"report"`
+	Availability *models.Availability   `json:"availability,omitempty"`
 }
 
 type ccTurn struct {
@@ -115,7 +116,7 @@ func TestClaudeCodeRegressionFixture(t *testing.T) {
 	g := graph.NewGraphBuilder().BuildWithTurns(data.SessionID, provider.Definition.Provider.ID, data.Turns, data.Nodes)
 	result := detector.NewDetector(provider).Analyze(g)
 
-	got := ccGolden{Provider: provider.Definition.Provider.ID, SkippedLines: data.SkippedLines}
+	got := ccGolden{Provider: provider.Definition.Provider.ID, SkippedLines: data.SkippedLines, Availability: data.Availability}
 	for _, turn := range data.Turns {
 		calls := []string{}
 		for _, n := range turn.Nodes {

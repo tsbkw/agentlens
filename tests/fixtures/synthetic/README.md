@@ -19,6 +19,7 @@ Each part guards a behaviour that broke or nearly broke once:
 | :--- | :--- | :--- |
 | preamble | `permission-mode`, `attachment`, `file-history-snapshot`, `queue-operation` events | not calls, not turns |
 | turn 1 | `<command-name>/pr-review` followed by `<local-command-stdout>` | one turn labelled `/pr-review`; the output message is not a turn (`turns.skip_regex`) |
+| turn 1 | `deferred_tools_delta` with `addedNames`, a `failedMcpServers` entry (`jira`, HTTP 401) and a `pendingMcpServers` entry (`datadog`); a second delta after compaction | `availability`: 3 skills, 8 tools, 5 MCP servers, `jira` failed twice, `datadog` pending (extraction.availability) |
 | turn 1 | `Skill` call, then an `isMeta` message | scope `Skill: pr-review`; the meta message is not a turn |
 | turn 1 | three calls in one response as separate events sharing `message.id` | the `Read` that finished before the GitHub failures is not a fallback |
 | turn 1 | two GitHub MCP failures (`Bad credentials`, `HTTP 401`) then `gh pr view` | two auth anomalies; one high-confidence fallback to the first `Bash`; the second `gh` call is not flagged |

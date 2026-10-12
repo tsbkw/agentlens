@@ -22,7 +22,8 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 | **Phase 9** | Claude Code Support (real `~/.claude/projects` transcripts end-to-end) | Completed | PR #12–#19 |
 | **Phase 10** | Claude Code Follow-ups (deterministic output, live and in-browser subagent stitching) | Completed | PR #20–#33 |
 | **Phase 11** | Review Follow-ups (docs match the code, CLI output, detection fixes, robustness, UI polish) | In progress | PR #35– |
-| **Phase 12** | Deeper Analysis (proxy routing, latency spikes, canvas and timeline views) | Planned | — |
+| **Phase 12** | Dormant Tools (availability events, tools that stopped being called, `why` analysis with a diagnostic prompt) | In progress | PR #53– |
+| **Phase 13** | Deeper Analysis (proxy routing, latency spikes, canvas and timeline views) | Planned | — |
 
 ---
 
@@ -127,7 +128,13 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] `turns.skip_regex`: a local command's output and interruption markers are not turns, so a slash command keeps its calls (PR #51)
 - [x] Synthetic Claude Code regression fixture (37 calls, nested and forked subagents, parallel calls, retry loop, fallbacks, denials, compaction, truncated line) with a golden file checked by the Go pipeline and the browser engine (PR #52)
 
-### Phase 12: Deeper Analysis (Planned)
+### Phase 12: Dormant Tools (PR #53–)
+- [x] `extraction.availability`: skills, tools, failed and pending MCP servers announced by the harness are collected per session (PR #53)
+- [ ] Report section listing Skills and MCP servers that stopped being called, with the reason class (connection failing, auth left unresolved, denied, unused)
+- [ ] Dashboard view of dormant tools
+- [ ] `agentlens why <tool>`: cross-session timeline, diagnosis with evidence, and a Claude Code prompt to investigate on the machine
+
+### Phase 13: Deeper Analysis (Planned)
 - [ ] Indirect proxy routing detection (tool A reached through tool B)
 - [ ] Latency spike detection against per-tool baselines
 - [ ] Node-edge canvas and timeline (waterfall) views in the web UI

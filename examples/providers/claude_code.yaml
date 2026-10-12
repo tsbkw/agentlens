@@ -101,6 +101,24 @@ extraction:
     - "ExitWorktree"
     - "ListMcpResourcesTool"
 
+  # What the harness announced the agent could call. Skill listings come with the first
+  # prompt; tool deltas follow as MCP servers connect, fail or wait for a sign-in.
+  availability:
+    skills:
+      filter: "type == 'attachment' && attachment.type == 'skill_listing'"
+      names_field: "attachment.names"
+    tools:
+      filter: "type == 'attachment' && attachment.type == 'deferred_tools_delta'"
+      added_field: "attachment.addedNames"
+    failed_servers:
+      filter: "type == 'attachment' && attachment.type == 'deferred_tools_delta'"
+      items_field: "attachment.failedMcpServers"
+      name_field: "name"
+      error_field: "error"
+    pending_servers:
+      filter: "type == 'attachment' && attachment.type == 'deferred_tools_delta'"
+      items_field: "attachment.pendingMcpServers"
+
   scopes:
     - tool_name: "Skill"
       kind: "skill"

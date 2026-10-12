@@ -36,6 +36,9 @@ type SessionData struct {
 	ChildLinks map[string]string `json:"-"`
 	// SkippedLines counts lines that were not valid JSON objects or exceeded MaxLineBytes.
 	SkippedLines int `json:"skipped_lines,omitempty"`
+	// Availability is what the harness announced the agent could call, when the provider
+	// declares such events (extraction.availability); nil otherwise.
+	Availability *models.Availability `json:"availability,omitempty"`
 }
 
 // MaxLineBytes is the longest JSONL line that is decoded; longer lines are skipped and counted.

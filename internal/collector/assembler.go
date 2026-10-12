@@ -41,6 +41,7 @@ type Assembler struct {
 	currentPrompt    string
 	currentTurnTime  time.Time
 	scopes           *providers.ScopeTracker
+	availability     *availabilityTracker
 	finished         bool
 }
 
@@ -61,6 +62,7 @@ func NewAssembler(provider *providers.LoadedProvider, filePath string) *Assemble
 		// Zero until a turn or call carries a time: an unknown time must not look like now
 		currentTurnTime: time.Time{},
 		scopes:          providers.NewScopeTracker(provider),
+		availability:    newAvailabilityTracker(provider),
 	}
 }
 
@@ -126,6 +128,7 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 	if a.sessionID == "" {
 		a.sessionID = a.parser.ExtractSessionID(a.filePath, payload)
 	}
+	a.availability.Feed(payload, a.currentTurnTime)
 
 	// Detect user interaction turn
 	if prompt, ts, ok := extractTurn(extraction.Turns, a.provider.TurnSkipRegex, payload); ok {
@@ -245,7 +248,7 @@ func (a *Assembler) recordChildLink(payload map[string]interface{}, answered []s
 // The Assembler must not be fed after Finish.
 func (a *Assembler) Finish() *SessionData {
 	if a.finished {
-		return &SessionData{SessionID: a.sessionID, Turns: a.turns, Nodes: a.nodes, ChildLinks: a.childLinks}
+		return &SessionData{SessionID: a.sessionID, Turns: a.turns, Nodes: a.nodes, ChildLinks: a.childLinks, Availability: a.availability.Result()}
 	}
 	a.finished = true
 	a.flushTurn()
@@ -258,10 +261,11 @@ func (a *Assembler) Finish() *SessionData {
 	}
 
 	return &SessionData{
-		SessionID:  a.sessionID,
-		Turns:      a.turns,
-		Nodes:      a.nodes,
-		ChildLinks: a.childLinks,
+		SessionID:    a.sessionID,
+		Turns:        a.turns,
+		Nodes:        a.nodes,
+		ChildLinks:   a.childLinks,
+		Availability: a.availability.Result(),
 	}
 }
 

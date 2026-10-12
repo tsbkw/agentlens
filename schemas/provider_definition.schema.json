@@ -133,6 +133,52 @@
           "items": { "type": "string" },
           "description": "Bookkeeping tools of the agent (tool discovery, planning, task tracking, questions to the user), exact names or 'prefix*'. They are never treated as a substitute for a failed call and do not break a sequence of attempts."
         },
+        "availability": {
+          "type": "object",
+          "description": "Events in which the harness announces what the agent could call in the session. They let reports tell a tool that was never offered, or whose server failed to connect, from one the agent chose not to use.",
+          "properties": {
+            "skills": {
+              "type": "object",
+              "description": "Events listing the available skills.",
+              "properties": {
+                "filter": { "type": "string" },
+                "names_field": { "type": "string", "description": "Dot-path of an array of skill names." }
+              },
+              "required": ["names_field"]
+            },
+            "tools": {
+              "type": "object",
+              "description": "Events announcing tools that became callable. MCP servers are derived from the tool names with fields.mcp_server_regex.",
+              "properties": {
+                "filter": { "type": "string" },
+                "added_field": { "type": "string", "description": "Dot-path of an array of tool names." }
+              },
+              "required": ["added_field"]
+            },
+            "failed_servers": {
+              "type": "object",
+              "description": "Events listing MCP servers that failed to connect.",
+              "properties": {
+                "filter": { "type": "string" },
+                "items_field": { "type": "string", "description": "Dot-path of an array of server names or objects." },
+                "name_field": { "type": "string", "description": "Dot-path of the server name inside an object item." },
+                "error_field": { "type": "string", "description": "Dot-path of the error inside an object item." }
+              },
+              "required": ["items_field"]
+            },
+            "pending_servers": {
+              "type": "object",
+              "description": "Events listing MCP servers that wait for the user to sign in.",
+              "properties": {
+                "filter": { "type": "string" },
+                "items_field": { "type": "string" },
+                "name_field": { "type": "string" },
+                "error_field": { "type": "string" }
+              },
+              "required": ["items_field"]
+            }
+          }
+        },
         "scopes": {
           "type": "array",
           "description": "Tool calls that activate a Skill or spawn a Subagent. Subsequent calls are attributed to the opened scope until the next user turn.",
