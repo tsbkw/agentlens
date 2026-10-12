@@ -212,3 +212,54 @@ func TestRenderReportListsDormantTools(t *testing.T) {
 		t.Errorf("--top 2 must hide the third dormant row:\n%s", out)
 	}
 }
+
+func TestParseWhyOptions(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	opts, err := ParseWhyOptions([]string{"github", "--prompt", "--project", "shop"}, now)
+	if err != nil || opts.Name != "github" || !opts.Prompt || opts.Project != "shop" || opts.Window.Since.Format("2006-01-02") != "2026-09-12" {
+		t.Errorf("Unexpected options %+v, %v", opts, err)
+	}
+	opts, err = ParseWhyOptions([]string{"--since", "7d", "--json", "deploy"}, now)
+	if err != nil || opts.Name != "deploy" || !opts.JSON || opts.Window.Since.Format("2006-01-02") != "2026-10-05" {
+		t.Errorf("Unexpected options %+v, %v", opts, err)
+	}
+	if _, err := ParseWhyOptions([]string{"--json"}, now); err == nil || !strings.Contains(err.Error(), "agentlens why") {
+		t.Errorf("A missing name must be reported with the why usage, got %v", err)
+	}
+	if _, err := ParseWhyOptions([]string{"x", "--top", "3"}, now); err == nil || !strings.Contains(err.Error(), "agentlens why") {
+		t.Errorf("An unknown flag must be reported with the why usage, got %v", err)
+	}
+}
+
+func TestRenderExplanation(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	ex := &report.Explanation{Query: "github", Service: "GitHub", Window: report.Window{Since: now.AddDate(0, 0, -30)},
+		Tool: report.ToolHealth{Key: "github", Kind: report.KindMCPServer, Reason: report.ReasonAuthUnresolved, LastError: "Bad credentials", LastErrorClass: report.ErrorClassAuth},
+		Sessions: []report.SessionOutcome{
+			{SessionID: "aaaaaaaa1111", Project: "shop-api", Start: now.AddDate(0, 0, -3), Calls: 1, Failed: 1, FirstError: "Bad credentials", FallbackTo: []string{"Bash"}},
+			{SessionID: "bbbbbbbb2222", Project: "shop-api", Start: now.AddDate(0, 0, -1), Offered: true, SubstituteCalls: 2},
+		},
+		Substitutes: []report.SubstituteUse{{Tool: "Bash", Example: "gh pr view 42", Calls: 3, Sessions: 2, SessionsWhileFailing: 1, SessionsWhileAbsent: 1}},
+	}
+	ex.Diagnosis = report.Diagnose(ex)
+	ex.Prompt = report.BuildPrompt(ex)
+	var buf bytes.Buffer
+	RenderExplanation(&buf, ex, now)
+	out := buf.String()
+	for _, want := range []string{
+		"Why is MCP github not used?", "authentication failed and not fixed", "Evidence", "aaaaaaaa", "1 failed", "fell back to Bash",
+		"offered, not called", "2 substitute calls", "Reached GitHub another way", "gh pr view 42", "Recommendation:", "paste this into a Claude Code session", "claude mcp get github",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Explanation output lacks %q:\n%s", want, out)
+		}
+	}
+	healthy := &report.Explanation{Query: "slack", Tool: report.ToolHealth{Key: "slack", Kind: report.KindMCPServer, Counts: report.Counts{Calls: 2}, LastSuccess: now}}
+	healthy.Diagnosis = report.Diagnose(healthy)
+	healthy.Prompt = report.BuildPrompt(healthy)
+	buf.Reset()
+	RenderExplanation(&buf, healthy, now)
+	if strings.Contains(buf.String(), "paste this into") {
+		t.Errorf("A healthy tool needs no prompt:\n%s", buf.String())
+	}
+}

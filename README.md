@@ -107,6 +107,10 @@ agentlens watch [session-id]
 # Aggregate calls and anomalies of every session over a period (default: last 7 days),
 # and list the Skills and MCP servers that stopped working (dormant tools)
 agentlens report --since 2026-10-01 --until 2026-10-10 [--project <name>] [--top 10] [--json]
+
+# Explain why a Skill or MCP server is not used: per-session outcomes, substitutes, a diagnosis,
+# and a prompt you can paste into Claude Code on this machine to find the cause (--prompt prints only that)
+agentlens why github [--since 30d] [--project <name>] [--json] [--prompt]
 ```
 
 `report` counts the calls whose own timestamp falls in the period (`--until` includes that whole day; `--since 30d` means 30 days ago), so sessions spanning the boundary are split correctly. It lists the totals, then MCP servers, tools and sessions ranked by anomalies; `--json` prints the full aggregate.

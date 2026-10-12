@@ -104,6 +104,10 @@ agentlens watch [session-id]
 # 期間内の全セッションの呼び出しと検知結果を集計 (既定: 直近7日間)。
 # 動かなくなった Skill / MCP サーバー（休眠ツール）も理由付きで一覧
 agentlens report --since 2026-10-01 --until 2026-10-10 [--project <名前>] [--top 10] [--json]
+
+# Skill / MCP サーバーが使われていない理由を説明: セッションごとの結果、代替ツール、診断、
+# そしてこの端末の Claude Code に貼り付けて原因を調べさせるプロンプト (--prompt でプロンプトのみ出力)
+agentlens why github [--since 30d] [--project <名前>] [--json] [--prompt]
 ```
 
 `report` は呼び出しそれぞれの時刻で期間を判定するため、期間をまたぐセッションも正しく数えます (`--until` はその日を含み、`--since 30d` は30日前を表します)。合計の後に、検知の多い順で MCP サーバー・ツール・セッションを一覧し、`--json` では集計全体を JSON で出力します。

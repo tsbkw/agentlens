@@ -207,6 +207,31 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, rep)
 	})
 
+	// API: Why a Skill or MCP server is not used (see `agentlens why`)
+	mux.HandleFunc("/api/why", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		name := strings.TrimSpace(q.Get("tool"))
+		if name == "" {
+			http.Error(w, "missing tool parameter", http.StatusBadRequest)
+			return
+		}
+		since := q.Get("since")
+		if since == "" {
+			since = "30d"
+		}
+		window, err := report.ParseWindow(since, q.Get("until"), time.Now())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		ex, err := report.Explain(s.Providers, window, q.Get("project"), name, nil)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, ex)
+	})
+
 	// API: Graph for a specific session, or with /files its raw trace files
 	mux.HandleFunc("/api/sessions/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/sessions/")

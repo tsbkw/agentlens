@@ -94,6 +94,21 @@ type ccReport struct {
 	Total    report.Counts       `json:"total"`
 	Session  report.Row          `json:"session"`
 	Health   []report.ToolHealth `json:"tool_health"`
+	// Why holds `agentlens why` for a few tools of the fixture, without the prompt text
+	// (whose wording is free to change).
+	Why []ccWhy `json:"why"`
+}
+
+type ccWhy struct {
+	Query       string                  `json:"query"`
+	Tool        string                  `json:"tool"`
+	Kind        string                  `json:"kind"`
+	Service     string                  `json:"service,omitempty"`
+	Sessions    []report.SessionOutcome `json:"sessions"`
+	Substitutes []report.SubstituteUse  `json:"substitutes,omitempty"`
+	Diagnosis   report.Diagnosis        `json:"diagnosis"`
+	PromptLines int                     `json:"prompt_lines"`
+	Suggestions []string                `json:"suggestions,omitempty"`
 }
 
 func TestClaudeCodeRegressionFixture(t *testing.T) {
@@ -197,6 +212,14 @@ func collectReport(t *testing.T, builtins []*providers.LoadedProvider, fixtureDi
 		out.Session = rep.BySession[0]
 	} else {
 		t.Errorf("Expected exactly the fixture session in the report, got %d rows", len(rep.BySession))
+	}
+	for _, query := range []string{"github", "jira", "postgres", "db-migrate", "pr-review", "nosuchtool"} {
+		ex, err := report.Explain(builtins, window, "", query, nil)
+		if err != nil {
+			t.Fatalf("Explain(%s) failed: %v", query, err)
+		}
+		out.Why = append(out.Why, ccWhy{Query: query, Tool: ex.Tool.Key, Kind: ex.Tool.Kind, Service: ex.Service, Sessions: ex.Sessions,
+			Substitutes: ex.Substitutes, Diagnosis: ex.Diagnosis, PromptLines: strings.Count(ex.Prompt, "\n"), Suggestions: ex.Suggestions})
 	}
 	return out
 }

@@ -132,7 +132,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] `extraction.availability`: skills, tools, failed and pending MCP servers announced by the harness are collected per session (PR #53)
 - [x] Report section listing Skills and MCP servers that stopped working, with the reason (connection failing, waiting for sign-in, auth unresolved, denied, replaced, failing) and the ones offered but never called (PR #54)
 - [ ] Dashboard view of dormant tools
-- [ ] `agentlens why <tool>`: cross-session timeline, diagnosis with evidence, and a Claude Code prompt to investigate on the machine
+- [x] `agentlens why <tool>` and `GET /api/why`: per-session outcomes, substitutes that reached the same service, diagnosis with evidence, and a Claude Code prompt to investigate on the machine (PR #55)
 
 ### Phase 13: Deeper Analysis (Planned)
 - [ ] Indirect proxy routing detection (tool A reached through tool B)
