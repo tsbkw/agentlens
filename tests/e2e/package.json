@@ -4,9 +4,10 @@
   "description": "AgentLens E2E and Synthetic Parity Test Suite",
   "type": "module",
   "scripts": {
-    "test": "node ui_regression_test.mjs && node synthetic_parity_test.mjs",
+    "test": "node ui_regression_test.mjs && node synthetic_parity_test.mjs && node claude_code_parity_test.mjs",
     "test:regression": "node ui_regression_test.mjs",
-    "test:synthetic": "node synthetic_parity_test.mjs"
+    "test:synthetic": "node synthetic_parity_test.mjs",
+    "test:claude": "node claude_code_parity_test.mjs"
   },
   "keywords": [],
   "author": "",
