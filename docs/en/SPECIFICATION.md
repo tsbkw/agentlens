@@ -131,8 +131,10 @@ Each silent fallback carries a `confidence` (`high` when the substitute reaches 
 - **Free GitHub Pages Hosting**: Statically hosted at `https://tsbkw.github.io/agentlens` with client-side drag-and-drop log visualization.
 - **Caller ➔ Callee Graph**: One card per caller (agent, Skill or Subagent scope) listing each callee with its call, success and failure counts, nested scopes, and a fallback row where a failed call was substituted.
 - **Turn Execution Trace**: The calls of each user turn in order, with status, type, MCP server, duration and anomaly badges.
-- **Anomaly Banner & Inspector Drawer**: Alert cards detailing detected silent fallbacks, auth failures and recommendations; a drawer with a node's arguments, output and anomalies.
-- **Search & Filter**: Free-text search on caller and callee names, and a filter for MCP calls, Skills, failures or anomalies.
+- **Anomaly Banner & Inspector Drawer**: Alert cards detailing detected silent fallbacks, auth failures and recommendations; a drawer with a node's arguments, output and anomalies. Clicking a tool row with failures defaults to the failed invocation, and an interactive invocations switcher allows toggling between all attempts in one click.
+- **Deep-linking & Browser History Navigation**: Fully supports browser Back and Forward navigation (`popstate`), where Back cleanly closes the inspector drawer or returns to the session dashboard. Session and call selections are reflected in shareable, unique URLs (`?session=<id>&call=<call_id>`).
+- **Client-Side Privacy Guarantee**: Includes a prominent Client-Side Privacy indicator with an informative tooltip confirming that 100% of trace ingestion, DAG construction, and anomaly parsing occur inside the local browser sandbox with zero external server upload.
+- **Search & Filter**: Free-text search on caller and callee names, and a filter for MCP calls, Skills, failures or anomalies. Stat cards in the header are also clickable quick filters.
 - **Browser-side analysis**: The page re-runs the collector, graph and detector logic in JavaScript with the built-in provider rules embedded at build time (`internal/server/webrules_test.go` keeps them in sync with `examples/providers/*.yaml`). A custom `--provider` YAML applies to the CLI and to the server's report, not to the browser's analysis.
 
 A node-edge canvas and a timeline view are planned (ROADMAP) and not implemented.

@@ -673,6 +673,228 @@ async function runTestSuite() {
   console.log('  ✓ Unknown files are reported, filters reach the trace view, rows highlight, state resets, alerts group, phone width fits');
 
   // -------------------------------------------------------------
+  // Test 10: Client-Side Privacy Tooltip & Info Icon
+  // -------------------------------------------------------------
+  console.log('\nTest 10: Client-Side Privacy Tooltip & Info Icon...');
+  const privacyBadge = await page.$('.privacy-badge');
+  if (!privacyBadge) throw new Error('Missing .privacy-badge element');
+  const tooltipText = await page.$eval('.privacy-tooltip', el => el.textContent.trim());
+  if (!tooltipText.includes('local browser sandbox') || !tooltipText.includes('never uploaded')) {
+    throw new Error(`Unexpected privacy tooltip text: ${tooltipText}`);
+  }
+  console.log('  ✓ Client-side privacy badge, info icon, and explanation tooltip verified');
+
+  // -------------------------------------------------------------
+  // Test 11: Failure Details Inspection in Call Graph & Invocation Chips
+  // -------------------------------------------------------------
+  console.log('\nTest 11: Failure Details Inspection in Call Graph & Invocation Chips...');
+  await page.click('#resetBtn');
+  await page.click('#loadSampleBtn');
+  await page.waitForSelector('.callee-row');
+
+  // Find the row for mcp_postgres_query (which has 1 success and 3 failures)
+  const pgDepInfo = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.callee-row')];
+    const pgRow = rows.find(r => r.querySelector('.callee-name')?.textContent.includes('mcp_postgres_query'));
+    if (!pgRow) return null;
+    return {
+      text: pgRow.innerText,
+      countsText: pgRow.querySelector('.callee-counts')?.textContent
+    };
+  });
+  if (!pgDepInfo) throw new Error('mcp_postgres_query row not found in Call Graph');
+  if (!pgDepInfo.countsText.includes('✗ 3')) throw new Error(`Expected ✗ 3 failure count in pg row, got: ${pgDepInfo.countsText}`);
+
+  // Click the row directly - it must default to the failed invocation!
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.callee-row')];
+    const pgRow = rows.find(r => r.querySelector('.callee-name')?.textContent.includes('mcp_postgres_query'));
+    pgRow.click();
+  });
+
+  const drawerState1 = await page.evaluate(() => {
+    return {
+      isOpen: document.getElementById('drawer').classList.contains('open'),
+      title: document.getElementById('drawerTitle').textContent,
+      badges: document.getElementById('drawerBadges').textContent,
+      output: document.getElementById('drawerOutput').textContent,
+      invocationsCount: document.getElementById('drawerInvocationsCount').textContent,
+      chips: [...document.querySelectorAll('.invocation-chip')].map(c => ({ text: c.textContent, cls: c.className }))
+    };
+  });
+
+  if (!drawerState1.isOpen) throw new Error('Drawer did not open when clicking row');
+  if (!drawerState1.badges.includes('failed')) {
+    throw new Error(`Expected drawer to show failed status invocation when clicking row with failures, got: ${drawerState1.badges}`);
+  }
+  if (!drawerState1.output.includes('Connection timeout after 30000ms')) {
+    throw new Error(`Expected drawer output to contain database timeout failure, got: ${drawerState1.output}`);
+  }
+  if (drawerState1.invocationsCount !== '3') {
+    throw new Error(`Expected 3 invocations in switcher, got: ${drawerState1.invocationsCount}`);
+  }
+  console.log('  ✓ Clicking row with failures correctly opened failed invocation');
+
+  // Click chip #2 to switch to the second retry
+  await page.evaluate(() => {
+    const chips = document.querySelectorAll('.invocation-chip');
+    chips[1].click();
+  });
+
+  const drawerState2 = await page.evaluate(() => {
+    return {
+      badges: document.getElementById('drawerBadges').textContent,
+      meta: document.getElementById('drawerMeta').textContent
+    };
+  });
+  if (!drawerState2.meta.includes('call-pg-retry-2')) {
+    throw new Error(`Expected drawer to switch to call-pg-retry-2 upon clicking chip #2, got: ${drawerState2.meta}`);
+  }
+  console.log('  ✓ Clicking invocation chip #2 switched to call-pg-retry-2');
+
+  // Click the "View in Trace" button
+  await page.click('#drawerFilterTraceBtn');
+  const traceState = await page.evaluate(() => {
+    return {
+      view: currentView,
+      searchVal: document.getElementById('searchInput').value,
+      visibleRows: document.querySelectorAll('#traceViewContainer .node-row').length
+    };
+  });
+  if (traceState.view !== 'trace' || traceState.searchVal !== 'mcp_postgres_query') {
+    throw new Error(`View in Trace did not switch tab or filter search: ${JSON.stringify(traceState)}`);
+  }
+  console.log('  ✓ "View in Trace" button successfully switched to trace view filtered to the tool');
+
+  // Test mixed success + failure invocation chips on a single tool
+  await page.evaluate(() => {
+    const mixedTrace = [
+      { step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', content: 'test mixed' },
+      { step_index: 1, source: 'MODEL', type: 'PLANNER_RESPONSE', tool_calls: [{ id: 'call-mix-1', name: 'test_tool', args: { num: 1 } }] },
+      { step_index: 2, source: 'SYSTEM', type: 'GENERIC', status: 'DONE', content: 'success output' },
+      { step_index: 3, source: 'MODEL', type: 'PLANNER_RESPONSE', tool_calls: [{ id: 'call-mix-2', name: 'test_tool', args: { num: 2 } }] },
+      { step_index: 4, source: 'SYSTEM', type: 'GENERIC', status: 'ERROR', content: 'failed output: error 500' }
+    ].map(JSON.stringify).join('\n');
+    processTraceText(mixedTrace);
+  });
+  await page.waitForSelector('.callee-row');
+
+  // Verify clicking the row defaults to failed invocation (#2)
+  await page.evaluate(() => {
+    document.querySelector('.callee-row').click();
+  });
+  const mixedState1 = await page.evaluate(() => ({
+    badges: document.getElementById('drawerBadges').textContent,
+    chips: [...document.querySelectorAll('.invocation-chip')].map(c => c.textContent.trim())
+  }));
+  if (!mixedState1.badges.includes('failed')) {
+    throw new Error(`Expected mixed tool to default to failed invocation, got: ${mixedState1.badges}`);
+  }
+  // Click chip #1 (success)
+  await page.evaluate(() => {
+    document.querySelectorAll('.invocation-chip')[0].click();
+  });
+  const mixedState2 = await page.evaluate(() => ({
+    badges: document.getElementById('drawerBadges').textContent
+  }));
+  if (!mixedState2.badges.includes('success')) {
+    throw new Error(`Expected mixed tool to switch to success invocation, got: ${mixedState2.badges}`);
+  }
+  console.log('  ✓ Mixed tool row defaulted to failure and allowed switching to success invocation');
+
+  // -------------------------------------------------------------
+  // Test 12: Browser Back/Forward Navigation & Deep Linking
+  // -------------------------------------------------------------
+  console.log('\nTest 12: Browser Back/Forward Navigation & Deep Linking...');
+  // Deep linking test: navigate directly to URL with session and call
+  const deepLinkUrl = `${fileUrl}#session=sample-gemini&call=call-gh-issue`;
+  const page2 = await browser.newPage();
+  await page2.setViewport({ width: 1280, height: 800 });
+  await page2.goto(deepLinkUrl, { waitUntil: 'load' });
+
+  await page2.waitForSelector('#drawer.open');
+  const deepLinkDrawer = await page2.evaluate(() => ({
+    title: document.getElementById('drawerTitle').textContent,
+    badges: document.getElementById('drawerBadges').textContent,
+    output: document.getElementById('drawerOutput').textContent,
+    graphVisible: document.getElementById('graphSection').style.display !== 'none'
+  }));
+
+  if (!deepLinkDrawer.graphVisible) throw new Error('Graph section should be visible after deep linking');
+  if (deepLinkDrawer.title !== 'mcp_github_create_issue') throw new Error(`Expected drawer title mcp_github_create_issue, got: ${deepLinkDrawer.title}`);
+  if (!deepLinkDrawer.badges.includes('failed')) throw new Error(`Expected failed badge on deep-linked call, got: ${deepLinkDrawer.badges}`);
+  console.log('  ✓ Deep-linked directly via URL to session and specific call');
+  await page2.close();
+
+  // Test full browser Back/Forward navigation stack
+  const page3 = await browser.newPage();
+  await page3.setViewport({ width: 1280, height: 800 });
+  await page3.goto(fileUrl, { waitUntil: 'load' });
+
+  // 1. Initial state: dashboard
+  const initDropzone = await page3.$eval('#dropzoneSection', el => getComputedStyle(el).display);
+  if (initDropzone === 'none') throw new Error('Expected dropzone on initial load');
+
+  // 2. Click load sample trace -> session view
+  await page3.click('#loadSampleBtn');
+  await page3.waitForSelector('.callee-row');
+  const sessionUrl = await page3.evaluate(() => window.location.href);
+  if (!sessionUrl.includes('session=')) throw new Error(`Expected URL to include session, got: ${sessionUrl}`);
+
+  // 3. Click a callee row -> drawer open
+  await page3.evaluate(() => {
+    document.querySelector('.callee-row').click();
+  });
+  await page3.waitForSelector('#drawer.open');
+  const callUrl = await page3.evaluate(() => window.location.href);
+  if (!callUrl.includes('call=')) throw new Error(`Expected URL to include call, got: ${callUrl}`);
+
+  // 4. Browser Back: closes drawer, keeps session view
+  await page3.goBack();
+  await new Promise(r => setTimeout(r, 200));
+  const backState1 = await page3.evaluate(() => ({
+    drawerOpen: document.getElementById('drawer').classList.contains('open'),
+    graphVisible: document.getElementById('graphSection').style.display !== 'none'
+  }));
+  if (backState1.drawerOpen) throw new Error('First browser back must close the drawer');
+  if (!backState1.graphVisible) throw new Error('First browser back must keep the session graph view open');
+  console.log('  ✓ Browser Back closed the drawer while keeping session view');
+
+  // 5. Browser Back again: returns to dashboard
+  await page3.goBack();
+  await new Promise(r => setTimeout(r, 200));
+  const backState2 = await page3.evaluate(() => ({
+    dropzoneVisible: document.getElementById('dropzoneSection').style.display !== 'none',
+    graphVisible: document.getElementById('graphSection').style.display !== 'none'
+  }));
+  if (!backState2.dropzoneVisible || backState2.graphVisible) {
+    throw new Error('Second browser back must return to the dashboard / dropzone');
+  }
+  console.log('  ✓ Second browser Back returned to dashboard / session list');
+
+  // 6. Browser Forward: restores session view
+  await page3.goForward();
+  await new Promise(r => setTimeout(r, 200));
+  const forwardState1 = await page3.evaluate(() => ({
+    graphVisible: document.getElementById('graphSection').style.display !== 'none',
+    drawerOpen: document.getElementById('drawer').classList.contains('open')
+  }));
+  if (!forwardState1.graphVisible) throw new Error('Browser Forward must restore session graph');
+  console.log('  ✓ Browser Forward navigated back to session view');
+
+  // 7. Browser Forward again: reopens drawer on call
+  await page3.goForward();
+  await new Promise(r => setTimeout(r, 200));
+  const forwardState2 = await page3.evaluate(() => ({
+    drawerOpen: document.getElementById('drawer').classList.contains('open')
+  }));
+  if (!forwardState2.drawerOpen) {
+    throw new Error('Second browser Forward must reopen the inspector drawer');
+  }
+  console.log('  ✓ Second browser Forward restored inspector drawer');
+  await page3.close();
+
+  // -------------------------------------------------------------
   // Test 7: Console & Runtime Errors
   // -------------------------------------------------------------
   console.log('\nTest 7: Uncaught Errors Check...');
