@@ -27,11 +27,11 @@ type Assembler struct {
 	parser   *providers.TraceParser
 	filePath string
 
-	sessionID   string
-	nodes       []models.CallNode
-	turns       []models.ExecutionTurn
-	turnNodeIdx [][]int // per turn, indices into nodes (materialized in Finish)
-	turnNodes   []int
+	sessionID        string
+	nodes            []models.CallNode
+	turns            []models.ExecutionTurn
+	turnNodeIdx      [][]int // per turn, indices into nodes (materialized in Finish)
+	turnNodes        []int
 	stepNodeMap      map[int]int       // step index -> index in nodes
 	pendingStepCalls []int             // indices of tool calls awaiting results
 	callNodeMap      map[string]int    // call ID -> index in nodes
@@ -44,19 +44,33 @@ type Assembler struct {
 	finished         bool
 }
 
+// PreTurnPrompt labels turn 0, which holds calls made before the first recorded prompt.
+const PreTurnPrompt = "(calls before the first prompt)"
+
 // NewAssembler creates an Assembler for events read from filePath.
 func NewAssembler(provider *providers.LoadedProvider, filePath string) *Assembler {
 	parser := providers.NewTraceParser(provider)
 	return &Assembler{
-		provider:        provider,
-		parser:          parser,
-		filePath:        filePath,
-		sessionID:       parser.ExtractSessionID(filePath, nil),
-		stepNodeMap:     make(map[int]int),
-		callNodeMap:     make(map[string]int),
-		childLinks:      make(map[string]string),
-		currentTurnTime: time.Now(),
+		provider:    provider,
+		parser:      parser,
+		filePath:    filePath,
+		sessionID:   parser.ExtractSessionID(filePath, nil),
+		stepNodeMap: make(map[int]int),
+		callNodeMap: make(map[string]int),
+		childLinks:  make(map[string]string),
+		// Zero until a turn or call carries a time: an unknown time must not look like now
+		currentTurnTime: time.Time{},
 		scopes:          providers.NewScopeTracker(provider),
+	}
+}
+
+// uniqueID suffixes a duplicate call ID so every call keeps its own node.
+func (a *Assembler) uniqueID(id string) string {
+	for n := 2; ; n++ {
+		candidate := fmt.Sprintf("%s#%d", id, n)
+		if _, exists := a.callNodeMap[candidate]; !exists {
+			return candidate
+		}
 	}
 }
 
@@ -115,7 +129,15 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 
 	// Detect user interaction turn
 	if prompt, ts, ok := extractTurn(extraction.Turns, payload); ok {
+		// Calls recorded before any prompt (e.g. a resumed or compacted session) keep their
+		// own turn, so they stay visible and never count as reactions to turn 1
+		if a.currentTurnIndex == 0 && len(a.turnNodes) > 0 {
+			a.currentPrompt = PreTurnPrompt
+		}
 		a.flushTurn()
+		// Calls of the previous turn still waiting for a step result will never get one;
+		// they must not take the results of this turn's calls
+		a.pendingStepCalls = nil
 		a.currentTurnIndex++
 		a.currentPrompt = prompt
 		if !ts.IsZero() {
@@ -140,6 +162,10 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 	}
 
 	for i := range nodes {
+		// A call ID reused later in the trace would overwrite the earlier call in the graph
+		if _, dup := a.callNodeMap[nodes[i].ID]; dup {
+			nodes[i].ID = a.uniqueID(nodes[i].ID)
+		}
 		nodes[i].TurnIndex = a.currentTurnIndex
 		nodes[i].Auxiliary = a.provider.IsAuxiliaryTool(nodes[i].Name)
 		a.scopes.Apply(&nodes[i])
@@ -161,7 +187,8 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 	}
 	switch resultCfg.Correlation {
 	case models.CorrelationPreviousStep:
-		if stepIdx > 0 {
+		// The event after a call is its result, unless it is the user's next prompt
+		if stepIdx > 0 && !res.TurnStarted {
 			targetIdx := -1
 			for _, pIdx := range a.pendingStepCalls {
 				if a.nodes[pIdx].Output == nil {

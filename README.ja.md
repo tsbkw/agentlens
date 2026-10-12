@@ -19,7 +19,7 @@
 **AgentLens** は、AIのツール呼び出しプロセスの完全な透明化を実現します:
 - 🚀 **環境依存ゼロ（単一バイナリ配布）**: Go言語製。Python や Node.js の事前インストールは一切不要で、Mac・Linux・Windowsの各OSでダウンロードして即実行できます。
 - 📊 **コールグラフ（有向非巡回グラフ: DAG）再構築**: エージェントの実行フロー、SKILL呼び出し、MCPツール利用を有向グラフとして統合。
-- 🚨 **暗黙フォールバック & 異常検知**: 認証失効（HTTP 401/403）や迂回ルーティング、予期せぬツール代替を自動検出して警告。
+- 🚨 **暗黙フォールバック & 異常検知**: 認証失効（HTTP 401/403）、予期せぬツール代替（確からしさ付き）、リトライループを自動検出して警告。
 - 🔌 **生成AI製品に依存しない設計**: ログ形式やトレース抽出の定義を宣言的な YAML 設定（プロバイダ定義）に完全分離。Google Antigravity、Claude Code、Cursor、独自エージェント等に対応。
 - 🖥️ **CLI & Web UI の双方で可視化**:
   - **ターミナル CLI**: 高速な色分けツリー表示と詳細インスペクター。
@@ -93,9 +93,9 @@ agentlens graph <session-id | trace-file>
 agentlens trace <session-id | trace-file>
 
 # 特定ノードの引数、実行結果、異常診断の詳細を表示
-agentlens inspect <call-id>
+agentlens inspect <call-id> [session-id]   # セッション ID を渡すとそのセッションだけを探索
 
-# 内蔵Web UIダッシュボードを http://localhost:8000 で起動
+# 内蔵Web UIダッシュボードを http://localhost:8000 で起動（--port <n> で変更可）
 agentlens ui
 
 # 実行中のAIセッションをリアルタイム監視 (省略時は最新のセッション)

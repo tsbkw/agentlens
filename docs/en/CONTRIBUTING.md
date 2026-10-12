@@ -33,21 +33,21 @@ All development is strictly **Pull Request (PR) driven**. Direct pushes to `main
    go vet ./...
    cd tests/e2e && npm test && cd ../..
    ```
-3. Update progress checkboxes in [`docs/en/ROADMAP.md`](file:///home/tsbkw0/development/agentlens/docs/en/ROADMAP.md) and [`docs/ja/ROADMAP.md`](file:///home/tsbkw0/development/agentlens/docs/ja/ROADMAP.md).
+3. Update progress checkboxes in [`docs/en/ROADMAP.md`](../../docs/en/ROADMAP.md) and [`docs/ja/ROADMAP.md`](../../docs/ja/ROADMAP.md).
 4. Commit changes with clear, descriptive commit messages.
 5. Push your branch and open a PR:
    ```bash
    gh pr create --fill
    ```
-6. Fill out all sections of [`.github/pull_request_template.md`](file:///home/tsbkw0/development/agentlens/.github/pull_request_template.md).
+6. Fill out all sections of [`.github/pull_request_template.md`](../../.github/pull_request_template.md).
 7. Request review from maintainers. Once approved, the PR can be merged into `main`.
 
 ---
 
 ## 2. Issues & Reporting
 
-- Use [`.github/ISSUE_TEMPLATE/bug_report.md`](file:///home/tsbkw0/development/agentlens/.github/ISSUE_TEMPLATE/bug_report.md) for reporting unexpected behavior, crashes, or incorrect call graph reconstruction.
-- Use [`.github/ISSUE_TEMPLATE/feature_request.md`](file:///home/tsbkw0/development/agentlens/.github/ISSUE_TEMPLATE/feature_request.md) for suggesting new CLI commands, UI enhancements, or AI provider support.
+- Use [`.github/ISSUE_TEMPLATE/bug_report.md`](../../.github/ISSUE_TEMPLATE/bug_report.md) for reporting unexpected behavior, crashes, or incorrect call graph reconstruction.
+- Use [`.github/ISSUE_TEMPLATE/feature_request.md`](../../.github/ISSUE_TEMPLATE/feature_request.md) for suggesting new CLI commands, UI enhancements, or AI provider support.
 
 ---
 
@@ -55,7 +55,7 @@ All development is strictly **Pull Request (PR) driven**. Direct pushes to `main
 
 - **Code & Comments**: Strictly **English** (`en`). Variable names, function names, comments, and log messages must be written in English.
 - **Documentation**: Maintained in dual English (`docs/en/`) and Japanese (`docs/ja/`). Any change made to one language must be synchronized with the other.
-- **User-Facing Strings**: Default to English with localization dictionaries (`agentlens/i18n`) for English and Japanese.
+- **User-Facing Strings**: English. A Japanese UI is planned (ROADMAP Phase 8) and not implemented yet.
 
 ---
 

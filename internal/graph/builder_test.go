@@ -257,3 +257,88 @@ func TestTurnLabelKeepsMultiByteCharactersIntact(t *testing.T) {
 		t.Fatalf("Expected a valid truncated label, got %q", label)
 	}
 }
+
+func TestComputeMetricsDepthAndToolTime(t *testing.T) {
+	now := time.Now()
+	turns := []models.ExecutionTurn{{Index: 1, Prompt: "go", Timestamp: now}}
+	nodes := []models.CallNode{
+		{ID: "skill", TurnIndex: 1, Type: models.NodeTypeSkill, Name: "Skill", ScopeName: "Skill: deploy", Timestamp: now, Status: models.StatusSuccess, DurationMs: 300},
+		{ID: "bash", TurnIndex: 1, Type: models.NodeTypeSystemTool, Name: "Bash", CallerScope: "Skill: deploy", Timestamp: now.Add(time.Second), Status: models.StatusSuccess, DurationMs: 1200},
+	}
+	g := NewGraphBuilder().BuildWithTurns("s", "p", turns, nodes)
+	m := g.ComputeMetrics()
+	// turn -> scope node -> Bash
+	if m.MaxDepth != 2 {
+		t.Errorf("MaxDepth = %d, want 2", m.MaxDepth)
+	}
+	if m.TotalDuration != 1500*time.Millisecond {
+		t.Errorf("TotalDuration = %v, want 1.5s", m.TotalDuration)
+	}
+}
+
+func TestParallelSiblingCallsAreNotFallbacks(t *testing.T) {
+	now := time.Now()
+	turns := []models.ExecutionTurn{{Index: 1, Prompt: "go", Timestamp: now}}
+	nodes := []models.CallNode{
+		// Two tool uses issued in one model response: same timestamp, the first fails 2s later
+		{ID: "mcp", TurnIndex: 1, Type: models.NodeTypeMCPTool, Name: "mcp__github__get_issue", MCPServer: "github", Timestamp: now, Status: models.StatusFailed, DurationMs: 2000},
+		{ID: "sibling", TurnIndex: 1, Type: models.NodeTypeSystemTool, Name: "Bash", Timestamp: now, Status: models.StatusSuccess},
+		// Issued after the failure was known
+		{ID: "reaction", TurnIndex: 1, Type: models.NodeTypeSystemTool, Name: "Bash", Timestamp: now.Add(3 * time.Second), Status: models.StatusSuccess},
+	}
+	g := NewGraphBuilder().BuildWithTurns("s", "p", turns, nodes)
+
+	var transitions []string
+	for _, e := range g.Edges {
+		if e.Type == models.EdgeTypeFallbackTo || e.Type == models.EdgeTypeRetries {
+			transitions = append(transitions, e.SourceID+"->"+e.TargetID)
+		}
+	}
+	if len(transitions) != 1 || transitions[0] != "mcp->reaction" {
+		t.Errorf("Expected the only transition to be mcp->reaction, got %v", transitions)
+	}
+	// Transition edges do not shape the tree: the reaction stays a child of the turn
+	for _, child := range g.Children["mcp"] {
+		if child == "reaction" || child == "sibling" {
+			t.Errorf("A fallback edge must not nest %s under the failed call", child)
+		}
+	}
+	if len(g.Parents["reaction"]) != 1 || g.Parents["reaction"][0] != "turn-1" {
+		t.Errorf("Expected the reaction under turn-1, got parents %v", g.Parents["reaction"])
+	}
+}
+
+func TestTimeoutStartsAFallbackLikeAFailure(t *testing.T) {
+	now := time.Now()
+	nodes := []models.CallNode{
+		{ID: "a", Type: models.NodeTypeMCPTool, Name: "mcp__github__get_issue", Timestamp: now, Status: models.StatusTimeout},
+		{ID: "b", Type: models.NodeTypeSystemTool, Name: "Bash", Timestamp: now.Add(time.Second), Status: models.StatusSuccess},
+	}
+	g := NewGraphBuilder().Build("s", "p", nodes)
+	if len(g.Edges) != 1 || g.Edges[0].Type != models.EdgeTypeFallbackTo {
+		t.Errorf("Expected one fallback edge after a timeout, got %+v", g.Edges)
+	}
+}
+
+func TestFallbackMarkedOnTheScopeRowOfAFailedSkill(t *testing.T) {
+	now := time.Now()
+	turns := []models.ExecutionTurn{{Index: 1, Prompt: "go", Timestamp: now}}
+	nodes := []models.CallNode{
+		{ID: "skill", TurnIndex: 1, Type: models.NodeTypeSkill, Name: "Skill", ScopeName: "Skill: deploy", Timestamp: now, Status: models.StatusFailed, DurationMs: 100},
+		{ID: "bash", TurnIndex: 1, Type: models.NodeTypeSystemTool, Name: "Bash", Timestamp: now.Add(time.Second), Status: models.StatusSuccess},
+	}
+	g := NewGraphBuilder().BuildWithTurns("s", "p", turns, nodes)
+	g.ApplyConfirmedFallbacks([]models.AnomalyRecord{{Type: models.AnomalySilentFallback, NodeID: "bash", RelatedNodeID: "skill", Confidence: models.ConfidenceLow}})
+	var row *models.CallerDependency
+	for i := range g.Dependencies {
+		if g.Dependencies[i].Callee == "Skill: deploy" {
+			row = &g.Dependencies[i]
+		}
+	}
+	if row == nil || !row.IsFallback || row.FallbackTo != "Bash" {
+		t.Errorf("Expected the Skill: deploy row to carry the fallback mark, got %+v", row)
+	}
+	if m := g.ComputeMetrics(); m.SkillCalls != 1 {
+		t.Errorf("Scope nodes must not count as calls: SkillCalls = %d", m.SkillCalls)
+	}
+}

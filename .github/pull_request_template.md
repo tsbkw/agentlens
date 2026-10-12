@@ -10,15 +10,14 @@
 
 ## Architectural Component Impact / 影響コンポーネント
 
-- [ ] Provider Definitions (`schemas/` or `examples/providers/`)
-- [ ] Core Models (`agentlens.core.models`)
-- [ ] Collector Engine (`agentlens.core.collector`)
-- [ ] Graph Builder (`agentlens.core.graph`)
-- [ ] Anomaly Detector (`agentlens.core.detector`)
-- [ ] CLI Visualizer (`agentlens.cli`)
-- [ ] Web UI (`agentlens.web`)
-- [ ] Internationalization (`agentlens.i18n`)
-- [ ] Documentation / Specs (`docs/`)
+- [ ] Provider Definitions (`schemas/`, `examples/providers/`, `rules/`)
+- [ ] Core Models (`internal/models`)
+- [ ] Collector (`internal/collector`, `internal/providers`)
+- [ ] Graph Builder (`internal/graph`)
+- [ ] Anomaly Detector (`internal/detector`)
+- [ ] CLI (`cmd/agentlens`, `internal/cli`, `internal/watcher`, `internal/report`)
+- [ ] Web UI (`web/index.html`, mirrored in `internal/server/static/index.html`, `internal/server`)
+- [ ] Documentation / Specs (`docs/`, `README.md`, `README.ja.md`)
 
 ## Related Roadmap Tasks / 関連ロードマップタスク
 
@@ -29,9 +28,9 @@
 ## Verification & Testing / 検証・テスト結果
 
 <!-- Describe the tests or commands executed to verify this change. -->
-- [ ] Unit tests pass (`pytest`)
-- [ ] Linting & formatting check pass (`ruff check . && ruff format --check .`)
-- [ ] Static type analysis pass (`mypy src`)
+- [ ] Unit tests pass (`go test -race ./...`)
+- [ ] Static checks pass (`go vet ./...`, `gofmt -l .` prints nothing)
+- [ ] Web UI changes: `web/index.html` copied to `internal/server/static/index.html` and the E2E suite passes (`npm --prefix tests/e2e test`)
 - [ ] Documentation updated in both English and Japanese
 
 ## Screenshots / CLI Output (if applicable)

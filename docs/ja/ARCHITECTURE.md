@@ -23,12 +23,12 @@ sequenceDiagram
     AI->>FS: トレースログ / transcript 出力
     Def->>Col: 解析ルールと監視パスを提供
     FS->>Col: 生ログ (JSONL等) を読み込み
-    Col->>GB: 正規化イベント (NormalizedTraceEvents) を送出
+    Col->>GB: CallNode と ExecutionTurn を送出 (RawTraceEvent から)
     GB->>GB: コールグラフ (ノード & エッジ) を組み立て
     GB->>Det: グラフ構造と実行結果を評価
     Det->>GB: 異常検知バッジ (AnomalyBadges) を付与
     GB->>CLI: ターミナルツリー描画 & インスペクター
-    GB->>Web: ローカルAPI配信 & SPAレンダリング
+    GB->>Web: 期間集計と生トレースファイルを配信。ページ側が JS でパイプラインを再実行
 ```
 
 ---
@@ -39,60 +39,43 @@ sequenceDiagram
 agentlens/
 ├── .github/
 │   ├── workflows/
-│   │   ├── ci.yml                 # Go テスト・ビルド検証
-│   │   └── deploy-pages.yml       # GitHub Pages への自動デプロイ
+│   │   ├── ci.yml                 # go test / go vet / build と E2E スイート
+│   │   └── deploy-pages.yml       # web/ をそのまま GitHub Pages に公開
 │   ├── ISSUE_TEMPLATE/
-│   │   ├── bug_report.md
-│   │   └── feature_request.md
 │   └── pull_request_template.md
-├── cmd/
-│   └── agentlens/
-│       └── main.go                # CLI エントリーポイント
-├── docs/
-│   ├── en/
-│   │   ├── ARCHITECTURE.md
-│   │   ├── CONTRIBUTING.md
-│   │   ├── ROADMAP.md
-│   │   └── SPECIFICATION.md
-│   └── ja/
-│       ├── ARCHITECTURE.md
-│       ├── CONTRIBUTING.md
-│       ├── ROADMAP.md
-│       └── SPECIFICATION.md
+├── cmd/agentlens/main.go          # CLI エントリーポイント（標準ライブラリのみ）
+├── docs/{en,ja}/                  # ARCHITECTURE, CONTRIBUTING, ROADMAP, SPECIFICATION
 ├── examples/
-│   └── providers/
-│       ├── antigravity.yaml
-│       └── generic_jsonl.yaml
+│   ├── providers/                 # 組み込みプロバイダ定義（バイナリに埋め込み）
+│   │   ├── antigravity.yaml
+│   │   ├── claude_code.yaml
+│   │   ├── cursor.yaml
+│   │   ├── generic_jsonl.yaml
+│   │   └── embed.go
+│   └── traces/                    # ドキュメント・テスト・UI で使うサンプルセッション
 ├── internal/
-│   ├── collector/                 # ログ収集・監視 (fsnotify)
-│   │   ├── collector.go
-│   │   └── tailer.go
-│   ├── detector/                  # 異常・暗黙フォールバック・認証切れ検知
-│   │   ├── auth_checker.go
-│   │   ├── fallback_detector.go
-│   │   └── loop_detector.go
-│   ├── graph/                     # コールグラフ構築・DAG表現・メトリクス計算
-│   │   ├── builder.go
-│   │   └── metrics.go
-│   ├── models/                    # コアデータモデル (Trace, Node, Edge, Anomaly)
-│   │   ├── anomaly.go
-│   │   ├── graph.go
-│   │   ├── provider.go
-│   │   └── trace.go
-│   ├── providers/                 # プロバイダ定義ローダー・パーサー
-│   │   ├── loader.go
-│   │   └── parser.go
-│   └── server/                    # ローカルHTTP API & 組み込みUIサーバー
-│       └── server.go
-├── schemas/
-│   └── provider_definition.schema.json
-├── web/                           # Web UI SPA (Goバイナリ内蔵 + GitHub Pages)
-│   ├── index.html
-│   └── src/
+│   ├── ansi/                      # 端末の色（パイプ時や NO_COLOR 設定時は無効）
+│   ├── cli/                       # コマンド (app.go)、ターミナル描画、report コマンド
+│   ├── collector/                 # セッション探索、プロバイダ判定、組み立て、子トレース
+│   ├── detector/                  # 認証切れ・フォールバック・リトライループ検知、代替サービス対応表
+│   ├── graph/                     # グラフ構築、依存関係、メトリクス
+│   ├── models/                    # コアデータモデル（ノード、エッジ、異常、プロバイダ設定）
+│   ├── providers/                 # プロバイダ YAML の読み込み、フィールド式、スコープ追跡
+│   ├── report/                    # `report` と `/api/report` が共有する期間集計
+│   ├── server/                    # ローカル HTTP API。static/index.html が内蔵 UI
+│   ├── textutil/                  # 省略・整形のヘルパー
+│   └── watcher/                   # `agentlens watch`: ポーリングによるライブ tail
+├── rules/substitutes.yaml         # 公開サービスと、それを代替する CLI / ホスト
+├── schemas/provider_definition.schema.json
+├── tests/e2e/                     # Web UI の Puppeteer リグレッションテスト
+├── web/index.html                 # Web UI（単一ファイル、ビルド工程なし）
 ├── go.mod
-├── go.sum
 ├── README.md
 └── README.ja.md
+```
+
+---
+
 ```
 
 ---
@@ -119,24 +102,30 @@ type CallNode struct {
     ID           string                 `json:"id"`
     SessionID    string                 `json:"session_id"`
     ParentID     string                 `json:"parent_id,omitempty"`
+    TurnIndex    int                    `json:"turn_index"`
+    CallerScope  string                 `json:"caller_scope,omitempty"` // "Agent", "Skill: <name>", "Subagent: <name>"
+    ScopeName    string                 `json:"scope_name,omitempty"`   // Scope this call opens, e.g. "Skill: <name>"
     Type         CallNodeType           `json:"type"`
     Name         string                 `json:"name"`
     MCPServer    string                 `json:"mcp_server,omitempty"`
     Timestamp    time.Time              `json:"timestamp"`
-    DurationMs   int64                  `json:"duration_ms"`
-    Status       string                 `json:"status"` // "success", "failed", "timeout", "denied"
+    DurationMs   int64                  `json:"duration_ms,omitempty"`
+    Status       CallStatus             `json:"status"` // "success", "failed", "timeout", "denied", "unknown"
     Arguments    map[string]interface{} `json:"arguments,omitempty"`
     Output       interface{}            `json:"output,omitempty"`
     ErrorMessage string                 `json:"error_message,omitempty"`
     Anomalies    []AnomalyRecord        `json:"anomalies,omitempty"`
-    ParentLink   string                 `json:"parent_link,omitempty"` // "sidecar", "result", "inferred"
+    ParentLink   ParentLink             `json:"parent_link,omitempty"` // "sidecar", "result", "inferred"
     Auxiliary    bool                   `json:"auxiliary,omitempty"`
-}
+    Synthetic    bool                   `json:"synthetic,omitempty"`   // ビルダーが構造のために追加するターン・スコープのノード
+}}
 ```
 
 `Status` が `denied` の呼び出しは、ユーザーや権限設定に拒否されて実行されなかったもの (`results.denied_regex`) で、失敗とは区別します。`Auxiliary` はツール検索・タスク管理・計画などエージェント自身の管理操作 (`extraction.auxiliary_tools`) を表します。denied と補助ツールの呼び出しはフォールバックとリトライループの判定に関与しません。「MCP 失敗 → ツール検索 → シェル」は、MCP からシェルへのフォールバックとして扱います。
 
-サイレントフォールバックは、失敗した MCP / Skill 呼び出しの直後にシステムツール (シェル、HTTP 取得、ファイル操作) が続いたときに、プロバイダを問わず報告します。`anomaly_rules.known_fallbacks` にはプロバイダ固有の組み合わせだけを書きます。各検知には `confidence` が付きます。
+`Synthetic` はグラフビルダーが構造のために追加するターン・スコープのノードを表します。呼び出しではないので、検知や呼び出し数の集計には関与しません。
+
+サイレントフォールバックは、失敗 (またはタイムアウト) した MCP / Skill 呼び出しの直後にシステムツール (シェル、HTTP 取得、ファイル操作) が続いたときに、プロバイダを問わず報告します。後続の呼び出しは失敗が判明した後に始まっている必要があります。1回のモデル応答で同時に発行された呼び出しはタイムスタンプを共有し、互いのフォールバックにはなりません。`anomaly_rules.known_fallbacks` にはプロバイダ固有の組み合わせだけを書きます。各検知には `confidence` が付きます。
 
 - `high`: 代わりの呼び出しが同じ公開サービスに到達している (プロバイダ共通の対応表 `rules/substitutes.yaml` にある CLI を実行した、またはホストを呼んだ。例: GitHub → `gh`)、または失敗した呼び出しの固有名詞 (リポジトリ名、テーブル名、ID など) を2つ以上使っている。
 - `low`: 呼び出しの順序だけが根拠。「Possible Silent Fallback」として表示し、確定した検知ではなく確認すべき手がかりとして扱います。
@@ -176,9 +165,7 @@ type AnomalyType string
 const (
     AnomalySilentFallback AnomalyType = "silent_fallback"
     AnomalyAuthExpired    AnomalyType = "auth_expired"
-    AnomalyProxyRouting   AnomalyType = "proxy_routing"
     AnomalyRetryLoop      AnomalyType = "retry_loop"
-    AnomalyLatencySpike   AnomalyType = "latency_spike"
 )
 
 type AnomalyRecord struct {
@@ -190,17 +177,19 @@ type AnomalyRecord struct {
     Title          string      `json:"title"`
     Description    string      `json:"description"`
     Recommendation string      `json:"recommendation,omitempty"`
-}
+    Confidence     Confidence  `json:"confidence,omitempty"` // silent fallbacks: "high" or "low"
+    Evidence       string      `json:"evidence,omitempty"`   // what the confidence rests on
+}}
 ```
 
 ---
 
 ## 4. Web UI の二重配信設計 (Dual-Hosting Architecture)
 
-AgentLens の Web UI は、単一のSPA（Single Page Application）としてビルドされます:
+AgentLens の Web UI は、手書きの1ページ `web/index.html` で、ビルド工程はありません:
 1. **GitHub Pages による無料ホスティング**:
-   - `.github/workflows/deploy-pages.yml` によって自動ビルドされ、`https://tsbkw.github.io/agentlens` に完全無料で常時公開されます。
+   - `.github/workflows/deploy-pages.yml` が `web/` をそのまま `https://tsbkw.github.io/agentlens` に公開します。
    - **完全クライアントサイド実行（高セキュリティ）**: ユーザーがトレースファイル（`transcript.jsonl` 等）をブラウザへドラッグ＆ドロップすると、JavaScriptがすべてローカルで解析・描画します。外部サーバーへの通信は一切行われません。
 2. **Goバイナリへの内蔵 (`//go:embed`)**:
-   - コンパイルされた静的ファイルは Go の `//go:embed` 機能によりバイナリに同梱されます。
+   - `internal/server/static/index.html` は `web/index.html` のコピーで、`//go:embed static/index.html` によりバイナリに同梱されます。両者が異なると `TestEmbeddedUIMatchesPagesUI` が失敗するため、UI を変更したらコミット前にコピーします。
    - `agentlens ui` を実行すると、`127.0.0.1:8000` でローカルHTTPサーバーが立ち上がり、同一のダッシュボードを配信します。あわせて、画面のローカルセッション一覧に期間集計とセッションの生ファイルを提供します。

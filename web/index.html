@@ -8,6 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
+      color-scheme: dark;
       --bg: #0d1117;
       --card-bg: #161b22;
       --card-alt: #1c2128;
@@ -25,6 +26,8 @@
       --system: #58a6ff;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* Elements scrolled into view land below the sticky header, not under it */
+    html { scroll-padding-top: 72px; }
     body {
       background-color: var(--bg);
       color: var(--text);
@@ -35,8 +38,10 @@
     }
     header {
       border-bottom: 1px solid var(--border);
-      padding: 0.75rem 2rem;
+      padding: 0.75rem 1rem;
       display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
       justify-content: space-between;
       align-items: center;
       background-color: var(--card-bg);
@@ -54,8 +59,12 @@
     }
     .nav-links {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: 1rem;
+      gap: 0.5rem 1rem;
+    }
+    @media (min-width: 768px) {
+      header { padding: 0.75rem 2rem; }
     }
     .btn {
       padding: 0.4rem 0.8rem;
@@ -281,11 +290,15 @@
       font-size: 0.8rem;
       color: var(--text-muted);
     }
+    .callee-table-wrap { overflow-x: auto; }
     .callee-table {
       width: 100%;
       border-collapse: collapse;
       font-size: 0.85rem;
     }
+    .callee-type { white-space: nowrap; }
+    .callee-name { word-break: break-all; }
+    .callee-counts { white-space: nowrap; text-align: right; }
     .callee-row {
       border-bottom: 1px solid rgba(48, 54, 61, 0.5);
       transition: background 0.15s;
@@ -301,10 +314,10 @@
       color: var(--warning);
       font-size: 0.8rem;
       padding: 0.35rem 1.25rem 0.5rem 3.5rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
     }
+    .turn-card.collapsed .turn-body { display: none; }
+    .alerts-more { align-self: flex-start; }
+    .drop-error { color: var(--danger); margin-top: 0.75rem; font-size: 0.9rem; }
 
     /* Turn-by-Turn Trace View */
     .trace-container {
@@ -376,8 +389,7 @@
 
     /* Inspector Drawer */
     .drawer {
-      width: 480px;
-      min-width: 380px;
+      width: min(480px, 100vw);
       background-color: var(--card-bg);
       border-left: 1px solid var(--border);
       padding: 1.5rem;
@@ -387,8 +399,8 @@
       overflow-y: auto;
       position: fixed;
       right: 0;
-      top: 56px;
-      height: calc(100vh - 56px);
+      top: 0;
+      height: 100vh;
       z-index: 1000;
       box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
     }
@@ -465,7 +477,10 @@
           <h2>Drop an Antigravity, Claude Code or JSONL trace log here</h2>
           <p>Drop a <code>transcript.jsonl</code> or <code>~/.claude/projects/&lt;project&gt;/&lt;session&gt;.jsonl</code> file, or click to select. The format is detected automatically.</p>
           <p>To include Claude Code subagents, drop the <code>&lt;session&gt;.jsonl</code> file together with its <code>&lt;session&gt;/</code> folder, or select it with the <code>subagents/agent-*.jsonl</code> and <code>.meta.json</code> files.</p>
+          <p><button type="button" class="btn" id="pickFolderBtn">Select a session folder…</button></p>
+          <div class="drop-error" id="dropError" style="display:none"></div>
           <input type="file" id="fileInput" style="display:none" accept=".jsonl,.json,.txt" multiple>
+          <input type="file" id="dirInput" style="display:none" webkitdirectory multiple>
         </div>
       </div>
 
@@ -495,6 +510,10 @@
             <div class="stat-value" style="color:var(--danger)" id="statFailedCalls">0</div>
           </div>
           <div class="stat-card">
+            <div class="stat-label">Denied</div>
+            <div class="stat-value" style="color:var(--warning)" id="statDeniedCalls">0</div>
+          </div>
+          <div class="stat-card">
             <div class="stat-label">Anomalies</div>
             <div class="stat-value" style="color:var(--warning)" id="statAnomalies">0</div>
           </div>
@@ -509,8 +528,8 @@
             <button class="tab-btn active" id="tabDepsBtn">Caller ➔ Callee Graph</button>
             <button class="tab-btn" id="tabTraceBtn">Turn Execution Trace</button>
           </div>
-          <input type="text" id="searchInput" class="search-input" placeholder="Search tool name, MCP server, arguments...">
-          <select id="filterSelect" class="filter-select">
+          <input type="text" id="searchInput" class="search-input" placeholder="Search tool name, MCP server, arguments..." aria-label="Search calls">
+          <select id="filterSelect" class="filter-select" aria-label="Filter calls">
             <option value="all">All Tools</option>
             <option value="mcp">MCP Only</option>
             <option value="skill">Skills Only</option>
@@ -558,7 +577,7 @@
   </div>
 
   <script type="application/json" id="substitute-catalog">{"services":[{"name":"GitHub","mcp_servers":["github"],"commands":["gh"],"hosts":["github.com","api.github.com","raw.githubusercontent.com"]},{"name":"GitLab","mcp_servers":["gitlab"],"commands":["glab"],"hosts":["gitlab.com"]},{"name":"BigQuery","mcp_servers":["bigquery"],"commands":["bq"],"hosts":["bigquery.googleapis.com"]},{"name":"Google Cloud","mcp_servers":["gcloud","gcp"],"commands":["gcloud","gsutil"],"hosts":["googleapis.com"]},{"name":"Google Drive","mcp_servers":["gdrive","drive","gdocs"],"commands":[],"hosts":["drive.google.com","docs.google.com","www.googleapis.com/drive"]},{"name":"AWS","mcp_servers":["aws"],"commands":["aws"],"hosts":["amazonaws.com"]},{"name":"Kubernetes","mcp_servers":["kubernetes","k8s"],"commands":["kubectl","helm"],"hosts":[]},{"name":"PostgreSQL","mcp_servers":["postgres","postgresql"],"commands":["psql"],"hosts":[]},{"name":"Slack","mcp_servers":["slack"],"commands":[],"hosts":["slack.com"]},{"name":"Notion","mcp_servers":["notion"],"commands":[],"hosts":["api.notion.com","notion.so","notion.site"]},{"name":"Atlassian (Jira, Confluence)","mcp_servers":["atlassian","jira","confluence"],"commands":["jira","acli"],"hosts":["atlassian.net"]},{"name":"Linear","mcp_servers":["linear"],"commands":[],"hosts":["api.linear.app","linear.app"]},{"name":"Datadog","mcp_servers":["datadog"],"commands":["datadog-ci"],"hosts":["datadoghq.com","datadoghq.eu"]},{"name":"Sentry","mcp_servers":["sentry"],"commands":["sentry-cli"],"hosts":["sentry.io"]},{"name":"Sourcegraph","mcp_servers":["sourcegraph"],"commands":["src"],"hosts":["sourcegraph.com"]},{"name":"Figma","mcp_servers":["figma"],"commands":[],"hosts":["api.figma.com","figma.com"]},{"name":"Stripe","mcp_servers":["stripe"],"commands":["stripe"],"hosts":["api.stripe.com"]},{"name":"Cloudflare","mcp_servers":["cloudflare"],"commands":["wrangler"],"hosts":["api.cloudflare.com"]}]}</script>
-  <script type="application/json" id="provider-rules">[{"id":"antigravity","name":"Google Antigravity","extraction":{"session":{"id_jsonpath":"session_id","path_regex":"brain/([a-zA-Z0-9_-]+)/.*transcript\\.jsonl"},"events":{"tool_call_filter":"type == 'PLANNER_RESPONSE' \u0026\u0026 tool_calls != null","subagent_spawn_filter":"tool_calls[?name == 'invoke_subagent']"},"fields":{"call_id":"tool_call.id || step_index","parent_id":"parent_call_id || conversation_id","timestamp":"created_at","duration_ms":"duration_ms","call_type":"tool_call.type","tool_name":"tool_call.name","mcp_server":"tool_call.mcp_server || null","arguments":"tool_call.args || tool_call.arguments","status":"status","output":"tool_call.output","error_message":"tool_call.error"},"turns":{"filter":"type == 'USER_INPUT'","prompt_field":"content","timestamp_field":"created_at","prompt_tag":"USER_REQUEST"},"results":{"correlation":"previous_step","step_index_field":"step_index","output_field":"content","status_field":"status"},"scopes":[{"tool_name":"view_file","kind":"skill","name_field":"AbsolutePath","name_regex":"/skills/([^/]+)/SKILL\\.md$"},{"tool_name":"skill_*","kind":"skill","name_regex":"^skill_(.+)$"},{"tool_name":"invoke_subagent","kind":"subagent","name_field":"Subagents.0.Role || Subagents.0.TypeName || Role || TypeName"}]},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"]}},{"id":"claude-code","name":"Claude Code","extraction":{"session":{"id_jsonpath":"sessionId","path_regex":"projects/[^/]+/([^/]+)\\.jsonl$"},"events":{"tool_call_filter":"type == 'assistant'","tool_calls_path":"message.content","tool_call_item_filter":"type == 'tool_use'"},"fields":{"call_id":"id","timestamp":"timestamp","tool_name":"name","mcp_server_regex":"^mcp__(.+?)__","arguments":"input"},"turns":{"filter":"type == 'user' \u0026\u0026 toolUseResult == null \u0026\u0026 isMeta != true \u0026\u0026 isCompactSummary != true \u0026\u0026 origin.kind != 'task-notification'","prompt_field":"message.content","timestamp_field":"timestamp","prompt_tag":"command-name"},"results":{"correlation":"call_id","filter":"type == 'user'","items_path":"message.content","item_filter":"type == 'tool_result'","call_id_field":"tool_use_id","output_field":"content","error_flag_field":"is_error","timestamp_field":"timestamp","denied_regex":["^The user doesn't want to proceed with this tool use","^Permission for this action was denied","^Permission to use \\S+ ","^The server-side auto mode classifier gave no verdict","^\\S+ is temporarily unavailable .*auto mode cannot determine","^\u003ctool_use_error\u003eFile is in a directory that is denied by your permission settings","^\u003ctool_use_error\u003eBlocked: "]},"scopes":[{"tool_name":"Skill","kind":"skill","name_field":"skill"},{"tool_name":"Agent","kind":"subagent","name_field":"subagent_type || description","enter_scope":false},{"tool_name":"Task","kind":"subagent","name_field":"subagent_type || description","enter_scope":false}],"auxiliary_tools":["ToolSearch","TodoWrite","TaskCreate","TaskUpdate","TaskGet","TaskList","TaskOutput","TaskStop","AskUserQuestion","EnterPlanMode","ExitPlanMode","ScheduleWakeup","Cron*","ListAgents","SendMessage","SubagentHandback","StructuredOutput","EnterWorktree","ExitWorktree","ListMcpResourcesTool"]},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"]},"child_traces":{"path_glob":"{dir}/{stem}/subagents/*.jsonl","sidecar_suffix":".meta.json","parent_call_id_field":"toolUseId","child_id_field":"agentId","result_child_id_field":"toolUseResult.agentId","sidecar_name_field":"name || agentType || description"}},{"id":"cursor","name":"Cursor Composer","extraction":{"session":{"id_jsonpath":"composer_id","path_regex":"([^/]+)\\.jsonl"},"events":{"tool_call_filter":"type == 'tool_call' || event == 'tool_executed'","subagent_spawn_filter":"tool_calls[?name == 'subagent']"},"fields":{"call_id":"id","parent_id":"parent_id","timestamp":"timestamp","duration_ms":"duration_ms","call_type":"type","tool_name":"tool","mcp_server":"server","arguments":"args","status":"status","output":"result","error_message":"error"},"turns":{},"results":{}},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|\\b401\\b|\\b403\\b|token\\s+expired|authentication\\s+failed"]}},{"id":"generic-jsonl","name":"Generic JSONL Agent Trace","extraction":{"session":{"id_jsonpath":"session_id"},"events":{"tool_call_filter":"event_type == 'tool_call' || event_type == 'skill_call'","subagent_spawn_filter":"event_type == 'subagent_call'"},"fields":{"call_id":"id","parent_id":"parent_id","timestamp":"timestamp","duration_ms":"duration_ms","call_type":"type","tool_name":"name","mcp_server":"mcp_server","arguments":"params","status":"status","output":"result","error_message":"error"},"turns":{},"results":{}},"anomaly_rules":{"auth_failure_regex":["(?i)unauthorized|401|auth_error"]}}]</script>
+  <script type="application/json" id="provider-rules">[{"id":"antigravity","name":"Google Antigravity","extraction":{"session":{"id_jsonpath":"session_id","path_regex":"brain/([a-zA-Z0-9_-]+)/.*transcript\\.jsonl"},"events":{"tool_call_filter":"type == 'PLANNER_RESPONSE' \u0026\u0026 tool_calls != null","subagent_spawn_filter":"tool_calls[?name == 'invoke_subagent']"},"fields":{"call_id":"tool_call.id || step_index","parent_id":"parent_call_id || conversation_id","timestamp":"created_at","duration_ms":"duration_ms","call_type":"tool_call.type","tool_name":"tool_call.name","mcp_server":"tool_call.mcp_server || null","arguments":"tool_call.args || tool_call.arguments","status":"status","output":"tool_call.output","error_message":"tool_call.error"},"turns":{"filter":"type == 'USER_INPUT'","prompt_field":"content","timestamp_field":"created_at","prompt_tag":"USER_REQUEST"},"results":{"correlation":"previous_step","step_index_field":"step_index","output_field":"content","status_field":"status"},"scopes":[{"tool_name":"view_file","kind":"skill","name_field":"AbsolutePath","name_regex":"/skills/([^/]+)/SKILL\\.md$"},{"tool_name":"skill_*","kind":"skill","name_regex":"^skill_(.+)$"},{"tool_name":"invoke_subagent","kind":"subagent","name_field":"Subagents.0.Role || Subagents.0.TypeName || Role || TypeName"}]},"anomaly_rules":{"auth_failure_regex":["(?i)\\bunauthorized\\b|bad credentials|invalid[ _-]?(?:api[ _-]?key|token|credentials)|token\\s+(?:has\\s+)?(?:expired|invalid|revoked)|(?:re-?)?auth(?:entication|orization)\\s+(?:failed|required|error)|requires\\s+re-?auth|not\\s+authenticated|\\b(?:http|status(?:\\s+code)?|code|error)\\b[\"']?\\s*[:=]?\\s*[\"'(]?40[13]\\b|\\b40[13]\\s+\\(?(?:unauthorized|forbidden|authorization|authentication|client\\s+error|error|post|get|put|patch|delete|for)\\b|\\(40[13]\\)"]}},{"id":"claude-code","name":"Claude Code","extraction":{"session":{"id_jsonpath":"sessionId","path_regex":"projects/[^/]+/([^/]+)\\.jsonl$"},"events":{"tool_call_filter":"type == 'assistant'","tool_calls_path":"message.content","tool_call_item_filter":"type == 'tool_use'"},"fields":{"call_id":"id","timestamp":"timestamp","tool_name":"name","mcp_server_regex":"^mcp__(.+?)__","arguments":"input"},"turns":{"filter":"type == 'user' \u0026\u0026 toolUseResult == null \u0026\u0026 isMeta != true \u0026\u0026 isCompactSummary != true \u0026\u0026 origin.kind != 'task-notification'","prompt_field":"message.content","timestamp_field":"timestamp","prompt_tag":"command-name"},"results":{"correlation":"call_id","filter":"type == 'user'","items_path":"message.content","item_filter":"type == 'tool_result'","call_id_field":"tool_use_id","output_field":"content","error_flag_field":"is_error","timestamp_field":"timestamp","denied_regex":["^The user doesn't want to proceed with this tool use","^Permission for this action was denied","^Permission to use \\S+ ","^The server-side auto mode classifier gave no verdict","^\\S+ is temporarily unavailable .*auto mode cannot determine","^\u003ctool_use_error\u003eFile is in a directory that is denied by your permission settings","^\u003ctool_use_error\u003eBlocked: "]},"scopes":[{"tool_name":"Skill","kind":"skill","name_field":"skill"},{"tool_name":"Agent","kind":"subagent","name_field":"subagent_type || description","enter_scope":false},{"tool_name":"Task","kind":"subagent","name_field":"subagent_type || description","enter_scope":false}],"auxiliary_tools":["ToolSearch","TodoWrite","TaskCreate","TaskUpdate","TaskGet","TaskList","TaskOutput","TaskStop","AskUserQuestion","EnterPlanMode","ExitPlanMode","ScheduleWakeup","Cron*","ListAgents","SendMessage","SubagentHandback","StructuredOutput","EnterWorktree","ExitWorktree","ListMcpResourcesTool"]},"anomaly_rules":{"auth_failure_regex":["(?i)\\bunauthorized\\b|bad credentials|invalid[ _-]?(?:api[ _-]?key|token|credentials)|token\\s+(?:has\\s+)?(?:expired|invalid|revoked)|(?:re-?)?auth(?:entication|orization)\\s+(?:failed|required|error)|requires\\s+re-?auth|not\\s+authenticated|\\b(?:http|status(?:\\s+code)?|code|error)\\b[\"']?\\s*[:=]?\\s*[\"'(]?40[13]\\b|\\b40[13]\\s+\\(?(?:unauthorized|forbidden|authorization|authentication|client\\s+error|error|post|get|put|patch|delete|for)\\b|\\(40[13]\\)"]},"child_traces":{"path_glob":"{dir}/{stem}/subagents/*.jsonl","sidecar_suffix":".meta.json","parent_call_id_field":"toolUseId","child_id_field":"agentId","result_child_id_field":"toolUseResult.agentId","sidecar_name_field":"name || agentType || description"}},{"id":"cursor","name":"Cursor Composer","extraction":{"session":{"id_jsonpath":"composer_id","path_regex":"([^/]+)\\.jsonl"},"events":{"tool_call_filter":"type == 'tool_call' || event == 'tool_executed'","subagent_spawn_filter":"tool_calls[?name == 'subagent']"},"fields":{"call_id":"id","parent_id":"parent_id","timestamp":"timestamp","duration_ms":"duration_ms","call_type":"type","tool_name":"tool","mcp_server":"server","arguments":"args","status":"status","output":"result","error_message":"error"},"turns":{},"results":{}},"anomaly_rules":{"auth_failure_regex":["(?i)\\bunauthorized\\b|bad credentials|invalid[ _-]?(?:api[ _-]?key|token|credentials)|token\\s+(?:has\\s+)?(?:expired|invalid|revoked)|(?:re-?)?auth(?:entication|orization)\\s+(?:failed|required|error)|requires\\s+re-?auth|not\\s+authenticated|\\b(?:http|status(?:\\s+code)?|code|error)\\b[\"']?\\s*[:=]?\\s*[\"'(]?40[13]\\b|\\b40[13]\\s+\\(?(?:unauthorized|forbidden|authorization|authentication|client\\s+error|error|post|get|put|patch|delete|for)\\b|\\(40[13]\\)"]}},{"id":"generic-jsonl","name":"Generic JSONL Agent Trace","extraction":{"session":{"id_jsonpath":"session_id"},"events":{"tool_call_filter":"event_type == 'tool_call' || event_type == 'skill_call'","subagent_spawn_filter":"event_type == 'subagent_call'"},"fields":{"call_id":"id","parent_id":"parent_id","timestamp":"timestamp","duration_ms":"duration_ms","call_type":"type","tool_name":"name","mcp_server":"mcp_server","arguments":"params","status":"status","output":"result","error_message":"error"},"turns":{},"results":{}},"anomaly_rules":{"auth_failure_regex":["(?i)\\bunauthorized\\b|bad credentials|invalid[ _-]?(?:api[ _-]?key|token|credentials)|token\\s+(?:has\\s+)?(?:expired|invalid|revoked)|(?:re-?)?auth(?:entication|orization)\\s+(?:failed|required|error)|requires\\s+re-?auth|not\\s+authenticated|\\b(?:http|status(?:\\s+code)?|code|error)\\b[\"']?\\s*[:=]?\\s*[\"'(]?40[13]\\b|\\b40[13]\\s+\\(?(?:unauthorized|forbidden|authorization|authentication|client\\s+error|error|post|get|put|patch|delete|for)\\b|\\(40[13]\\)"]}}]</script>
   <script>
     let currentNodes = [];
     let currentTurns = [];
@@ -570,6 +589,8 @@
     // Elements
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('fileInput');
+    const dirInput = document.getElementById('dirInput');
+    const dropError = document.getElementById('dropError');
     const dropzoneSection = document.getElementById('dropzoneSection');
     const graphSection = document.getElementById('graphSection');
     const loadSampleBtn = document.getElementById('loadSampleBtn');
@@ -593,10 +614,21 @@
       dropzone.classList.remove('dragover');
       collectDroppedFiles(e.dataTransfer).then(files => { if (files.length > 0) parseFiles(files); });
     });
-    fileInput.addEventListener('change', (e) => {
+    const pickedFiles = (e) => {
       const files = Array.from(e.target.files).map(f => ({ path: normalizePath(f.webkitRelativePath || f.name), file: f }));
       if (files.length > 0) parseFiles(files);
-      fileInput.value = '';
+      e.target.value = '';
+    };
+    fileInput.addEventListener('change', pickedFiles);
+    dirInput.addEventListener('change', pickedFiles);
+    document.getElementById('pickFolderBtn').addEventListener('click', (e) => { e.stopPropagation(); dirInput.click(); });
+    // Keyboard: Escape closes the drawer; Enter or Space activates clickable rows
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && drawer.classList.contains('open')) { drawer.classList.remove('open'); return; }
+      if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.getAttribute && e.target.getAttribute('role') === 'button' && e.target.tagName !== 'BUTTON') {
+        e.preventDefault();
+        e.target.click();
+      }
     });
 
     loadSampleBtn.addEventListener('click', () => loadSampleTrace());
@@ -672,6 +704,19 @@
     let currentSubagentTraces = [];
     let currentSourceLabel = '';
 
+    // 850ms, 2.3s, 1m05s (textutil.FormatDuration)
+    function formatDuration(ms) {
+      if (ms < 1000) return `${ms}ms`;
+      if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+      return `${Math.floor(ms / 60000)}m${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}s`;
+    }
+
+    // Keeps the end of a path-like name, which is the part that tells names apart
+    function tail(value, max) {
+      const str = String(value == null ? '' : value);
+      return str.length > max ? '…' + str.slice(-max) : str;
+    }
+
     function escapeHtml(value) {
       return String(value == null ? '' : value)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -726,6 +771,25 @@
 
     // Mirrors resolveValue in internal/providers/parser.go: "a || b" alternatives, looked up
     // on the call first (also without a "tool_call." prefix), then on the enclosing event.
+    // The first "a || b" alternative that is an object, or parses as one (providers.resolveMap)
+    function resolveMap(callObj, rootObj, expr) {
+      if (!expr) return {};
+      for (const alt of String(expr).split('||')) {
+        let v = resolveExpr(callObj, rootObj, alt.trim());
+        if (typeof v === 'string' && v.trim().startsWith('{')) {
+          try { v = JSON.parse(v); } catch (e) { continue; }
+        }
+        if (v && typeof v === 'object' && !Array.isArray(v)) return v;
+      }
+      return {};
+    }
+
+    // An error message as text, whatever shape the trace gives it (Go: fmt %v)
+    function errorText(v) {
+      if (v == null || v === '') return null;
+      return typeof v === 'string' ? v : textContent(v) || JSON.stringify(v);
+    }
+
     function resolveExpr(callObj, rootObj, expr) {
       if (!expr) return undefined;
       for (let key of expr.split('||')) {
@@ -765,7 +829,53 @@
         const start = raw.indexOf(open), end = raw.indexOf(close);
         if (start >= 0 && end > start + open.length) return raw.substring(start + open.length, end).trim();
       }
-      return raw.trim().split('\n')[0].trim();
+      // The first line the user wrote, skipping <tag>…</tag> blocks injected around a prompt
+      // (collector.cleanPrompt)
+      const stripped = firstLine(stripTagBlocks(raw));
+      if (stripped) return stripped;
+      // Only tag blocks: label the turn with the first block's name and first line of text
+      const m = /<([a-zA-Z][a-zA-Z0-9_-]*)[^<>]*>/.exec(raw);
+      if (m) {
+        let inner = raw.slice(m.index + m[0].length);
+        const end = inner.indexOf(`</${m[1]}>`);
+        if (end >= 0) inner = inner.slice(0, end);
+        const line = firstLine(inner);
+        return line ? `[${m[1]}] ${line}` : `[${m[1]}]`;
+      }
+      return firstLine(raw);
+    }
+
+    function firstLine(text) {
+      return (String(text).split('\n').map(l => l.trim()).find(l => l !== '')) || '';
+    }
+
+    // A tag without a closing tag is ordinary text and stays
+    function stripTagBlocks(text) {
+      const open = /<([a-zA-Z][a-zA-Z0-9_-]*)[^<>]*>/g;
+      let m;
+      while ((m = open.exec(text)) !== null) {
+        const close = `</${m[1]}>`;
+        const end = text.indexOf(close, m.index + m[0].length);
+        if (end < 0) continue;
+        text = text.slice(0, m.index) + text.slice(end + close.length);
+        open.lastIndex = m.index;
+      }
+      return text;
+    }
+
+    // A timestamp field as an ISO string: RFC 3339, "YYYY-MM-DD HH:MM:SS", or a Unix epoch in
+    // seconds, milliseconds or microseconds (providers.ParseTimestampValue). null when unknown.
+    function parseTimestamp(v) {
+      if (v == null || v === '') return null;
+      if (typeof v === 'string' && !/^\s*-?[\d.]+\s*$/.test(v)) {
+        let t = Date.parse(v.trim());
+        if (Number.isNaN(t) && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(v.trim())) t = Date.parse(v.trim().replace(' ', 'T') + 'Z');
+        return Number.isNaN(t) ? null : new Date(t).toISOString();
+      }
+      const f = Number(v);
+      if (!Number.isFinite(f) || f <= 0) return null;
+      const ms = f >= 1e14 ? f / 1000 : f >= 1e11 ? f : f * 1000;
+      return new Date(ms).toISOString();
     }
 
     // Mirrors CompiledScopeRule.match / ScopeTracker.Apply in internal/providers/scope.go
@@ -847,8 +957,12 @@
           const raw = resolveField(item, turnCfg.prompt_field);
           const text = textContent(raw);
           if (text !== '' || !Array.isArray(raw)) {
+            // Calls recorded before any prompt keep their own turn (Assembler.PreTurnPrompt)
+            if (currentTurnIndex === 0 && nodes.length > 0) {
+              turns.push({ index: 0, prompt: '(calls before the first prompt)', timestamp: nodes[0].timestamp, nodes: nodes.slice() });
+            }
             currentTurnIndex++;
-            currentTurnTime = resolveField(item, turnCfg.timestamp_field) || currentTurnTime;
+            currentTurnTime = parseTimestamp(resolveField(item, turnCfg.timestamp_field)) || currentTurnTime;
             tracker.active = tracker.defaultScope;
             turns.push({ index: currentTurnIndex, prompt: cleanPromptText(text, turnCfg.prompt_tag), timestamp: currentTurnTime, nodes: [] });
           }
@@ -886,16 +1000,16 @@
               case 'timeout': status = 'timeout'; break;
             }
 
-            let args = resolveExpr(call, item, fields.arguments);
-            if (typeof args === 'string' && args.trim().startsWith('{')) {
-              try { args = JSON.parse(args); } catch (e) { args = {}; }
-            }
-            if (!args || typeof args !== 'object' || Array.isArray(args)) args = {};
+            const args = resolveMap(call, item, fields.arguments);
 
             let rawCallId = resolveExpr(call, item, fields.call_id);
             let callId = rawCallId ? String(rawCallId) : `line-${lineIdx}-${idx}`;
             if (rawCallId && idx > 0 && !call.id && !(call.tool_call && call.tool_call.id)) {
               callId = `${callId}-${idx}`;
+            }
+            // A reused call ID would overwrite the earlier call (Assembler.uniqueID)
+            if (callNodeMap[callId]) {
+              for (let n = 2; ; n++) { if (!callNodeMap[`${callId}#${n}`]) { callId = `${callId}#${n}`; break; } }
             }
 
             const node = {
@@ -907,11 +1021,12 @@
               turn_index: currentTurnIndex,
               caller_scope: '',
               scope_name: '',
-              timestamp: resolveExpr(call, item, fields.timestamp) || currentTurnTime,
+              timestamp: parseTimestamp(resolveExpr(call, item, fields.timestamp)) || currentTurnTime,
+              duration_ms: fields.duration_ms ? Math.max(0, Number(resolveExpr(call, item, fields.duration_ms)) || 0) : 0,
               status: status,
               arguments: args,
               output: fields.output ? (resolveExpr(call, item, fields.output) ?? null) : null,
-              errorMessage: resolveExpr(call, item, fields.error_message) || null,
+              errorMessage: errorText(resolveExpr(call, item, fields.error_message)),
               auxiliary: isAuxiliary(toolName),
               anomalies: []
             };
@@ -962,7 +1077,7 @@
             const node = callNodeMap[String(resolveField(r, resCfg.call_id_field))];
             if (node) answered.push(node.id);
             if (node && applyResult(node, r, true) && resCfg.timestamp_field && !node.duration_ms) {
-              const end = Date.parse(resolveField(item, resCfg.timestamp_field));
+              const end = Date.parse(parseTimestamp(resolveField(item, resCfg.timestamp_field)));
               const start = Date.parse(node.timestamp);
               if (end > start) node.duration_ms = end - start;
             }
@@ -1146,9 +1261,15 @@
 
     // Detects the provider of the main trace among the loaded files and assembles the session,
     // including subagent traces when the provider declares child_traces.
+    function showDropError(message) {
+      dropError.textContent = message;
+      dropError.style.display = 'block';
+      graphSection.style.display = 'none';
+      dropzoneSection.style.display = 'block';
+    }
+
     // label names where the files came from, such as a local session
     function processTraceFiles(files, label = '') {
-      currentSourceLabel = label;
       files = files.map(f => ({ path: normalizePath(f.path), text: f.text }));
 
       // Files that are another file's child trace (or sidecar) are not session candidates
@@ -1162,18 +1283,36 @@
         }));
       });
       const candidates = files.filter(f => !childPaths.has(f.path));
+      if (candidates.length === 0 && files.length === 0) {
+        showDropError('No trace files found. Drop a .jsonl, .json or .txt trace log.');
+        return;
+      }
       // With several sessions dropped, the largest one is shown
       const main = (candidates.length > 0 ? candidates : files)
         .reduce((a, b) => (b.text.length > a.text.length ? b : a), files[0]);
       const events = main ? parseEvents(main.text) : [];
 
-      // Pick the provider whose rules recognise the most calls and turns (collector.DetectProvider)
+      // Pick the provider whose rules recognise the most calls and turns (collector.DetectProvider);
+      // a file no provider recognises is reported, not shown as an empty graph
       let best = null;
       PROVIDER_RULES.forEach(provider => {
         const result = assembleTrace(events, provider);
         const score = result.nodes.length + result.turns.length;
-        if (!best || score > best.score) best = { provider, result, score };
+        if (score > 0 && (!best || score > best.score)) best = { provider, result, score };
       });
+      if (!best) {
+        showDropError(`No tool calls or prompts recognised in ${main.path.slice(main.path.lastIndexOf('/') + 1)}. Supported formats: ${PROVIDER_RULES.map(p => p.name).join(', ')}.`);
+        return;
+      }
+      dropError.style.display = 'none';
+      const ignored = candidates.length - 1;
+      currentSourceLabel = `${label || main.path.slice(main.path.lastIndexOf('/') + 1)}${ignored > 0 ? ` (${ignored} other session file(s) ignored)` : ''}`;
+
+      // A new session starts with a clean view
+      searchInput.value = '';
+      filterSelect.value = 'all';
+      selectedNodeId = null;
+      drawer.classList.remove('open');
 
       currentProvider = best ? best.provider : null;
       const nodes = best ? best.result.nodes : [];
@@ -1237,6 +1376,26 @@
 
     // Mirrors internal/detector: auth expiry, confirmed silent fallbacks and retry loops.
     let confirmedFallbacks = {};
+    // The line around a match, cut to about max characters with the match kept visible
+    // (detector.matchContext)
+    function matchContext(text, index, length, max) {
+      const start = text.lastIndexOf('\n', index - 1) + 1;
+      let end = text.indexOf('\n', index + length);
+      if (end < 0) end = text.length;
+      let line = text.slice(start, end);
+      const cut = index - start - Math.floor(max / 3);
+      if (cut > 0 && line.length > max) line = '…' + line.slice(cut);
+      if (line.length > max) line = line.slice(0, max) + '…';
+      return line.split(/\s+/).filter(Boolean).join(' ');
+    }
+
+    // Whether next began once the failure of failed was known (GraphBuilder.startedAfter)
+    function startedAfter(failed, next) {
+      const start = Date.parse(failed.timestamp), at = Date.parse(next.timestamp);
+      if (failed.duration_ms > 0) return at >= start + failed.duration_ms;
+      return at > start;
+    }
+
     function analyzeAnomalies(nodes, turns, provider) {
       currentAnomalies = [];
       confirmedFallbacks = {};
@@ -1250,16 +1409,18 @@
         // A successful call's output is arbitrary content that often mentions 401; only failed calls are scanned
         const parts = [node.errorMessage || ''];
         if (node.output != null && isFailed(node)) parts.push(textContent(node.output));
-        const outStr = parts.join(' ').trim();
-        if (outStr && authRegexes.some(re => re.test(outStr))) {
+        // Joined with line breaks so a match is quoted from one part only (matchContext)
+        const outStr = parts.join('\n').trim();
+        const authMatch = authRegexes.map(re => re.exec(outStr)).find(Boolean);
+        if (outStr && authMatch) {
           record(node, {
             id: `auth-${node.id}`,
             type: 'auth_expired',
             severity: 'critical',
             nodeId: node.id,
-            title: `Authentication Expired: ${node.name}`,
-            description: `Tool encountered authentication failure. Output matched expired credential patterns.`,
-            recommendation: `Check and renew OAuth tokens or credentials for ${node.mcp_server || node.name}.`
+            title: `Authentication Expired or Failed: ${node.name}`,
+            description: `Tool ${node.mcp_server ? `${node.name} (MCP server: ${node.mcp_server})` : node.name} reported an authentication failure: "${matchContext(outStr, authMatch.index, authMatch[0].length, 120)}". Execution may be degraded or blocked.`,
+            recommendation: 'Verify credentials, renew OAuth tokens, or check environment variables for this tool/MCP server.'
           });
         }
       });
@@ -1275,21 +1436,32 @@
       Object.values(sequences).forEach(seq => {
         seq.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
 
-        // Silent fallback: a failed call followed by a different tool
-        for (let i = 0; i + 1 < seq.length; i++) {
-          const node = seq[i], next = seq[i + 1];
-          if (!isFailed(node) || node.name === next.name) continue;
+        // Silent fallback: a failed call followed by a different tool, once the failure was
+        // known (GraphBuilder.startedAfter: calls issued together share a timestamp and cannot
+        // react to each other's results)
+        let lastFailed = null;
+        seq.forEach(next => {
+          if (lastFailed && startedAfter(lastFailed, next)) {
+            const node = lastFailed;
+            lastFailed = null;
+            if (node.name !== next.name) checkFallback(node, next);
+          }
+          if (isFailed(next)) lastFailed = next;
+        });
+
+        function checkFallback(node, next) {
           const rule = knownFallbacks.find(r => matchToolPattern(r.original_tool, node.name) && matchToolPattern(r.fallback_tool, next.name));
           const generic = (node.type === 'mcp_tool' || node.type === 'skill') && next.type === 'system_tool';
-          if (!rule && !generic) continue;
+          if (!rule && !generic) return;
           const { confidence, evidence } = fallbackEvidence(node, next);
-          const depKey = `${node.caller_scope || 'Agent'}::${node.name}`;
+          // Keyed like the dependency rows: the scope a call opens, or else its tool
+          const depKey = `${node.caller_scope || 'Agent'}::${node.scope_name || node.name}`;
           const prev = confirmedFallbacks[depKey];
           if (!prev || (prev.confidence !== 'high' && confidence === 'high')) confirmedFallbacks[depKey] = { to: next.name, confidence };
           const low = confidence === 'low';
-          const description = (rule && rule.description) || (low
-            ? `Tool ${node.name} failed and ${next.name} ran next in the same sequence; it may be a substitute.`
-            : `Primary tool ${node.name} failed. Agent silently fell back to substitute tool ${next.name} without warning.`);
+          let description = (rule && rule.description) || (low
+            ? `Tool "${node.name}" failed and "${next.name}" ran next in the same sequence; it may be a substitute.`
+            : `Intended tool "${node.name}" failed; the agent silently attempted fallback via substitute tool "${next.name}" without user notification.`);
           record(next, {
             id: `fallback-${node.id}-${next.id}`,
             type: 'silent_fallback',
@@ -1298,9 +1470,9 @@
             relatedNodeId: node.id,
             confidence,
             evidence,
-            title: low ? `Possible Silent Fallback (low confidence): ${node.name} → ${next.name}` : `Silent Fallback: ${node.name} → ${next.name}`,
+            title: low ? `Possible Silent Fallback (low confidence): ${node.name} → ${next.name}` : `Silent Fallback Detected: ${node.name} → ${next.name}`,
             description: `${description} Evidence: ${evidence}.`,
-            recommendation: `Fix ${node.name} to avoid degraded or incomplete results from fallback tool.`
+            recommendation: `Resolve the failure on primary tool "${node.name}". Falling back to "${next.name}" often produces degraded or incomplete results.`
           });
         }
 
@@ -1320,12 +1492,14 @@
                 type: 'retry_loop',
                 severity: 'warning',
                 nodeId: node.id,
-                description: `Tool ${node.name} failed repeatedly without backoff. Agent appears stuck in an error loop.`,
-                recommendation: `Inspect tool parameters or environment state causing repeated execution failure.`
+                recommendation: 'Inspect input arguments or environment state causing repeated failures.'
               };
               record(node, loop);
             }
-            if (loop) loop.title = `Retry Loop: ${node.name} failed ${consecutiveFails} times consecutively`;
+            if (loop) {
+              loop.title = `Retry Loop / Thrashing: ${node.name} failed ${consecutiveFails} times`;
+              loop.description = `Tool "${node.name}" failed ${consecutiveFails} times consecutively. The agent appears stuck in a retry loop without progress.`;
+            }
           } else {
             consecutiveFails = 1;
             lastFailedName = node.name;
@@ -1361,6 +1535,9 @@
             call_count: 0,
             success_count: 0,
             fail_count: 0,
+            denied_count: 0,
+            anomaly_count: 0,
+            search_text: '',
             is_fallback: false,
             fallback_to: "",
             example_node: node,
@@ -1372,7 +1549,10 @@
         if (node.parent_link === 'inferred' && !node.parent_id) dep.inferred = true;
         dep.call_count++;
         if (node.status === 'success') dep.success_count++;
-        else if (node.status === 'failed') dep.fail_count++;
+        else if (node.status === 'failed' || node.status === 'timeout') dep.fail_count++;
+        else if (node.status === 'denied') dep.denied_count++;
+        dep.anomaly_count += node.anomalies.length;
+        if (dep.search_text.length < 4000) dep.search_text += ' ' + argStrings(node.arguments).join(' ').toLowerCase();
 
         // Only fallbacks confirmed by analyzeAnomalies are flagged
         const fallback = confirmedFallbacks[key];
@@ -1391,7 +1571,7 @@
 
       // Sort dependencies under each caller
       Object.keys(callerDeps).forEach(c => {
-        callerDeps[c].sort((a, b) => b.call_count - a.call_count);
+        callerDeps[c].sort((a, b) => (b.call_count - a.call_count) || (a.callee < b.callee ? -1 : a.callee > b.callee ? 1 : 0));
       });
 
       // Recursively attach children
@@ -1412,13 +1592,10 @@
 
       // Root callers
       const allCallees = new Set(Object.values(depMap).map(d => d.callee));
-      const rootCallers = [];
-      Object.keys(callerDeps).forEach(c => {
-        if (c.startsWith('Agent')) rootCallers.push(c);
-      });
-      Object.keys(callerDeps).forEach(c => {
-        if (!c.startsWith('Agent') && !allCallees.has(c)) rootCallers.push(c);
-      });
+      // Agent callers first, then the rest, each group alphabetical (GraphBuilder)
+      const callerNames = Object.keys(callerDeps).sort();
+      const rootCallers = callerNames.filter(c => c.startsWith('Agent'))
+        .concat(callerNames.filter(c => !c.startsWith('Agent') && !allCallees.has(c)));
 
       const roots = [];
       rootCallers.forEach(r => {
@@ -1474,27 +1651,50 @@
       document.getElementById('statMcpCalls').textContent = currentNodes.filter(n => n.type === 'mcp_tool').length;
       document.getElementById('statSkillCalls').textContent = currentNodes.filter(n => n.type === 'skill').length;
       document.getElementById('statSystemCalls').textContent = currentNodes.filter(n => n.type === 'system_tool').length;
-      document.getElementById('statFailedCalls').textContent = currentNodes.filter(n => n.status === 'failed').length;
+      document.getElementById('statFailedCalls').textContent = currentNodes.filter(n => n.status === 'failed' || n.status === 'timeout').length;
+      document.getElementById('statDeniedCalls').textContent = currentNodes.filter(n => n.status === 'denied').length;
       document.getElementById('statAnomalies').textContent = currentAnomalies.length;
 
-      // Render alert banner
+      renderAlerts(false);
+
+      refreshViews();
+    }
+
+    const ALERTS_SHOWN = 5;
+
+    // Alert cards: one per distinct finding (type and title, like the CLI), the first few by
+    // default with a button for the rest
+    function renderAlerts(showAll) {
       const alertsContainer = document.getElementById('alertsContainer');
       alertsContainer.innerHTML = '';
-      currentAnomalies.forEach((a) => {
+      const groups = [];
+      const index = {};
+      currentAnomalies.forEach(a => {
+        const key = `${a.type}\u0000${a.title}`;
+        if (index[key] === undefined) { index[key] = groups.length; groups.push({ first: a, count: 0 }); }
+        groups[index[key]].count++;
+      });
+      groups.slice(0, showAll ? groups.length : ALERTS_SHOWN).forEach(({ first: a, count }) => {
         const alertEl = document.createElement('div');
         alertEl.className = `alert-card ${a.severity === 'critical' ? 'alert-critical' : 'alert-warning'}`;
         alertEl.innerHTML = `
           <div style="font-size:1.5rem">${a.severity === 'critical' ? '🚨' : '⚠️'}</div>
           <div>
-            <div class="alert-title">${escapeHtml(a.title)}</div>
+            <div class="alert-title">${escapeHtml(a.title)}${count > 1 ? ` <span style="color:var(--text-muted); font-weight:normal">×${count}</span>` : ''}</div>
             <div class="alert-desc">${escapeHtml(a.description)}</div>
             <div class="alert-rec">💡 ${escapeHtml(a.recommendation)}</div>
           </div>
         `;
         alertsContainer.appendChild(alertEl);
       });
-
-      refreshViews();
+      if (!showAll && groups.length > ALERTS_SHOWN) {
+        const more = document.createElement('button');
+        more.className = 'btn alerts-more';
+        more.id = 'alertsMoreBtn';
+        more.textContent = `Show all ${groups.length} alerts`;
+        more.addEventListener('click', () => renderAlerts(true));
+        alertsContainer.appendChild(more);
+      }
     }
 
     function refreshViews() {
@@ -1517,9 +1717,10 @@
       else if (d.callee_type === 'skill') calleeTypeBadge = 'badge-skill';
       else if (d.callee_type === 'subagent') calleeTypeBadge = 'badge-subagent';
 
-      const statusText = d.fail_count > 0 
-        ? `${d.call_count} calls (<span style="color:var(--success)">✓ ${d.success_count}</span> | <span style="color:var(--danger)">✗ ${d.fail_count}</span>)`
-        : `${d.call_count} calls (<span style="color:var(--success)">✓ ${d.success_count}</span>)`;
+      const counts = [`<span style="color:var(--success)">✓ ${d.success_count}</span>`];
+      if (d.fail_count > 0) counts.push(`<span style="color:var(--danger)">✗ ${d.fail_count}</span>`);
+      if (d.denied_count > 0) counts.push(`<span style="color:var(--warning)">⊘ ${d.denied_count}</span>`);
+      const statusText = `${d.call_count} calls (${counts.join(' | ')})`;
 
       const hasChildren = d.children && d.children.length > 0;
       const indentGuide = depth > 0 ? `<span style="color:var(--border); margin-right:6px; font-family:monospace;">${'│  '.repeat(depth - 1)}└──</span>` : '';
@@ -1543,17 +1744,17 @@
       }
 
       return `
-        <tr class="callee-row" onclick='openDrawerByDep("${depId}")'>
-          <td class="callee-cell" style="width: 160px; padding-left: ${1.25 + depth * 1.25}rem;">
+        <tr class="callee-row" tabindex="0" role="button" onclick='openDrawerByDep("${depId}")'>
+          <td class="callee-cell callee-type" style="width: 160px; padding-left: ${1.25 + depth * 1.25}rem;">
             ${indentGuide}<span class="badge ${calleeTypeBadge}">${d.callee_type.replace('_', ' ')}</span>
           </td>
-          <td class="callee-cell" style="font-weight:600; color:#fff;">
+          <td class="callee-cell callee-name" style="font-weight:600; color:#fff;">
             ${escapeHtml(d.callee)}
             ${d.inferred ? `<span class="badge badge-warning" title="No record names the spawning call; placed by time">inferred</span>` : ''}
             ${d.mcp_server ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem;">(server: ${escapeHtml(d.mcp_server)})</span>` : ''}
             ${hasChildren ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem; margin-left:0.5rem;">[${d.children.length} nested call(s)]</span>` : ''}
           </td>
-          <td class="callee-cell" style="text-align:right;">
+          <td class="callee-cell callee-counts">
             ${statusText}
           </td>
         </tr>
@@ -1562,25 +1763,46 @@
       `;
     }
 
+    function depMatches(dep, query, filter) {
+      if (query && !dep.callee.toLowerCase().includes(query) && !dep.caller.toLowerCase().includes(query) &&
+          !(dep.mcp_server || '').toLowerCase().includes(query) && !(dep.search_text || '').includes(query)) return false;
+      if (filter === 'mcp' && dep.callee_type !== 'mcp_tool') return false;
+      if (filter === 'skill' && dep.callee_type !== 'skill') return false;
+      if (filter === 'failed' && dep.fail_count === 0) return false;
+      if (filter === 'anomalies' && !(dep.anomaly_count > 0 || dep.is_fallback)) return false;
+      return true;
+    }
+
+    // The dependency with the children that match (or have matching descendants), or null
+    function pruneDep(dep, query, filter) {
+      const children = (dep.children || []).map(c => pruneDep(c, query, filter)).filter(Boolean);
+      if (!depMatches(dep, query, filter) && children.length === 0) return null;
+      return { ...dep, children };
+    }
+
+    function nodeMatches(node, query, filter) {
+      if (query && !node.name.toLowerCase().includes(query) && !(node.mcp_server || '').toLowerCase().includes(query) &&
+          !(node.caller_scope || '').toLowerCase().includes(query) && !argStrings(node.arguments).join(' ').toLowerCase().includes(query)) return false;
+      if (filter === 'mcp' && node.type !== 'mcp_tool') return false;
+      if (filter === 'skill' && node.type !== 'skill') return false;
+      if (filter === 'failed' && node.status !== 'failed' && node.status !== 'timeout') return false;
+      if (filter === 'anomalies' && node.anomalies.length === 0) return false;
+      return true;
+    }
+
     function renderDependenciesView() {
       depsViewContainer.innerHTML = '';
       depRegistry = {};
       const query = searchInput.value.toLowerCase();
       const filter = filterSelect.value;
 
-      // Group dependencies by caller
+      // Group dependencies by caller; a row stays when it or any nested row matches
       const groups = {};
       currentDependencies.forEach((dep) => {
-        if (query && !dep.callee.toLowerCase().includes(query) && !dep.caller.toLowerCase().includes(query)) {
-          return;
-        }
-        if (filter === 'mcp' && dep.callee_type !== 'mcp_tool') return;
-        if (filter === 'skill' && dep.callee_type !== 'skill') return;
-        if (filter === 'failed' && dep.fail_count === 0) return;
-        if (filter === 'anomalies' && !dep.is_fallback && dep.fail_count === 0) return;
-
-        if (!groups[dep.caller]) groups[dep.caller] = [];
-        groups[dep.caller].push(dep);
+        const kept = pruneDep(dep, query, filter);
+        if (!kept) return;
+        if (!groups[kept.caller]) groups[kept.caller] = [];
+        groups[kept.caller].push(kept);
       });
 
       const callers = Object.keys(groups);
@@ -1614,11 +1836,11 @@
             </div>
             <div class="caller-stats">${deps.length} target tool(s) · ${totalCalls} total invocation(s)</div>
           </div>
-          <table class="callee-table">
+          <div class="callee-table-wrap"><table class="callee-table">
             <tbody>
               ${deps.map(d => renderDepRowHTML(d, 0)).join('')}
             </tbody>
-          </table>
+          </table></div>
         `;
         depsViewContainer.appendChild(card);
       });
@@ -1626,31 +1848,39 @@
 
     function renderTraceView() {
       traceViewContainer.innerHTML = '';
+      const query = searchInput.value.toLowerCase();
+      const filter = filterSelect.value;
+      const visible = nodes => nodes.filter(n => nodeMatches(n, query, filter));
       if (currentTurns.length === 0) {
         // Fallback flat list
         const card = document.createElement('div');
         card.className = 'turn-card';
-        card.innerHTML = `<div class="turn-body">${currentNodes.map(n => renderNodeRowHTML(n)).join('')}</div>`;
+        card.innerHTML = `<div class="turn-body">${visible(currentNodes).map(n => renderNodeRowHTML(n)).join('')}</div>`;
         traceViewContainer.appendChild(card);
         return;
       }
 
+      let shown = 0;
       currentTurns.forEach((turn) => {
+        const nodes = visible(turn.nodes);
+        if (nodes.length === 0 && (query || filter !== 'all')) return;
+        shown++;
         const card = document.createElement('div');
         card.className = 'turn-card';
 
         // Group nodes by caller_scope within turn
         const scopes = {};
-        turn.nodes.forEach(n => {
+        nodes.forEach(n => {
           const s = n.caller_scope || "Agent";
           if (!scopes[s]) scopes[s] = [];
           scopes[s].push(n);
         });
 
+        const when = turn.timestamp ? new Date(turn.timestamp).toLocaleString() : '';
         card.innerHTML = `
-          <div class="turn-header">
+          <div class="turn-header" title="Click to collapse or expand">
             <div class="turn-prompt">💬 Turn ${turn.index}: ${escapeHtml(turn.prompt || '(User prompt)')}</div>
-            <div class="turn-meta">${turn.nodes.length} tool call(s) · ${new Date(turn.timestamp).toLocaleTimeString()}</div>
+            <div class="turn-meta">${nodes.length}${nodes.length !== turn.nodes.length ? ` of ${turn.nodes.length}` : ''} tool call(s) · ${escapeHtml(when)}</div>
           </div>
           <div class="turn-body">
             ${Object.keys(scopes).map(scopeName => {
@@ -1668,8 +1898,12 @@
             }).join('')}
           </div>
         `;
+        card.querySelector('.turn-header').addEventListener('click', () => card.classList.toggle('collapsed'));
         traceViewContainer.appendChild(card);
       });
+      if (shown === 0) {
+        traceViewContainer.innerHTML = `<div style="text-align:center; color:var(--text-muted); padding:2rem;">No matching tool calls found.</div>`;
+      }
     }
 
     function renderNodeRowHTML(node) {
@@ -1684,16 +1918,26 @@
       });
 
       return `
-        <div class="node-row ${node.id === selectedNodeId ? 'selected' : ''}" onclick='openDrawerById(${escapeHtml(JSON.stringify(node.id))})'>
-          <span style="color:${node.status === 'failed' ? 'var(--danger)' : node.status === 'denied' ? 'var(--warning)' : 'var(--success)'}" title="${node.status}">${node.status === 'failed' ? '✗' : node.status === 'denied' ? '⊘' : '✓'}</span>
+        <div class="node-row ${node.id === selectedNodeId ? 'selected' : ''}" data-node-id="${escapeHtml(node.id)}" tabindex="0" role="button" onclick='openDrawerById(${escapeHtml(JSON.stringify(node.id))})'>
+          <span style="color:${statusColor(node.status)}" title="${node.status}">${statusMark(node.status)}</span>
           <span class="badge ${typeBadgeClass}">${node.type.replace('_', ' ')}</span>
           <span class="node-title">${escapeHtml(node.parent_link === 'inferred' && !node.parent_id ? node.scope_name : node.name)}</span>
           ${node.parent_link === 'inferred' ? `<span class="badge badge-warning" title="No record names the spawning call; placed by time">inferred</span>` : ''}
           ${node.mcp_server ? `<span style="color:var(--text-muted); font-size:0.75rem;">(${escapeHtml(node.mcp_server)})</span>` : ''}
           ${anomBadges}
-          <span class="node-meta">${new Date(node.timestamp).toLocaleTimeString()}</span>
+          <span class="node-meta">${node.duration_ms > 0 ? formatDuration(node.duration_ms) + ' · ' : ''}${new Date(node.timestamp).toLocaleTimeString()}</span>
         </div>
       `;
+    }
+
+    function statusMark(status) {
+      return { failed: '✗', timeout: '⏱', denied: '⊘' }[status] || '✓';
+    }
+    function statusColor(status) {
+      return status === 'failed' ? 'var(--danger)' : (status === 'timeout' || status === 'denied') ? 'var(--warning)' : 'var(--success)';
+    }
+    function statusBadge(status) {
+      return status === 'failed' ? 'badge-danger' : (status === 'timeout' || status === 'denied') ? 'badge-warning' : 'badge-success';
     }
 
     function openDrawerById(nodeId) {
@@ -1746,14 +1990,14 @@
 
     function openDrawer(node) {
       selectedNodeId = node.id;
-      document.querySelectorAll('.node-row').forEach(r => r.classList.remove('selected'));
+      document.querySelectorAll('.node-row').forEach(r => r.classList.toggle('selected', r.dataset.nodeId === node.id));
       drawer.classList.add('open');
       drawer.scrollTop = 0;
 
       document.getElementById('drawerTitle').textContent = node.name;
       document.getElementById('drawerBadges').innerHTML = `
         <span class="badge ${node.type === 'mcp_tool' ? 'badge-mcp' : 'badge-system'}">${node.type}</span>
-        <span class="badge ${node.status === 'failed' ? 'badge-danger' : node.status === 'denied' ? 'badge-warning' : 'badge-success'}">${node.status}</span>
+        <span class="badge ${statusBadge(node.status)}">${node.status}</span>
         ${node.scope_name ? `<span class="badge badge-skill">${escapeHtml(node.scope_name)}</span>` : ''}
         ${node.caller_scope && node.caller_scope !== node.scope_name ? `<span class="badge badge-skill">${escapeHtml(node.caller_scope)}</span>` : ''}
       `;
@@ -1762,10 +2006,14 @@
         result: 'result (the spawning call\'s result names the subagent)',
         inferred: 'INFERRED (no record names the spawning call; placed in the turn active when the subagent started)'
       }[node.parent_link];
-      document.getElementById('drawerMeta').textContent = `ID: ${node.id} | Turn: ${node.turn_index || 1} | Time: ${node.timestamp}`
+      const when = node.timestamp ? `${new Date(node.timestamp).toLocaleString()} (${node.timestamp})` : 'unknown';
+      document.getElementById('drawerMeta').textContent = `ID: ${node.id} | Turn: ${node.turn_index} | Time: ${when}${node.duration_ms > 0 ? ` | Duration: ${formatDuration(node.duration_ms)}` : ''}`
         + (node.parent_id ? ` | Parent: ${node.parent_id}` : '') + (linkText ? ` | Parent link: ${linkText}` : '');
       document.getElementById('drawerArgs').textContent = JSON.stringify(node.arguments, null, 2);
-      document.getElementById('drawerOutput').textContent = node.output ? String(node.output) : '(no output captured)';
+      const outputText = node.output == null ? '(no output captured)'
+        : typeof node.output === 'string' ? node.output : JSON.stringify(node.output, null, 2);
+      document.getElementById('drawerOutput').textContent = node.errorMessage && node.errorMessage !== outputText
+        ? `Error: ${node.errorMessage}\n\n${outputText}` : outputText;
 
       const anomSection = document.getElementById('drawerAnomaliesSection');
       const anomList = document.getElementById('drawerAnomaliesList');
@@ -1791,6 +2039,8 @@
     const reportPeriod = document.getElementById('reportPeriod');
     const reportRange = document.getElementById('reportRange');
     const reportStatus = document.getElementById('reportStatus');
+    let reportWindowLabel = '';
+    let reportRequest = 0; // the latest request; earlier responses are dropped
 
     async function fetchJSON(url) {
       const res = await fetch(url);
@@ -1816,11 +2066,16 @@
     }
 
     async function loadLocalReport() {
+      const request = ++reportRequest;
       reportStatus.textContent = 'Analyzing local sessions…';
+      reportForm.querySelector('button[type=submit]').disabled = true;
       try {
-        renderLocalReport(await fetchJSON('api/report?' + reportQuery()));
+        const report = await fetchJSON('api/report?' + reportQuery());
+        if (request === reportRequest) renderLocalReport(report);
       } catch (e) {
-        reportStatus.textContent = `Could not load the report: ${e.message}`;
+        if (request === reportRequest) reportStatus.textContent = `Could not load the report: ${e.message}`;
+      } finally {
+        if (request === reportRequest) reportForm.querySelector('button[type=submit]').disabled = false;
       }
     }
 
@@ -1861,13 +2116,14 @@
       const w = report.window || {};
       const since = isSetTime(w.since) ? formatTime(w.since) : 'the beginning';
       const until = isSetTime(w.until) ? formatTime(w.until) : 'now';
-      reportStatus.textContent = `${since} → ${until} · click a session to open its call graph`;
+      reportWindowLabel = `${since} → ${until} · click a session to open its call graph`;
+      reportStatus.textContent = reportWindowLabel;
 
       const t = report.total || {};
       const stat = (label, value, color) =>
         `<div class="stat-card"><div class="stat-label">${label}</div><div class="stat-value"${color ? ` style="color:var(${color})"` : ''}>${Number(value) || 0}</div></div>`;
       document.getElementById('reportStats').innerHTML =
-        stat('Sessions', report.sessions) + stat('Calls', t.calls) + stat('Failed', t.failed, '--danger') +
+        stat('Sessions', report.sessions) + stat('Calls', t.calls) + stat('Failed', t.failed, '--danger') + stat('Denied', t.denied, '--warning') +
         stat('Auth Expired', t.auth_expired, '--danger') + stat('Silent Fallbacks', t.silent_fallbacks, '--warning') +
         stat('Possible Fallbacks', t.possible_fallbacks) + stat('Retry Loops', t.retry_loops, '--warning');
 
@@ -1887,25 +2143,30 @@
         <div class="report-table-wrap"><table class="report-table">
           <thead><tr><th>Session</th><th>Project</th><th>Last call</th>${COUNT_HEADERS}</tr></thead>
           <tbody>${sessions.map(r => `
-            <tr class="session-row" data-session="${escapeHtml(r.key)}" data-project="${escapeHtml(r.project || '')}" title="${escapeHtml(r.key)}">
+            <tr class="session-row" tabindex="0" role="button" data-session="${escapeHtml(r.key)}" data-project="${escapeHtml(r.project || '')}" title="${escapeHtml(r.key)}">
               <td class="mono">${escapeHtml(String(r.key).slice(0, 8))}</td>
-              <td>${escapeHtml(r.project || '')}</td>
+              <td title="${escapeHtml(r.project || '')}">${escapeHtml(tail(r.project, 36))}</td>
               <td>${isSetTime(r.last_call) ? escapeHtml(formatTime(r.last_call)) : ''}</td>
               ${countCells(r)}
             </tr>`).join('')}</tbody>
         </table></div>`;
     }
 
+    let openingSession = '';
     async function openLocalSession(id, project) {
-      reportStatus.textContent = 'Loading session…';
+      if (openingSession) return; // one at a time: a second click while loading is ignored
+      openingSession = id;
+      reportStatus.textContent = `Loading session ${id.slice(0, 8)}…`;
       let files;
       try {
         files = await fetchJSON(`api/sessions/${encodeURIComponent(id)}/files`);
       } catch (e) {
         reportStatus.textContent = `Could not load session ${id}: ${e.message}`;
+        openingSession = '';
         return;
       }
-      reportStatus.textContent = '';
+      openingSession = '';
+      reportStatus.textContent = reportWindowLabel;
       processTraceFiles(files, `Session ${id}${project ? ` · ${project}` : ''}`);
     }
 

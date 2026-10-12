@@ -436,7 +436,7 @@ async function runTestSuite() {
   }, seqLines);
   if (JSON.stringify(seqResult.statuses) !== JSON.stringify(['denied', 'denied', 'failed'])) throw new Error(`Unexpected statuses ${seqResult.statuses}`);
   if (JSON.stringify(seqResult.auxiliary) !== JSON.stringify([true, true, false])) throw new Error(`Unexpected auxiliary flags ${seqResult.auxiliary}`);
-  if (JSON.stringify(seqResult.anomalies) !== JSON.stringify(['fallback:m1->b1', 'loop:Retry Loop: Read failed 3 times consecutively'])) {
+  if (JSON.stringify(seqResult.anomalies) !== JSON.stringify(['fallback:m1->b1', 'loop:Retry Loop / Thrashing: Read failed 3 times'])) {
     throw new Error(`Unexpected anomalies ${seqResult.anomalies}`);
   }
   console.log('  ✓ Refusals are denied, bookkeeping calls are skipped, fallbacks and loops match the Go detector');
@@ -466,6 +466,46 @@ async function runTestSuite() {
   if (JSON.stringify(conf.fb) !== JSON.stringify(['a->b:high', 'c->d:high', 'e->f:low'])) throw new Error(`Unexpected fallback confidence ${conf.fb}`);
   if (!conf.lowRow) throw new Error('Expected the low-confidence fallback to be labelled in the dependency view');
   console.log('  ✓ catalog CLI and shared identifiers give high confidence, an unrelated next call stays low');
+
+  // -------------------------------------------------------------
+  // Test 7g: Parallel sibling calls, pre-turn calls, object error messages (parity with Go)
+  // -------------------------------------------------------------
+  console.log('\nTest 7g: Sibling calls, pre-turn calls and object errors...');
+  await page.click('#resetBtn');
+  const parity = await page.evaluate(() => {
+    const call = (id, name, input, ts) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input }] }, timestamp: ts });
+    const fail = (id, ts, content = 'Error: 502 Bad Gateway') => ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content, is_error: true }] }, toolUseResult: 'Error', timestamp: ts });
+    const ok = (id, ts) => ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] }, toolUseResult: { stdout: 'ok' }, timestamp: ts });
+    processTraceText([
+      // A call before the first prompt: it keeps its own turn and never reacts to turn 1
+      call('pre', 'mcp__github__get_issue', { owner: 'acme', repo: 'widgets' }, '2026-10-07T09:59:00Z'), fail('pre', '2026-10-07T09:59:01Z'),
+      { type: 'user', message: { content: 'go' }, timestamp: '2026-10-07T10:00:00Z' },
+      // Two tool uses in one model response share a timestamp: the sibling is not a fallback
+      { type: 'assistant', timestamp: '2026-10-07T10:00:01Z', message: { content: [
+        { type: 'tool_use', id: 'a', name: 'mcp__github__get_issue', input: { owner: 'acme', repo: 'widgets', issue_number: 42 } },
+        { type: 'tool_use', id: 'sib', name: 'Bash', input: { command: 'gh issue view 42 -R acme/widgets' } }
+      ] } },
+      fail('a', '2026-10-07T10:00:03Z'), ok('sib', '2026-10-07T10:00:03Z'),
+      // Issued after the failure was known: this one is the fallback
+      call('b', 'Bash', { command: 'gh issue view 42 -R acme/widgets' }, '2026-10-07T10:00:04Z'), ok('b', '2026-10-07T10:00:05Z')
+    ].map(l => JSON.stringify(l)).join('\n'));
+    return {
+      fallbacks: currentAnomalies.filter(a => a.type === 'silent_fallback').map(a => `${a.relatedNodeId}->${a.nodeId}`),
+      turns: currentTurns.map(t => `${t.index}:${t.nodes.map(n => n.id).join(',')}`),
+      titles: currentAnomalies.map(a => a.title)
+    };
+  });
+  if (JSON.stringify(parity.fallbacks) !== JSON.stringify(['a->b'])) throw new Error(`Unexpected fallbacks ${parity.fallbacks}`);
+  if (JSON.stringify(parity.turns) !== JSON.stringify(['0:pre', '1:a,sib,b'])) throw new Error(`Unexpected turns ${parity.turns}`);
+  if (!parity.titles.includes('Silent Fallback Detected: mcp__github__get_issue → Bash')) throw new Error(`Unexpected titles ${parity.titles}`);
+  const objErr = await page.evaluate(() => {
+    processTraceText([
+      { event_type: 'tool_call', id: 'c1', name: 'mcp_github_x', mcp_server: 'github', params: { q: 'a' }, status: 'error', error: { code: 401 }, timestamp: '2026-10-07T10:00:00Z' }
+    ].map(l => JSON.stringify(l)).join('\n'));
+    return currentAnomalies.map(a => a.type);
+  });
+  if (JSON.stringify(objErr) !== JSON.stringify(['auth_expired'])) throw new Error(`Expected an auth anomaly from an object error, got ${objErr}`);
+  console.log('  ✓ Siblings are not fallbacks, pre-turn calls get turn 0, object errors are scanned');
 
   // -------------------------------------------------------------
   // Test 7b: Trace content is rendered as text, not HTML
@@ -561,6 +601,76 @@ async function runTestSuite() {
   if (back !== 'flex') throw new Error('Expected the dashboard after going back');
   await local.close();
   console.log('  ✓ Report renders escaped, filters reach the API, a session opens with its subagent');
+
+  // -------------------------------------------------------------
+  // Test 9: Viewer behaviour (filters, selection, state reset, alerts, unknown format, phone width)
+  // -------------------------------------------------------------
+  console.log('\nTest 9: Viewer behaviour...');
+  await page.click('#resetBtn');
+  const unknown = await page.evaluate(() => {
+    processTraceFiles([{ path: '/notes.txt', text: '{"foo":1}\n[1,2,3]\nnot json' }]);
+    return { error: document.getElementById('dropError').textContent, graph: document.getElementById('graphSection').style.display };
+  });
+  if (!unknown.error.includes('No tool calls or prompts recognised') || unknown.graph !== 'none') throw new Error(`Unknown format not reported: ${JSON.stringify(unknown)}`);
+
+  await page.click('#loadClaudeSampleBtn');
+  await page.waitForSelector('.callee-row');
+  const behaviour = await page.evaluate(() => {
+    const out = {};
+    out.denied = document.getElementById('statDeniedCalls').textContent;
+    // Filters apply to the trace view and 'anomalies' means nodes with anomalies
+    filterSelect.value = 'anomalies'; refreshViews();
+    out.anomalyRows = [...document.querySelectorAll('#traceViewContainer .node-row .node-title')].map(e => e.textContent.trim());
+    out.anomalyDeps = [...document.querySelectorAll('.callee-row .callee-name')].map(e => e.textContent.trim().split(/\s+/)[0]);
+    filterSelect.value = 'all'; searchInput.value = 'deploy-prod'; refreshViews();
+    out.searchRows = document.querySelectorAll('#traceViewContainer .node-row').length;
+    // Clicking a row highlights it
+    document.querySelector('#traceViewContainer .node-row').click();
+    out.selected = document.querySelectorAll('.node-row.selected').length;
+    out.drawerOpen = drawer.classList.contains('open');
+    return out;
+  });
+  if (behaviour.denied !== '0') throw new Error(`Expected a Denied stat, got ${behaviour.denied}`);
+  if (!behaviour.anomalyRows.includes('mcp__github__create_issue') || !behaviour.anomalyRows.includes('Bash') || behaviour.anomalyRows.includes('Read')) throw new Error(`Unexpected anomaly rows ${behaviour.anomalyRows}`);
+  if (!behaviour.anomalyDeps.includes('mcp__github__create_issue')) throw new Error(`Unexpected anomaly deps ${behaviour.anomalyDeps}`);
+  if (behaviour.searchRows < 1) throw new Error('Search must apply to the trace view');
+  if (behaviour.selected !== 1 || !behaviour.drawerOpen) throw new Error(`Expected one highlighted row and an open drawer, got ${JSON.stringify(behaviour)}`);
+  await page.keyboard.press('Escape');
+  if (await page.$eval('#drawer', el => el.classList.contains('open'))) throw new Error('Escape must close the drawer');
+
+  // A new session starts with a clean view, and repeated findings are grouped and capped
+  const reset = await page.evaluate(() => {
+    const lines = [{ type: 'user', message: { content: 'go' }, timestamp: '2026-10-07T10:00:00Z' }];
+    for (let i = 0; i < 8; i++) {
+      for (let k = 0; k < 3; k++) {
+        const id = `c${i}-${k}`;
+        lines.push({ type: 'assistant', timestamp: `2026-10-07T10:0${i}:${String(k * 10).padStart(2, '0')}Z`, message: { content: [{ type: 'tool_use', id, name: `tool_${i}`, input: {} }] } });
+        lines.push({ type: 'user', timestamp: `2026-10-07T10:0${i}:${String(k * 10 + 5).padStart(2, '0')}Z`, message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'boom', is_error: true }] } });
+      }
+    }
+    processTraceText(lines.map(l => JSON.stringify(l)).join('\n'));
+    return {
+      search: searchInput.value, filter: filterSelect.value, drawer: drawer.classList.contains('open'),
+      cards: document.querySelectorAll('.alert-card').length, more: !!document.getElementById('alertsMoreBtn'),
+      anomalies: currentAnomalies.length
+    };
+  });
+  if (reset.search !== '' || reset.filter !== 'all' || reset.drawer) throw new Error(`State not reset: ${JSON.stringify(reset)}`);
+  if (reset.anomalies !== 8 || reset.cards !== 5 || !reset.more) throw new Error(`Expected 5 of 8 alert cards and a show-all button, got ${JSON.stringify(reset)}`);
+  await page.click('#alertsMoreBtn');
+  if (await page.$$eval('.alert-card', els => els.length) !== 8) throw new Error('Show all must render every alert');
+
+  // Phone width: no horizontal page scroll, drawer fits
+  await page.setViewport({ width: 390, height: 844 });
+  await page.click('#loadClaudeSampleBtn');
+  await page.waitForSelector('.callee-row');
+  await page.evaluate(() => document.querySelector('#traceViewContainer .node-row').click());
+  const phone = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, drawerLeft: document.getElementById('drawer').getBoundingClientRect().left }));
+  if (phone.scrollWidth > 390) throw new Error(`Horizontal page scroll at 390px: ${phone.scrollWidth}px`);
+  if (phone.drawerLeft < 0) throw new Error(`Drawer overflows the viewport at 390px: left ${phone.drawerLeft}`);
+  await page.keyboard.press('Escape');
+  await page.setViewport({ width: 1280, height: 800 });
+  console.log('  ✓ Unknown files are reported, filters reach the trace view, rows highlight, state resets, alerts group, phone width fits');
 
   // -------------------------------------------------------------
   // Test 7: Console & Runtime Errors

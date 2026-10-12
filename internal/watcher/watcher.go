@@ -7,28 +7,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/tsbkw/agentlens/internal/ansi"
 	"github.com/tsbkw/agentlens/internal/collector"
 	"github.com/tsbkw/agentlens/internal/detector"
 	"github.com/tsbkw/agentlens/internal/graph"
 	"github.com/tsbkw/agentlens/internal/models"
 	"github.com/tsbkw/agentlens/internal/providers"
 	"github.com/tsbkw/agentlens/internal/textutil"
-)
-
-// ANSI colors
-const (
-	colorReset   = "\033[0m"
-	colorBold    = "\033[1m"
-	colorDim     = "\033[2m"
-	colorRed     = "\033[31m"
-	colorGreen   = "\033[32m"
-	colorYellow  = "\033[33m"
-	colorBlue    = "\033[34m"
-	colorMagenta = "\033[35m"
-	colorCyan    = "\033[36m"
 )
 
 // Watcher provides live stream monitoring of an active agent trace file. When the provider
@@ -42,6 +31,8 @@ type Watcher struct {
 	// InferAfter is how long a subagent trace that names no spawning call waits for a tool
 	// result linking it, before it is attributed to the current turn as inferred.
 	InferAfter time.Duration
+	// ChildScanInterval is how often new subagent trace files are looked for while idle.
+	ChildScanInterval time.Duration
 }
 
 // NewWatcher initializes a Watcher instance.
@@ -52,6 +43,9 @@ func NewWatcher(provider *providers.LoadedProvider, filePath string) *Watcher {
 		PollInterval: 500 * time.Millisecond,
 		FromStart:    false,
 		InferAfter:   5 * time.Second,
+		// Scanning for new subagent files reads every sidecar; while nothing is written to
+		// the session it happens on this slower timer
+		ChildScanInterval: 2 * time.Second,
 	}
 }
 
@@ -134,6 +128,26 @@ type session struct {
 	tracked   map[string]bool      // child trace paths already followed
 	existing  map[string]bool      // child trace paths present before watching started (tail mode)
 	firstSeen map[string]time.Time // when an unlinked child trace was first seen
+	lastScan  time.Time            // last look for new child trace files
+	childDir  string               // directory of child traces, when the glob names it
+	childMod  time.Time            // its modification time at the last scan
+}
+
+// childrenMayHaveChanged reports whether the child trace directory was modified since the
+// last scan: a new trace or sidecar file changes it, while writes to known files do not.
+func (s *session) childrenMayHaveChanged() bool {
+	if s.childDir == "" {
+		return true
+	}
+	fi, err := os.Stat(s.childDir)
+	if err != nil {
+		return false
+	}
+	if fi.ModTime().Equal(s.childMod) {
+		return false
+	}
+	s.childMod = fi.ModTime()
+	return true
 }
 
 // Watch continuously tails the trace file and streams tool calls, results, and alerts.
@@ -152,6 +166,7 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 		firstSeen: make(map[string]time.Time),
 	}
 	defer sess.close()
+	sess.childDir, _ = collector.ChildTraceDir(w.Provider, w.FilePath)
 
 	if !w.FromStart {
 		// Subagents that were already running are tailed too, but their earlier calls are skipped
@@ -161,8 +176,8 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 		}
 	}
 
-	fmt.Fprintf(out, "%s👀 Live watching trace: %s%s\n", colorBold, w.FilePath, colorReset)
-	fmt.Fprintf(out, "%sStreaming tool calls and anomaly alerts. Press Ctrl+C to exit.%s\n\n", colorDim, colorReset)
+	fmt.Fprintf(out, "%s👀 Live watching trace: %s%s\n", ansi.Bold, w.FilePath, ansi.Reset)
+	fmt.Fprintf(out, "%sStreaming tool calls and anomaly alerts. Press Ctrl+C to exit.%s\n\n", ansi.Dim, ansi.Reset)
 
 	for {
 		select {
@@ -189,13 +204,57 @@ func (w *Watcher) Watch(ctx context.Context, out io.Writer) error {
 			}
 		}
 
-		if sess.discoverChildren() {
-			continue
+		// New child files change their directory's mtime; a full scan also runs on a slow timer
+		if progressed || sess.pendingUnlinked() || sess.childrenMayHaveChanged() || time.Since(sess.lastScan) >= w.ChildScanInterval {
+			sess.lastScan = time.Now()
+			if sess.discoverChildren() {
+				continue
+			}
 		}
 		if !progressed {
-			time.Sleep(w.PollInterval)
+			if sess.reopenTruncated() {
+				continue
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(w.PollInterval):
+			}
 		}
 	}
+}
+
+// reopenTruncated re-reads from the start any followed file that became shorter than what
+// was already read (truncated or replaced), and reports whether one was reopened.
+func (s *session) reopenTruncated() bool {
+	reopened := false
+	for _, src := range s.sources {
+		fi, err := os.Stat(src.path)
+		if err != nil {
+			continue
+		}
+		pos, err := src.file.Seek(0, io.SeekCurrent)
+		if err != nil {
+			continue
+		}
+		if fi.Size() >= pos-int64(src.reader.Buffered()) {
+			continue
+		}
+		file, err := os.Open(src.path)
+		if err != nil {
+			continue
+		}
+		src.file.Close()
+		src.file, src.reader, src.partial = file, bufio.NewReader(file), ""
+		src.replayed = make(map[string]bool)
+		if src.parent == nil {
+			src.asm = collector.NewAssembler(s.w.Provider, src.path)
+		} else {
+			src.asm = collector.NewChildAssembler(s.w.Provider, src.path, *src.parent)
+		}
+		fmt.Fprintf(s.out, "\n%s↻ %s was truncated or replaced; reading it from the start%s\n", ansi.Yellow, filepath.Base(src.path), ansi.Reset)
+		reopened = true
+	}
+	return reopened
 }
 
 func (s *session) close() {
@@ -257,7 +316,7 @@ func (s *session) discoverChildren() bool {
 				parent = collector.InferredParent(child, "", s.sources[0].asm.CurrentTurn(), time.Now())
 				link = models.ParentLinkInferred
 				fmt.Fprintf(s.out, "  ↳ %s[%s] spawning call not recorded; attributed to the current turn (inferred)%s\n",
-					colorYellow, parent.ScopeName, colorReset)
+					ansi.Yellow, parent.ScopeName, ansi.Reset)
 			default:
 				continue // the spawning call, or the result naming it, has not been read yet
 			}
@@ -285,7 +344,7 @@ func (s *session) relink(src *tailSource, parent models.CallNode, link models.Pa
 	src.parent = &parent
 	src.link = link
 	fmt.Fprintf(s.out, "  ↳ %s[%s] linked to its spawning call %s (%s); earlier calls moved from %s%s\n",
-		colorCyan, collector.ChildScope(parent), parent.Name, link, placeholder, colorReset)
+		ansi.Cyan, collector.ChildScope(parent), parent.Name, link, placeholder, ansi.Reset)
 }
 
 // knownElsewhere reports whether a call ID already belongs to another followed source.
@@ -298,6 +357,17 @@ func (s *session) knownElsewhere(src *tailSource, id string) bool {
 			if n.ID == id && !other.replayed[id] {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// pendingUnlinked reports whether a child trace is waiting for the record of its spawning
+// call (waitedForLink); such a child is re-examined on every poll.
+func (s *session) pendingUnlinked() bool {
+	for path := range s.firstSeen {
+		if !s.tracked[path] {
+			return true
 		}
 	}
 	return false
@@ -337,13 +407,13 @@ func (s *session) handleLine(src *tailSource, line string) {
 		indent = "  ↳ "
 	}
 	if src.link == models.ParentLinkInferred {
-		linkNote = fmt.Sprintf(" %s(inferred parent)%s", colorDim, colorReset)
+		linkNote = fmt.Sprintf(" %s(inferred parent)%s", ansi.Dim, ansi.Reset)
 	}
 
 	// A subagent's own prompt is the spawning call's input, not a user turn
 	if res.TurnStarted && src.parent == nil {
 		timeStr := time.Now().Format("15:04:05")
-		fmt.Fprintf(out, "\n%s[%s] 💬 %sUSER PROMPT:%s %s\n", colorCyan, timeStr, colorBold, colorReset, res.Prompt)
+		fmt.Fprintf(out, "\n%s[%s] 💬 %sUSER PROMPT:%s %s\n", ansi.Cyan, timeStr, ansi.Bold, ansi.Reset, res.Prompt)
 	}
 
 	for _, idx := range res.NewCalls {
@@ -358,9 +428,9 @@ func (s *session) handleLine(src *tailSource, line string) {
 		}
 		timeStr := node.Timestamp.Format("15:04:05")
 		typeBadge := formatTypeBadge(node.Type, node.MCPServer)
-		scopeStr := fmt.Sprintf("%s[%s]%s", colorDim, scope, colorReset)
+		scopeStr := fmt.Sprintf("%s[%s]%s", ansi.Dim, scope, ansi.Reset)
 		fmt.Fprintf(out, "%s[%s] %s %s ➔ %s%s%s%s\n",
-			indent, timeStr, scopeStr, typeBadge, colorBold, node.Name, colorReset, linkNote,
+			indent, timeStr, scopeStr, typeBadge, ansi.Bold, node.Name, ansi.Reset, linkNote,
 		)
 	}
 
@@ -384,21 +454,21 @@ func (s *session) handleLine(src *tailSource, line string) {
 		if node.Status == models.StatusFailed {
 			timeStr := time.Now().Format("15:04:05")
 			fmt.Fprintf(out, "%s  %s[%s] ✗ FAILED: %s (Error: %v)%s\n",
-				indent, colorRed, timeStr, node.Name, failureText(node), colorReset,
+				indent, ansi.Red, timeStr, node.Name, failureText(node), ansi.Reset,
 			)
 		}
 
 		for _, a := range anomalies.Anomalies {
 			if a.NodeID == node.ID || a.RelatedNodeID == node.ID {
-				sevColor := colorYellow
+				sevColor := ansi.Yellow
 				if a.Severity == models.SeverityCritical {
-					sevColor = colorRed
+					sevColor = ansi.Red
 				}
 				fmt.Fprintf(out, "%s  %s🚨 %s: %s%s\n",
-					indent, sevColor, a.Title, a.Description, colorReset,
+					indent, sevColor, a.Title, a.Description, ansi.Reset,
 				)
 				if a.Recommendation != "" {
-					fmt.Fprintf(out, "%s    %s💡 %s%s\n", indent, colorCyan, a.Recommendation, colorReset)
+					fmt.Fprintf(out, "%s    %s💡 %s%s\n", indent, ansi.Cyan, a.Recommendation, ansi.Reset)
 				}
 			}
 		}
@@ -422,12 +492,12 @@ func formatTypeBadge(t models.CallNodeType, mcpServer string) string {
 		if mcpServer != "" {
 			srv = ":" + mcpServer
 		}
-		return fmt.Sprintf("%s[MCP%s]%s", colorCyan, srv, colorReset)
+		return fmt.Sprintf("%s[MCP%s]%s", ansi.Cyan, srv, ansi.Reset)
 	case models.NodeTypeSkill:
-		return fmt.Sprintf("%s[Skill]%s", colorGreen, colorReset)
+		return fmt.Sprintf("%s[Skill]%s", ansi.Green, ansi.Reset)
 	case models.NodeTypeSubagent:
-		return fmt.Sprintf("%s[Subagent]%s", colorMagenta, colorReset)
+		return fmt.Sprintf("%s[Subagent]%s", ansi.Magenta, ansi.Reset)
 	default:
-		return fmt.Sprintf("%s[System]%s", colorDim, colorReset)
+		return fmt.Sprintf("%s[System]%s", ansi.Dim, ansi.Reset)
 	}
 }

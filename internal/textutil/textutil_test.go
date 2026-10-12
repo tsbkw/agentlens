@@ -29,3 +29,29 @@ func TestTruncate(t *testing.T) {
 		}
 	}
 }
+
+func TestTruncateHead(t *testing.T) {
+	if got := TruncateHead("-Users-dev-projects-widgets", 8, "…"); got != "…-widgets" {
+		t.Errorf("TruncateHead = %q", got)
+	}
+	if got := TruncateHead("short", 8, "…"); got != "short" {
+		t.Errorf("TruncateHead must keep short strings, got %q", got)
+	}
+	if got := TruncateHead("日本語のパス", 3, "…"); got != "…のパス" {
+		t.Errorf("TruncateHead must cut on runes, got %q", got)
+	}
+}
+
+func TestFormatDurationAndSize(t *testing.T) {
+	for ms, want := range map[int64]string{850: "850ms", 2300: "2.3s", 65000: "1m05s"} {
+		if got := FormatDuration(ms); got != want {
+			t.Errorf("FormatDuration(%d) = %q, want %q", ms, got, want)
+		}
+	}
+	if got := FormatSize(512 * 1024); got != "512.0 KB" {
+		t.Errorf("FormatSize = %q", got)
+	}
+	if got := FormatSize(3 * 1024 * 1024); got != "3.0 MB" {
+		t.Errorf("FormatSize = %q", got)
+	}
+}

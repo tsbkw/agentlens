@@ -351,3 +351,40 @@ func TestDeniedAndAuxiliaryCallsInAttemptSequences(t *testing.T) {
 		t.Errorf("Expected 5 failed and 2 denied calls, got %+v", m)
 	}
 }
+
+func TestMatchContextQuotesTheErrorLine(t *testing.T) {
+	text := "stdout line\nError: HTTP 401: Bad credentials (https://api.example.com/graphql)\nmore"
+	loc := []int{strings.Index(text, "401"), strings.Index(text, "401") + 3}
+	if got := matchContext(text, loc, 120); got != "Error: HTTP 401: Bad credentials (https://api.example.com/graphql)" {
+		t.Errorf("matchContext = %q", got)
+	}
+
+	long := strings.Repeat("x", 300) + " 401 Unauthorized " + strings.Repeat("y", 300)
+	i := strings.Index(long, "401")
+	got := matchContext(long, []int{i, i + 3}, 60)
+	if !strings.Contains(got, "401 Unauthorized") || !strings.HasPrefix(got, "…") || !strings.HasSuffix(got, "…") || len([]rune(got)) > 63 {
+		t.Errorf("matchContext must keep the match in a short window, got %q", got)
+	}
+}
+
+func TestRetryLoopInsideASkillScope(t *testing.T) {
+	now := time.Now()
+	turns := []models.ExecutionTurn{{Index: 1, Prompt: "go", Timestamp: now}}
+	nodes := []models.CallNode{
+		{ID: "skill", TurnIndex: 1, Type: models.NodeTypeSkill, Name: "Skill", ScopeName: "Skill: deploy", Timestamp: now, Status: models.StatusSuccess},
+	}
+	for i := 1; i <= 3; i++ {
+		nodes = append(nodes, models.CallNode{ID: fmt.Sprintf("b%d", i), TurnIndex: 1, Type: models.NodeTypeSystemTool, Name: "Bash", CallerScope: "Skill: deploy", Timestamp: now.Add(time.Duration(i) * time.Second), Status: models.StatusFailed})
+	}
+	g := graph.NewGraphBuilder().BuildWithTurns("s", "p", turns, nodes)
+	result := NewDetector(nil).Analyze(g)
+	var loops int
+	for _, a := range result.Anomalies {
+		if a.Type == models.AnomalyRetryLoop {
+			loops++
+		}
+	}
+	if loops != 1 {
+		t.Errorf("Expected the streak inside the Skill scope to be reported once, got %d in %+v", loops, result.Anomalies)
+	}
+}

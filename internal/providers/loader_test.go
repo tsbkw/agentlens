@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/tsbkw/agentlens/internal/models"
 )
 
 func TestLoadAntigravityProvider(t *testing.T) {
@@ -87,5 +89,38 @@ source:
 	_, err := LoadProviderFromBytes(invalidYAML)
 	if err == nil {
 		t.Fatalf("Expected validation error for missing fields, got nil")
+	}
+}
+
+func TestValidateDefinitionRejectsBadGlobsFiltersAndCorrelation(t *testing.T) {
+	base := func() *models.ProviderDefinition {
+		return &models.ProviderDefinition{
+			SchemaVersion: "1.0",
+			Provider:      models.ProviderInfo{ID: "x", Name: "X"},
+			Source:        models.SourceConfig{Type: "file", PathPatterns: []string{"~/logs/*.jsonl"}},
+			Extraction: models.ExtractionConfig{
+				Events: models.EventFilters{ToolCallFilter: "type == 'tool_call'"},
+				Fields: models.FieldMappings{CallID: "id", ToolName: "name"},
+			},
+		}
+	}
+	if err := validateDefinition(base()); err != nil {
+		t.Fatalf("A valid definition must pass: %v", err)
+	}
+	bad := map[string]func(d *models.ProviderDefinition){
+		"glob": func(d *models.ProviderDefinition) { d.Source.PathPatterns = []string{"logs/[*.jsonl"} },
+		"child glob": func(d *models.ProviderDefinition) {
+			d.Source.ChildTraces = &models.ChildTraceConfig{PathGlob: "{dir}/[x"}
+		},
+		"single =":    func(d *models.ProviderDefinition) { d.Extraction.Events.ToolCallFilter = "type = 'tool_call'" },
+		"correlation": func(d *models.ProviderDefinition) { d.Extraction.Results.Correlation = "by_magic" },
+		"no step idx": func(d *models.ProviderDefinition) { d.Extraction.Results.Correlation = models.CorrelationPreviousStep },
+	}
+	for name, mutate := range bad {
+		d := base()
+		mutate(d)
+		if err := validateDefinition(d); err == nil {
+			t.Errorf("%s: expected a validation error", name)
+		}
 	}
 }

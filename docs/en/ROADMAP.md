@@ -21,6 +21,8 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 | **Phase 8** | Internationalization (i18n: en & ja) CLI/UI Localization | Planned | PR #9 |
 | **Phase 9** | Claude Code Support (real `~/.claude/projects` transcripts end-to-end) | Completed | PR #12–#19 |
 | **Phase 10** | Claude Code Follow-ups (deterministic output, live and in-browser subagent stitching) | Completed | PR #20–#33 |
+| **Phase 11** | Review Follow-ups (docs match the code, CLI output, detection fixes, robustness, UI polish) | In progress | PR #35– |
+| **Phase 12** | Deeper Analysis (proxy routing, latency spikes, canvas and timeline views) | Planned | — |
 
 ---
 
@@ -64,7 +66,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 
 ### Phase 5: Web UI Dashboard (PR #6)
 - [x] Implement local HTTP server in Go (`agentlens ui`) with embedded web assets
-- [x] Implement interactive DAG graph visualization and statistics in `web/index.html`
+- [x] Implement the call graph tables and statistics in `web/index.html`
 - [x] Implement anomaly alert banner and inspector drawer in Web UI
 - [x] Enable 100% private client-side drag-and-drop trace viewing on GitHub Pages
 
@@ -109,3 +111,21 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] `agentlens report`: aggregate calls and anomalies of all sessions over a period (PR #30)
 - [x] `agentlens ui` listens on loopback only and rejects foreign `Host` headers (PR #31)
 - [x] Local sessions dashboard in `agentlens ui`: period and project filters, report counts, click through to a session's call graph (PR #32, #33)
+
+### Phase 11: Review Follow-ups (PR #35–)
+- [x] Plain CLI output when piped (`NO_COLOR`, TTY detection), grouped alerts that quote the error, durations in `trace` / `inspect` and the web viewer (PR #35)
+- [x] Go PR template and `.gitignore`, `LICENSE` file, `go 1.23` directive, relative doc links (PR #36)
+- [x] Docs describe what is implemented; `GraphMetrics` fills depth and tool time; unused anomaly types removed (PR #37)
+- [x] No fallback between calls issued together; retry loops inside Skill scopes; calls before the first prompt get turn 0; `trace` renders each call once; web viewer parity (PR #38)
+- [x] Auth failure pattern requires context around 401/403 (PR #39)
+- [x] Collector survives over-long and malformed lines and a BOM; epoch and date-time timestamps; duplicate call IDs kept apart; turn labels skip injected tag blocks; symlink-safe discovery; ambiguous session prefixes rejected; YAML validation of globs, filters and correlation (PR #40)
+- [x] `ui --port`, bind before announcing, `watch` reopens truncated files and scans idle sessions cheaply, `inspect <call-id> [session-id]` (PR #41)
+- [x] Web viewer: phone layout, filters in the trace view, grouped alerts, denied stat, clean state per session, unknown files reported (PR #42)
+- [x] A user's next prompt is no longer taken as the previous step's tool result (PR #43)
+- [x] `agentlens ui` stops and replaces an agentlens ui already running on its port; other programs are left alone (PR #45)
+
+### Phase 12: Deeper Analysis (Planned)
+- [ ] Indirect proxy routing detection (tool A reached through tool B)
+- [ ] Latency spike detection against per-tool baselines
+- [ ] Node-edge canvas and timeline (waterfall) views in the web UI
+- [ ] Apply a custom `--provider` YAML in the browser's analysis
