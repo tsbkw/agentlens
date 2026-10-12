@@ -164,9 +164,11 @@ AgentLens welcomes contributions from both human developers and AI pair programm
    # 1. Clone and create a branch
    git checkout -b feat/my-feature
 
-   # 2. Make changes and verify
-   go test ./...
-   go vet ./...
+   # 2. Make changes and verify (gofmt, vet, build, go test -race)
+   make check
+
+   # Optional, once per clone: run these checks automatically on commit and push
+   make hooks
 
    # 3. Commit and push
    git commit -m "feat: add support for new feature"

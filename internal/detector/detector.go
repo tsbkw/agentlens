@@ -8,19 +8,19 @@ import (
 
 // Detector orchestrates anomaly detection rules across a Call Graph.
 type Detector struct {
-	Provider        *providers.LoadedProvider
-	AuthChecker     *AuthChecker
+	Provider         *providers.LoadedProvider
+	AuthChecker      *AuthChecker
 	FallbackDetector *FallbackDetector
-	LoopDetector    *LoopDetector
+	LoopDetector     *LoopDetector
 }
 
 // NewDetector creates a new Detector configured with the active provider.
 func NewDetector(provider *providers.LoadedProvider) *Detector {
 	return &Detector{
-		Provider:        provider,
-		AuthChecker:     NewAuthChecker(provider),
+		Provider:         provider,
+		AuthChecker:      NewAuthChecker(provider),
 		FallbackDetector: NewFallbackDetector(provider),
-		LoopDetector:    NewLoopDetector(),
+		LoopDetector:     NewLoopDetector(),
 	}
 }
 

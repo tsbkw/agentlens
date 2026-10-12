@@ -23,24 +23,27 @@ AgentLens へのご貢献ありがとうございます！ 人間とAIエージ�
 - `test/<test-scope>`: テストコードの追加・強化
 
 ### 1.3 PR の作成・マージ手順
-1. `main` ブランチから機能ブランチを作成:
+1. クローンごとに一度、git フックを有効化します。コミット前に gofmt・`go vet`・ビルドを、プッシュ前に Go のテスト一式を実行するため、テストが落ちた状態のコミットが GitHub に届きません:
+   ```bash
+   make hooks
+   ```
+2. `main` ブランチから機能ブランチを作成:
    ```bash
    git checkout -b feat/core-models
    ```
-2. 機能実装、テスト追加、静的解析を実行:
+3. 機能実装、テスト追加、検証を実行。`make check` はフックと CI が Go に対して行う検査（gofmt、vet、ビルド、`go test -race`）をまとめて実行します。ブラウザテストには Chrome が必要です:
    ```bash
-   go test ./...
-   go vet ./...
-   cd tests/e2e && npm test && cd ../..
+   make check
+   CHROME_BIN=/path/to/chrome make e2e
    ```
-3. [`docs/en/ROADMAP.md`](../../docs/en/ROADMAP.md) および [`docs/ja/ROADMAP.md`](../../docs/ja/ROADMAP.md) のタスク進捗チェックボックスを更新。
-4. 明確でわかりやすいコミットメッセージを作成。
-5. リモートへプッシュし、GitHub CLI または Web UI で PR を作成:
+4. [`docs/en/ROADMAP.md`](../../docs/en/ROADMAP.md) および [`docs/ja/ROADMAP.md`](../../docs/ja/ROADMAP.md) のタスク進捗チェックボックスを更新。
+5. 明確でわかりやすいコミットメッセージを作成。
+6. リモートへプッシュし、GitHub CLI または Web UI で PR を作成:
    ```bash
    gh pr create --fill
    ```
-6. [`.github/pull_request_template.md`](../../.github/pull_request_template.md) のフォーマットに従って変更内容を記述。
-7. メンテナーのレビューを経て、承認後に `main` へマージ。
+7. [`.github/pull_request_template.md`](../../.github/pull_request_template.md) のフォーマットに従って変更内容を記述。
+8. メンテナーのレビューを経て、承認後に `main` へマージ。
 
 ---
 

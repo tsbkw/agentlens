@@ -1,0 +1,53 @@
+#!/bin/sh
+# Fast checks on what is about to be committed. Enable with `make hooks`.
+# Skip once with `git commit --no-verify`.
+#
+#   - staged Go files must be gofmt-formatted (checked on the staged content)
+#   - when Go files are staged: go vet and a build of every package
+#   - web/index.html and internal/server/static/index.html must stay identical
+
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+staged="$(git diff --cached --name-only --diff-filter=ACMR)"
+[ -n "$staged" ] || exit 0
+
+staged_go="$(printf '%s\n' "$staged" | grep '\.go$' || true)"
+
+if [ -n "$staged_go" ]; then
+	unformatted=""
+	for f in $staged_go; do
+		if [ -n "$(git show ":$f" | gofmt -l 2>/dev/null)" ]; then
+			unformatted="$unformatted  $f
+"
+		fi
+	done
+	if [ -n "$unformatted" ]; then
+		echo "pre-commit: these staged Go files are not gofmt-formatted:"
+		printf '%s' "$unformatted"
+		echo "Run 'gofmt -w <file>' (or 'make fmt') and stage the result."
+		exit 1
+	fi
+
+	echo "pre-commit: go vet ./..."
+	go vet ./...
+	echo "pre-commit: go build ./..."
+	go build ./...
+fi
+
+ui_a="web/index.html"
+ui_b="internal/server/static/index.html"
+if printf '%s\n' "$staged" | grep -qx -e "$ui_a" -e "$ui_b"; then
+	tmp="$(mktemp)"
+	git show ":$ui_b" > "$tmp" 2>/dev/null || true
+	if ! git show ":$ui_a" 2>/dev/null | cmp -s - "$tmp"; then
+		rm -f "$tmp"
+		echo "pre-commit: $ui_a and $ui_b differ."
+		echo "The embedded UI must match the Pages UI: edit $ui_a, then 'cp $ui_a $ui_b' and stage both."
+		exit 1
+	fi
+	rm -f "$tmp"
+fi
+
+exit 0
