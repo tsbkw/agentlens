@@ -1036,6 +1036,165 @@ async function runTestSuite() {
   console.log('  ✓ Main Call Graph correctly filtered by Type and Status dropdowns');
 
   // -------------------------------------------------------------
+  // Test 14: Failure Diagnosis & Session-Level Recommendations
+  // -------------------------------------------------------------
+  console.log('\nTest 14: Failure Diagnosis & Session Recommendations...');
+  await page.click('#resetBtn');
+  await page.evaluate(() => {
+    const trace = [
+      { step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', content: 'test failure diagnosis' },
+      // File not found error with wrapped framework message
+      {
+        step_index: 1, source: 'MODEL', type: 'PLANNER_RESPONSE',
+        tool_calls: [{ id: 'call-fnf-1', name: 'view_file', args: { AbsolutePath: '/home/user/missing.go' } }]
+      },
+      {
+        step_index: 2, source: 'SYSTEM', type: 'GENERIC', status: 'ERROR',
+        content: 'declaring permissions: cortex tool view_file: failed to read file: stat /home/user/missing.go: no such file or directory'
+      },
+      // Command exit error
+      {
+        step_index: 3, source: 'MODEL', type: 'PLANNER_RESPONSE',
+        tool_calls: [{ id: 'call-cmd-1', name: 'run_command', args: { CommandLine: 'npm test' } }]
+      },
+      {
+        step_index: 4, source: 'SYSTEM', type: 'GENERIC', status: 'ERROR',
+        content: 'npm ERR! code ENOENT\nCommand exited with code 254'
+      },
+      // Task state conflict
+      {
+        step_index: 5, source: 'MODEL', type: 'PLANNER_RESPONSE',
+        tool_calls: [{ id: 'call-task-1', name: 'manage_task', args: { Action: 'kill', TaskId: 'task-99' } }]
+      },
+      {
+        step_index: 6, source: 'SYSTEM', type: 'GENERIC', status: 'ERROR',
+        content: 'Task task-99 is not running (state: DONE)'
+      }
+    ].map(JSON.stringify).join('\n');
+    processTraceText(trace);
+  });
+  await page.waitForSelector('.callee-row');
+
+  // Verify Session Recommendations Banner
+  const recData = await page.evaluate(() => {
+    const banner = document.getElementById('recommendationsContainer');
+    const cards = banner ? banner.querySelectorAll('.recommendation-card') : [];
+    const titles = [...cards].map(c => c.querySelector('.recommendation-title').textContent);
+    const fixes = [...cards].map(c => c.querySelector('.recommendation-fix').textContent);
+    return {
+      visible: banner && getComputedStyle(banner).display !== 'none',
+      cardCount: cards.length,
+      titles,
+      fixes
+    };
+  });
+
+  if (!recData.visible || recData.cardCount !== 3) {
+    throw new Error(`Expected recommendations banner with 3 cards, got: ${JSON.stringify(recData)}`);
+  }
+  if (!recData.titles.some(t => t.includes('view_file') && t.includes('File Not Found'))) {
+    throw new Error(`Expected view_file File Not Found recommendation, got: ${JSON.stringify(recData.titles)}`);
+  }
+  if (!recData.titles.some(t => t.includes('run_command') && t.includes('Command Exit Error'))) {
+    throw new Error(`Expected run_command Command Exit Error recommendation, got: ${JSON.stringify(recData.titles)}`);
+  }
+  if (!recData.titles.some(t => t.includes('manage_task') && t.includes('Task State Conflict'))) {
+    throw new Error(`Expected manage_task Task State Conflict recommendation, got: ${JSON.stringify(recData.titles)}`);
+  }
+  if (!recData.fixes.every(f => f.includes('Actionable Fix:'))) {
+    throw new Error(`Expected all recommendation cards to provide actionable fixes, got: ${JSON.stringify(recData.fixes)}`);
+  }
+
+  // Verify inline badges on Call Graph
+  const calleeBadges = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.callee-row')];
+    return rows.map(r => {
+      const name = r.querySelector('.callee-name').textContent.trim();
+      const badge = r.querySelector('.callee-name .badge-danger');
+      return { name, badge: badge ? badge.textContent.trim() : null };
+    });
+  });
+
+  const fnfRow = calleeBadges.find(r => r.name.includes('view_file'));
+  if (!fnfRow || !fnfRow.badge || !fnfRow.badge.includes('File Not Found')) {
+    throw new Error(`Expected File Not Found badge in view_file callee row, got: ${JSON.stringify(calleeBadges)}`);
+  }
+  const cmdRow = calleeBadges.find(r => r.name.includes('run_command'));
+  if (!cmdRow || !cmdRow.badge || !cmdRow.badge.includes('Exit Error')) {
+    throw new Error(`Expected Exit Error badge in run_command callee row, got: ${JSON.stringify(calleeBadges)}`);
+  }
+
+  // Click view_file row to open drawer and verify Failure Diagnosis Section
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.callee-row')];
+    const target = rows.find(r => r.querySelector('.callee-name').textContent.includes('view_file'));
+    if (target) target.click();
+  });
+  await page.waitForSelector('#drawer.open');
+
+  const drawerFailure = await page.evaluate(() => {
+    const sec = document.getElementById('drawerFailureSection');
+    const icon = document.getElementById('drawerFailureIcon').textContent;
+    const cat = document.getElementById('drawerFailureCategory').textContent;
+    const title = document.getElementById('drawerFailureReasonTitle').textContent;
+    const rootCause = document.getElementById('drawerFailureRootCause').textContent;
+    const fix = document.getElementById('drawerFailureRecommendation').textContent;
+    return {
+      visible: sec && getComputedStyle(sec).display !== 'none',
+      icon,
+      cat,
+      title,
+      rootCause,
+      fix
+    };
+  });
+
+  if (!drawerFailure.visible) throw new Error('Drawer failure diagnosis section is not visible');
+  if (!drawerFailure.cat.includes('FILE NOT FOUND')) throw new Error(`Unexpected category: ${drawerFailure.cat}`);
+  if (!drawerFailure.rootCause.includes('stat /home/user/missing.go: no such file or directory')) {
+    throw new Error(`Expected cleaned root cause, got: ${drawerFailure.rootCause}`);
+  }
+  if (!drawerFailure.fix || drawerFailure.fix.length < 10) {
+    throw new Error(`Expected actionable recommended fix, got: ${drawerFailure.fix}`);
+  }
+
+  // Click "View in Trace" from recommendation card and verify navigation + filter
+  await page.click('#closeDrawerBtn');
+  await page.evaluate(() => {
+    const firstBtn = document.querySelector('.rec-jump-btn');
+    if (firstBtn) firstBtn.click();
+  });
+  await page.waitForSelector('#traceViewContainer .node-row');
+
+  const diagTraceState = await page.evaluate(() => ({
+    tabActive: document.getElementById('tabTraceBtn').classList.contains('active'),
+    searchVal: document.getElementById('searchInput').value,
+    statusVal: document.getElementById('statusFilterSelect').value,
+    badgeShown: document.querySelector('#traceViewContainer .badge-danger').textContent
+  }));
+
+  if (!diagTraceState.tabActive || !diagTraceState.statusVal.includes('failed')) {
+    throw new Error(`Expected trace tab and failed filter active, got: ${JSON.stringify(diagTraceState)}`);
+  }
+  if (!diagTraceState.badgeShown) {
+    throw new Error('Expected failure badge on trace node row');
+  }
+
+  // Reset to dashboard and verify recommendations & failure drawer reset
+  await page.click('#resetBtn');
+  const resetBanner = await page.evaluate(() => {
+    const banner = document.getElementById('recommendationsContainer');
+    return {
+      display: banner ? banner.style.display : null,
+      children: banner ? banner.children.length : 0
+    };
+  });
+  if (resetBanner.display !== 'none' || resetBanner.children !== 0) {
+    throw new Error(`Expected recommendations banner to be cleared on reset: ${JSON.stringify(resetBanner)}`);
+  }
+  console.log('  ✓ Failure diagnosis categories, drawer card, inline badges, and session recommendations verified');
+
+  // -------------------------------------------------------------
   // Test 7: Console & Runtime Errors
   // -------------------------------------------------------------
   console.log('\nTest 7: Uncaught Errors Check...');
