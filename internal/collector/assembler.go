@@ -128,7 +128,7 @@ func (a *Assembler) Feed(payload map[string]interface{}) (FeedResult, error) {
 	}
 
 	// Detect user interaction turn
-	if prompt, ts, ok := extractTurn(extraction.Turns, payload); ok {
+	if prompt, ts, ok := extractTurn(extraction.Turns, a.provider.TurnSkipRegex, payload); ok {
 		// Calls recorded before any prompt (e.g. a resumed or compacted session) keep their
 		// own turn, so they stay visible and never count as reactions to turn 1
 		if a.currentTurnIndex == 0 && len(a.turnNodes) > 0 {

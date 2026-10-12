@@ -505,7 +505,27 @@ async function runTestSuite() {
     return currentAnomalies.map(a => a.type);
   });
   if (JSON.stringify(objErr) !== JSON.stringify(['auth_expired'])) throw new Error(`Expected an auth anomaly from an object error, got ${objErr}`);
-  console.log('  ✓ Siblings are not fallbacks, pre-turn calls get turn 0, object errors are scanned');
+  // Messages in the user role that the user did not write are not turns (turns.skip_regex)
+  const skipped = await page.evaluate(() => {
+    const user = (content, ts, extra = {}) => ({ type: 'user', message: { content }, timestamp: ts, ...extra });
+    const call = (id, ts) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: 'Bash', input: { command: 'true' } }] }, timestamp: ts });
+    processTraceText([
+      user('<command-message>review</command-message>\n<command-name>/review</command-name>', '2026-10-07T10:00:00Z'),
+      user('<local-command-stdout>Loaded 3 files</local-command-stdout>', '2026-10-07T10:00:00.200Z'),
+      call('c1', '2026-10-07T10:00:01Z'),
+      user('<bash-input>ls</bash-input>', '2026-10-07T10:01:00Z'),
+      user('<bash-stdout>README.md</bash-stdout><bash-stderr></bash-stderr>', '2026-10-07T10:01:00.300Z'),
+      call('c2', '2026-10-07T10:01:01Z'),
+      user([{ type: 'text', text: '[Request interrupted by user]' }], '2026-10-07T10:02:00Z'),
+      user('continue', '2026-10-07T10:02:30Z'),
+      call('c3', '2026-10-07T10:02:31Z')
+    ].map(l => JSON.stringify(l)).join('\n'));
+    return currentTurns.map(t => `${t.index}:${t.prompt}:${t.nodes.map(n => n.id).join(',')}`);
+  });
+  if (JSON.stringify(skipped) !== JSON.stringify(['1:/review:c1', '2:[bash-input] ls:c2', '3:continue:c3'])) {
+    throw new Error(`Command output and interruption markers must not be turns, got ${JSON.stringify(skipped)}`);
+  }
+  console.log('  ✓ Siblings are not fallbacks, pre-turn calls get turn 0, object errors are scanned, command output is not a turn');
 
   // -------------------------------------------------------------
   // Test 7b: Trace content is rendered as text, not HTML

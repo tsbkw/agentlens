@@ -19,6 +19,8 @@ type LoadedProvider struct {
 	MCPServerRegex   *regexp.Regexp
 	ScopeRules       []CompiledScopeRule
 	DeniedRegex      []*regexp.Regexp
+	// TurnSkipRegex: messages whose prompt label matches are not turns (turns.skip_regex)
+	TurnSkipRegex []*regexp.Regexp
 }
 
 // IsAuxiliaryTool reports whether name is one of the provider's bookkeeping tools.
@@ -84,6 +86,14 @@ func LoadProviderFromBytes(data []byte) (*LoadedProvider, error) {
 			compiled.NameRegex = re
 		}
 		loaded.ScopeRules = append(loaded.ScopeRules, compiled)
+	}
+
+	for _, pattern := range def.Extraction.Turns.SkipRegex {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid turns.skip_regex %q: %w", pattern, err)
+		}
+		loaded.TurnSkipRegex = append(loaded.TurnSkipRegex, re)
 	}
 
 	for _, pattern := range def.Extraction.Results.DeniedRegex {

@@ -94,6 +94,9 @@ type TurnExtraction struct {
 	TimestampField string `json:"timestamp_field,omitempty" yaml:"timestamp_field,omitempty"`
 	// PromptTag optionally names a wrapper tag (e.g. "USER_REQUEST") whose inner text is the prompt.
 	PromptTag string `json:"prompt_tag,omitempty" yaml:"prompt_tag,omitempty"`
+	// SkipRegex lists patterns matched against the extracted prompt label; a message that
+	// matches is not a turn (the output of a local command, an interruption marker).
+	SkipRegex []string `json:"skip_regex,omitempty" yaml:"skip_regex,omitempty"`
 }
 
 // Result correlation strategies.

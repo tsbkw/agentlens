@@ -126,6 +126,8 @@ type CallNode struct {
 
 `Synthetic` marks the turn and scope nodes the graph builder adds for structure; they are not calls and take no part in detection or call metrics.
 
+A turn starts at a message matching `turns.filter`, labelled by the first line the user wrote (`<tag>…</tag>` blocks the harness injects are skipped; a message made only of such blocks is labelled `[tag] first line`). Messages in the user role that the user did not write are excluded with `turns.skip_regex`, matched against that label: the output of a slash command or of a `!` shell command and the marker left by an interrupted response. Their calls stay in the current turn.
+
 A silent fallback is reported when a failed (or timed-out) MCP or Skill call is followed by a system tool (shell, HTTP fetch, file access) for any provider. The following call must have started after the failure was known: calls issued together in one model response share a timestamp and are never a fallback for each other; `anomaly_rules.known_fallbacks` adds provider-specific pairs. Each one carries a `confidence`:
 
 - `high`: the substitute reaches the same public service — it runs that service's CLI or calls its host, as listed in the provider-independent catalog `rules/substitutes.yaml` (e.g. GitHub → `gh`) — or reuses at least two identifiers of the failed call (repository, table, IDs).

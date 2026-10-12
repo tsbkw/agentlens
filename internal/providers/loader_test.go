@@ -3,6 +3,7 @@ package providers
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tsbkw/agentlens/internal/models"
@@ -122,5 +123,30 @@ func TestValidateDefinitionRejectsBadGlobsFiltersAndCorrelation(t *testing.T) {
 		if err := validateDefinition(d); err == nil {
 			t.Errorf("%s: expected a validation error", name)
 		}
+	}
+}
+
+func TestTurnSkipRegexIsCompiledAndValidated(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "examples", "providers", "claude_code.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadProviderFromBytes(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.TurnSkipRegex) != len(loaded.Definition.Extraction.Turns.SkipRegex) || len(loaded.TurnSkipRegex) == 0 {
+		t.Fatalf("Expected every turns.skip_regex pattern compiled, got %d of %d", len(loaded.TurnSkipRegex), len(loaded.Definition.Extraction.Turns.SkipRegex))
+	}
+	if !loaded.TurnSkipRegex[0].MatchString("[local-command-stdout] Loaded 3 files") {
+		t.Errorf("The first pattern must match a local command's output label")
+	}
+
+	broken := strings.Replace(string(raw), `- "^\\[bash-std(out|err)\\]"`, `- "^\\[bash-std(out|err"`, 1)
+	if broken == string(raw) {
+		t.Fatal("test setup: pattern to break not found in claude_code.yaml")
+	}
+	if _, err := LoadProviderFromBytes([]byte(broken)); err == nil || !strings.Contains(err.Error(), "turns.skip_regex") {
+		t.Errorf("An invalid skip_regex must be rejected naming the field, got %v", err)
 	}
 }
