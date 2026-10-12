@@ -568,7 +568,21 @@ async function runTestSuite() {
     total: counts,
     mcp_servers: [{ key: 'github', ...counts, calls: 1 }, { key: '<b id=pwned-server>slack</b>', calls: 1 }],
     tools: [],
-    sessions_detail: [{ key: 'sample_claude_code_session', project: '-home-dev-backend-api', provider: 'claude-code', last_call: '2026-10-07T14:01:09.900Z', ...counts }]
+    sessions_detail: [{ key: 'sample_claude_code_session', project: '-home-dev-backend-api', provider: 'claude-code', last_call: '2026-10-07T14:01:09.900Z', ...counts }],
+    tool_health: [
+      { key: 'github', kind: 'mcp_server', reason: 'auth_unresolved', calls: 1, failed: 1, sessions_offered: 1, sessions_called: 1, sessions_since_last_success: 1, last_error: 'Error: 401 Unauthorized - Bad credentials (token expired)', last_error_class: 'auth', fallbacks_from: 1, last_fallback_to: 'Bash' },
+      { key: '<i id=pwned-dormant>jira</i>', kind: 'mcp_server', reason: 'connection_failing', sessions_failed_connect: 1, sessions_since_last_success: 1, last_connect_error: 'HTTP 401: session is not valid' },
+      { key: 'slack', kind: 'mcp_server', calls: 1, sessions_offered: 1, sessions_called: 1, last_success: '2026-10-07T14:01:09.900Z' },
+      { key: 'deploy', kind: 'skill', reason: 'unused', sessions_offered: 1, sessions_since_last_success: 1 }
+    ]
+  };
+  const whyJSON = {
+    query: 'github', window: reportJSON.window, service: 'GitHub',
+    tool: reportJSON.tool_health[0],
+    sessions: [{ session_id: 'sample_claude_code_session', project: '-home-dev-backend-api', start: '2026-10-07T14:00:00Z', offered: true, calls: 1, success: 0, failed: 1, denied: 0, first_error: 'Error: 401 Unauthorized - Bad credentials (token expired)', error_class: 'auth', fallback_to: ['Bash'] }],
+    substitutes: [{ tool: 'Bash', example: 'gh issue create --repo example/backend-api', calls: 1, sessions: 1, sessions_while_failing: 1, sessions_while_healthy: 0, sessions_while_absent: 0 }],
+    diagnosis: { reason: 'auth_unresolved', summary: 'MCP server github failed on credentials on its last call and nothing has succeeded since.', evidence: ['1 calls: 0 succeeded, 1 failed, 0 denied', '<b id=pwned-evidence>x</b>'], recommendation: 'Renew the token or re-authenticate the server.' },
+    prompt: 'I am using agentlens … Investigate the cause on this machine.\n\n## What to check\n1. run `claude mcp get github`'
   };
   const requests = [];
   const local = await browser.newPage();
@@ -583,6 +597,9 @@ async function runTestSuite() {
     }
     if (url.pathname === '/api/sessions/sample_claude_code_session/files') {
       return req.respond({ contentType: 'application/json', body: JSON.stringify(sessionFiles) });
+    }
+    if (url.pathname === '/api/why') {
+      return req.respond({ contentType: 'application/json', body: JSON.stringify({ ...whyJSON, query: url.searchParams.get('tool') }) });
     }
     return req.respond({ contentType: 'text/html; charset=utf-8', body: fs.readFileSync(htmlPath, 'utf8') });
   });
@@ -599,6 +616,40 @@ async function runTestSuite() {
     throw new Error(`Unexpected dashboard ${JSON.stringify(dash)}`);
   }
   if (!requests.includes('/api/report?since=7d')) throw new Error(`Expected the last 7 days by default, got ${requests}`);
+
+  // Dormant tools table and the "why" panel with its prompt
+  const dormant = await local.evaluate(() => ({
+    rows: Array.from(document.querySelectorAll('#dormantTable tbody tr')).map(tr => Array.from(tr.cells).map(td => td.textContent.trim()).join(' | ')),
+    unused: document.getElementById('reportDormant').textContent.includes('Skills offered but never called (1): deploy'),
+    injected: document.querySelectorAll('#pwned-dormant').length,
+    whyButtons: document.querySelectorAll('#reportServers [data-why]').length,
+    panelHidden: getComputedStyle(document.getElementById('whyPanel')).display === 'none'
+  }));
+  if (dormant.rows.length !== 2 || !dormant.rows[0].startsWith('github | MCP | never | 1 sessions | auth failed, not fixed | Error: 401 Unauthorized') || !dormant.rows[1].includes('| server fails to connect | HTTP 401: session is not valid |')
+    || !dormant.unused || dormant.injected > 0 || dormant.whyButtons !== 2 || !dormant.panelHidden) {
+    throw new Error(`Unexpected dormant table ${JSON.stringify(dormant)}`);
+  }
+  await local.evaluate(() => { navigator.clipboard.writeText = (t) => { window.__copied = t; return Promise.resolve(); }; });
+  await local.click('#dormantTable [data-why="github"]');
+  await local.waitForFunction(() => document.getElementById('whyPrompt').value !== '');
+  await local.click('#whyCopy');
+  await local.waitForFunction(() => document.getElementById('whyCopyStatus').textContent.includes('Copied'));
+  const why = await local.evaluate(() => ({
+    title: document.getElementById('whyTitle').textContent,
+    body: document.getElementById('whyBody').textContent.replace(/\s+/g, ' '),
+    prompt: document.getElementById('whyPrompt').value,
+    copied: window.__copied,
+    injected: document.querySelectorAll('#pwned-evidence').length,
+    sessionRows: document.querySelectorAll('#whySessions tr.session-row').length
+  }));
+  if (why.title !== 'Why is MCP github not used?' || !why.body.includes('auth failed, not fixed') || !why.body.includes('1 calls: 0 succeeded, 1 failed, 0 denied')
+    || !why.body.includes('fell back to Bash') || !why.body.includes('Reached GitHub another way') || !why.body.includes('Renew the token')
+    || !why.prompt.includes('claude mcp get github') || why.copied !== why.prompt || why.injected > 0 || why.sessionRows !== 1) {
+    throw new Error(`Unexpected why panel ${JSON.stringify(why)}`);
+  }
+  if (!requests.some(r => r.startsWith('/api/why?') && r.includes('since=7d') && r.includes('tool=github'))) throw new Error(`Expected a why request for the dashboard period, got ${requests}`);
+  await local.click('#whyClose');
+  if (!(await local.$eval('#whyPanel', el => getComputedStyle(el).display === 'none'))) throw new Error('Expected the why panel to close');
 
   await local.select('#reportPeriod', '30d');
   await local.type('#reportProject', 'backend');
@@ -620,7 +671,7 @@ async function runTestSuite() {
   const back = await local.$eval('#localSection', el => getComputedStyle(el).display);
   if (back !== 'flex') throw new Error('Expected the dashboard after going back');
   await local.close();
-  console.log('  ✓ Report renders escaped, filters reach the API, a session opens with its subagent');
+  console.log('  ✓ Report renders escaped, filters reach the API, dormant tools and the why panel render with a copyable prompt, a session opens with its subagent');
 
   // -------------------------------------------------------------
   // Test 9: Viewer behaviour (filters, selection, state reset, alerts, unknown format, phone width)

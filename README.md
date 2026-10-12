@@ -77,7 +77,7 @@ AgentLens provides two ways to experience the Web UI:
 2. **Local Embedded Server (`agentlens ui`)**:
    - The Go binary bundles the compiled Web UI using Go's `embed` mechanism.
    - Run `agentlens ui` and open `http://localhost:8000`. No internet access or Node.js is needed. The server listens on `127.0.0.1` only.
-   - **Local sessions dashboard**: the page lists the sessions on this machine for a period (today, last 7/30/90 days or a custom range) and a project filter. It shows the same totals and per-MCP-server and per-session counts as `agentlens report`. Click a session to open its call graph, subagents included.
+   - **Local sessions dashboard**: the page lists the sessions on this machine for a period (today, last 7/30/90 days or a custom range) and a project filter. It shows the same totals and per-MCP-server and per-session counts as `agentlens report`. Click a session to open its call graph, subagents included. A table lists the dormant Skills and MCP servers; **Why?** opens the `agentlens why` analysis in the page, with the Claude Code prompt and a copy button.
 
 ---
 
