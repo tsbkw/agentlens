@@ -1998,7 +1998,8 @@
       document.getElementById('drawerBadges').innerHTML = `
         <span class="badge ${node.type === 'mcp_tool' ? 'badge-mcp' : 'badge-system'}">${node.type}</span>
         <span class="badge ${statusBadge(node.status)}">${node.status}</span>
-        ${node.caller_scope ? `<span class="badge badge-skill">${escapeHtml(node.caller_scope)}</span>` : ''}
+        ${node.scope_name ? `<span class="badge badge-skill">${escapeHtml(node.scope_name)}</span>` : ''}
+        ${node.caller_scope && node.caller_scope !== node.scope_name ? `<span class="badge badge-skill">${escapeHtml(node.caller_scope)}</span>` : ''}
       `;
       const linkText = {
         sidecar: 'sidecar (the subagent\'s metadata names the spawning call)',
