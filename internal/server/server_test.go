@@ -299,3 +299,20 @@ func TestStartLeavesOtherProgramsAlone(t *testing.T) {
 		t.Fatalf("Start on a foreign port: got %v, want the listen error with the --port hint", err)
 	}
 }
+
+func TestWhyEndpoint(t *testing.T) {
+	h := newClaudeHome(t).Handler()
+	var ex report.Explanation
+	if code := get(t, h, "/api/why?tool=github&since=2026-10-01&until=2026-10-07", &ex); code != http.StatusOK {
+		t.Fatalf("Expected 200, got %d", code)
+	}
+	if ex.Tool.Key != "github" || ex.Tool.Kind != report.KindMCPServer || ex.Diagnosis.Reason == "" || ex.Prompt == "" || len(ex.Sessions) != 1 {
+		t.Errorf("Unexpected explanation: reason=%q tool=%+v sessions=%d", ex.Diagnosis.Reason, ex.Tool, len(ex.Sessions))
+	}
+	if code := get(t, h, "/api/why", nil); code != http.StatusBadRequest {
+		t.Errorf("Missing tool: expected 400, got %d", code)
+	}
+	if code := get(t, h, "/api/why?tool=nothing&since=2026-10-01", &ex); code != http.StatusOK || ex.Diagnosis.Reason != report.DiagnosisNotFound {
+		t.Errorf("Unknown tool: expected 200 with not_found, got %d %q", code, ex.Diagnosis.Reason)
+	}
+}

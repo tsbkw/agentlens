@@ -932,6 +932,204 @@
         "last_fallback_at": "0001-01-01T00:00:00Z",
         "reason": "unused"
       }
+    ],
+    "why": [
+      {
+        "query": "github",
+        "tool": "github",
+        "kind": "mcp_server",
+        "service": "GitHub",
+        "sessions": [
+          {
+            "session_id": "7e3f9a2c-4b1d-4c8e-9f6a-0d2b5c7e8a91",
+            "project": "-home-dev-workspace-shop-api",
+            "start": "2026-10-10T09:00:02Z",
+            "offered": true,
+            "calls": 2,
+            "success": 0,
+            "failed": 2,
+            "denied": 0,
+            "first_error": "Authentication Failed: Bad credentials",
+            "error_class": "auth",
+            "fallback_to": [
+              "Bash"
+            ],
+            "substitute_calls": 6
+          }
+        ],
+        "substitutes": [
+          {
+            "tool": "Bash",
+            "example": "gh pr view 42 --repo acme/shop-api --json title,body,files",
+            "calls": 6,
+            "sessions": 1,
+            "sessions_while_failing": 1,
+            "sessions_while_healthy": 0,
+            "sessions_while_absent": 0
+          }
+        ],
+        "diagnosis": {
+          "reason": "auth_unresolved",
+          "summary": "MCP server github failed on credentials on its last call and nothing has succeeded since.",
+          "evidence": [
+            "Offered in 1 session of the period, called in 1 session",
+            "2 calls: 0 succeeded, 2 failed, 0 denied",
+            "No successful call in the period (1 session)",
+            "Last call error (auth): HTTP 401: Bad credentials (https://api.github.com/repos/acme/shop-api/pulls/42/files)",
+            "1 silent fallbacks after its failures, most recently to Bash",
+            "Bash reached GitHub instead in 1 session (1 while github was failing or down, 0 while it worked, 0 while it was not called), e.g. gh pr view 42 --repo acme/shop-api --json title,body,files"
+          ],
+          "recommendation": "Renew the token or re-authenticate the server, then retry a call; until then the agent keeps falling back to other tools."
+        },
+        "prompt_lines": 29
+      },
+      {
+        "query": "jira",
+        "tool": "jira",
+        "kind": "mcp_server",
+        "service": "Atlassian (Jira, Confluence)",
+        "sessions": [
+          {
+            "session_id": "7e3f9a2c-4b1d-4c8e-9f6a-0d2b5c7e8a91",
+            "project": "-home-dev-workspace-shop-api",
+            "start": "2026-10-10T09:00:02Z",
+            "offered": false,
+            "connect_failed": true,
+            "connect_error": "Dynamic Client Registration rejected (HTTP 401): session is not valid",
+            "calls": 0,
+            "success": 0,
+            "failed": 0,
+            "denied": 0
+          }
+        ],
+        "diagnosis": {
+          "reason": "connection_failing",
+          "summary": "MCP server jira cannot be reached: the harness failed to connect to it in 1 session and it has not succeeded since.",
+          "evidence": [
+            "No successful call in the period (1 session)",
+            "The harness failed to connect to the server in 1 session; last error: Dynamic Client Registration rejected (HTTP 401): session is not valid"
+          ],
+          "recommendation": "Fix the server connection: check its credentials, registration or endpoint, then start a new session and confirm it connects."
+        },
+        "prompt_lines": 25
+      },
+      {
+        "query": "postgres",
+        "tool": "postgres",
+        "kind": "mcp_server",
+        "service": "PostgreSQL",
+        "sessions": [
+          {
+            "session_id": "7e3f9a2c-4b1d-4c8e-9f6a-0d2b5c7e8a91",
+            "project": "-home-dev-workspace-shop-api",
+            "start": "2026-10-10T09:00:02Z",
+            "offered": true,
+            "calls": 4,
+            "success": 1,
+            "failed": 3,
+            "denied": 0,
+            "first_error": "Error executing tool query: connection to server at \"db.internal\" (10.0.0.12), port 5432 failed: Connection refused",
+            "error_class": "connection",
+            "fallback_to": [
+              "Bash"
+            ],
+            "substitute_calls": 1
+          }
+        ],
+        "substitutes": [
+          {
+            "tool": "Bash",
+            "example": "psql postgres://app@db.internal:5432/shop -c 'select status, count(*) from expor…",
+            "calls": 1,
+            "sessions": 1,
+            "sessions_while_failing": 0,
+            "sessions_while_healthy": 1,
+            "sessions_while_absent": 0
+          }
+        ],
+        "diagnosis": {
+          "reason": "healthy",
+          "summary": "MCP server postgres works: last success 2026-10-10 09:05 UTC.",
+          "evidence": [
+            "Offered in 1 session of the period, called in 1 session",
+            "4 calls: 1 succeeded, 3 failed, 0 denied",
+            "Last success 2026-10-10 09:05 UTC; 0 sessions since",
+            "Last call error (connection): Error executing tool query: connection to server at \"db.internal\" (10.0.0.12), port 5432 failed: Connection refused",
+            "1 silent fallbacks after its failures, most recently to Bash",
+            "Bash reached PostgreSQL instead in 1 session (0 while postgres was failing or down, 1 while it worked, 0 while it was not called), e.g. psql postgres://app@db.internal:5432/shop -c 'select status, count(*) from expor…"
+          ],
+          "recommendation": "Nothing to fix."
+        },
+        "prompt_lines": 29
+      },
+      {
+        "query": "db-migrate",
+        "tool": "db-migrate",
+        "kind": "skill",
+        "sessions": [
+          {
+            "session_id": "7e3f9a2c-4b1d-4c8e-9f6a-0d2b5c7e8a91",
+            "project": "-home-dev-workspace-shop-api",
+            "start": "2026-10-10T09:00:02Z",
+            "offered": true,
+            "calls": 0,
+            "success": 0,
+            "failed": 0,
+            "denied": 0
+          }
+        ],
+        "diagnosis": {
+          "reason": "no_demand",
+          "summary": "Skill db-migrate was offered in 1 session but never called, and nothing else reached its service either.",
+          "evidence": [
+            "Offered in 1 session of the period, called in 0 sessions",
+            "No successful call in the period (1 session)"
+          ],
+          "recommendation": "Likely no task needed it in this period. Widen the period with --since, or check that its description tells the agent when to use it."
+        },
+        "prompt_lines": 25
+      },
+      {
+        "query": "pr-review",
+        "tool": "pr-review",
+        "kind": "skill",
+        "sessions": [
+          {
+            "session_id": "7e3f9a2c-4b1d-4c8e-9f6a-0d2b5c7e8a91",
+            "project": "-home-dev-workspace-shop-api",
+            "start": "2026-10-10T09:00:02Z",
+            "offered": true,
+            "calls": 1,
+            "success": 1,
+            "failed": 0,
+            "denied": 0
+          }
+        ],
+        "diagnosis": {
+          "reason": "healthy",
+          "summary": "Skill pr-review works: last success 2026-10-10 09:00 UTC.",
+          "evidence": [
+            "Offered in 1 session of the period, called in 1 session",
+            "1 calls: 1 succeeded, 0 failed, 0 denied",
+            "Last success 2026-10-10 09:00 UTC; 0 sessions since"
+          ],
+          "recommendation": "Nothing to fix."
+        },
+        "prompt_lines": 26
+      },
+      {
+        "query": "nosuchtool",
+        "tool": "",
+        "kind": "",
+        "sessions": null,
+        "diagnosis": {
+          "reason": "not_found",
+          "summary": "No Skill or MCP server named \"nosuchtool\" was offered or called in this period.",
+          "evidence": null,
+          "recommendation": "Check the spelling (MCP servers are matched by the name in mcp__\u003cserver\u003e__ tool names, Skills by their listed name) or widen the period with --since."
+        },
+        "prompt_lines": 27
+      }
     ]
   },
   "availability": {

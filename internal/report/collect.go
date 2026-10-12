@@ -67,16 +67,30 @@ func ProjectOf(s collector.SessionInfo) string {
 // it is empty) and aggregates their calls in window. Traces that cannot be read are passed to
 // skip, when set, and left out.
 func Collect(provs []*providers.LoadedProvider, window Window, project string, skip func(path string, err error)) (*Report, error) {
-	sessions, err := collector.DiscoverAllSessions(provs)
+	b := NewBuilder(window)
+	err := forEachSession(provs, window, project, skip, func(s collector.SessionInfo, name string, data *collector.SessionData, g *graph.Graph) {
+		b.Add(s.SessionID, name, data.Nodes, g)
+		b.AddAvailability(s.SessionID, sessionStart(data, s.ModTime), data.Availability)
+	})
 	if err != nil {
 		return nil, err
+	}
+	return b.Report(), nil
+}
+
+// forEachSession ingests and analyzes every discovered session that may hold calls in window
+// and belongs to project (all when empty), and hands each to fn with its project name.
+func forEachSession(provs []*providers.LoadedProvider, window Window, project string, skip func(path string, err error),
+	fn func(s collector.SessionInfo, project string, data *collector.SessionData, g *graph.Graph)) error {
+	sessions, err := collector.DiscoverAllSessions(provs)
+	if err != nil {
+		return err
 	}
 	byID := make(map[string]*providers.LoadedProvider, len(provs))
 	for _, p := range provs {
 		byID[p.Definition.Provider.ID] = p
 	}
 
-	b := NewBuilder(window)
 	for _, s := range sessions {
 		name := ProjectOf(s)
 		// A trace last written before the window cannot hold calls in it
@@ -110,10 +124,9 @@ func Collect(provs []*providers.LoadedProvider, window Window, project string, s
 		}
 		g := graph.NewGraphBuilder().BuildWithTurns(s.SessionID, provider.Definition.Provider.ID, data.Turns, data.Nodes)
 		detector.NewDetector(provider).Analyze(g)
-		b.Add(s.SessionID, name, data.Nodes, g)
-		b.AddAvailability(s.SessionID, sessionStart(data, s.ModTime), data.Availability)
+		fn(s, name, data, g)
 	}
-	return b.Report(), nil
+	return nil
 }
 
 // sessionStart is the time a session began: its first prompt, else its first call, else the

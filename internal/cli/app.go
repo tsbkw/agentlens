@@ -134,6 +134,8 @@ func (a *App) Run(args []string) error {
 		return a.CmdInspect(args[2], sessionID)
 	case "report":
 		return a.CmdReport(args[2:])
+	case "why":
+		return a.CmdWhy(args[2:])
 	case "ui":
 		port, err := parsePortFlag(args[2:])
 		if err != nil {
@@ -375,6 +377,10 @@ Available Commands:
   report [flags]       Aggregate calls and anomalies of all sessions over a period:
                        --since <YYYY-MM-DD|Nd> (default 7d) --until <YYYY-MM-DD>
                        --project <name> --top <n> --json
+  why <name> [flags]   Explain why a Skill or MCP server is not being used: its outcome in
+                       every session of the period, what replaced it, a diagnosis, and a
+                       prompt for Claude Code to find the cause on this machine
+                       --since (default 30d) --until --project --json --prompt
   ui [--port <n>]      Launch the local Web UI dashboard on 127.0.0.1 (default port 8000);
                        an agentlens ui already running on that port is stopped and replaced
   version              Print version of agentlens
