@@ -388,6 +388,20 @@
     .report-table .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }
     .report-table tr.session-row { cursor: pointer; }
     .report-table tr.session-row:hover { background-color: var(--card-alt); }
+    .btn-why { padding: 0.15rem 0.55rem; font-size: 0.75rem; }
+    .report-table td.why-reason { color: var(--warning); }
+    .report-table td.why-error { white-space: normal; color: var(--text-muted); max-width: 28rem; }
+    .why-panel { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+    .why-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .why-header h3 { margin: 0; font-size: 1rem; }
+    .why-diagnosis { font-weight: 600; }
+    .why-diagnosis.red { color: var(--danger); }
+    .why-diagnosis.yellow { color: var(--warning); }
+    .why-diagnosis.green { color: var(--success); }
+    .why-list { margin: 0; padding-left: 1.2rem; font-size: 0.85rem; }
+    .why-list li { margin: 0.15rem 0; }
+    .why-prompt-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+    .why-prompt { width: 100%; min-height: 14rem; resize: vertical; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; line-height: 1.4; background: var(--card-alt); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem; white-space: pre-wrap; box-sizing: border-box; }
     .count-zero { color: var(--text-muted); opacity: 0.5; }
     .count-danger { color: var(--danger); font-weight: 600; }
     .count-warning { color: var(--warning); font-weight: 600; }
@@ -611,6 +625,20 @@
           <div class="report-status" id="reportStatus"></div>
           <div class="stats-grid" id="reportStats"></div>
           <div id="reportServers"></div>
+          <div id="reportDormant"></div>
+          <div class="why-panel" id="whyPanel" style="display:none" aria-live="polite">
+            <div class="why-header">
+              <h3 id="whyTitle"></h3>
+              <button type="button" class="btn btn-why" id="whyClose" aria-label="Close">✕</button>
+            </div>
+            <div id="whyBody"></div>
+            <div class="why-prompt-head">
+              <span>Prompt for Claude Code on this machine</span>
+              <button type="button" class="btn btn-primary btn-why" id="whyCopy">Copy prompt</button>
+              <span class="report-status" id="whyCopyStatus"></span>
+            </div>
+            <textarea id="whyPrompt" class="why-prompt" readonly spellcheck="false" aria-label="Prompt for Claude Code"></textarea>
+          </div>
           <div id="reportSessions"></div>
         </div>
 
@@ -3062,8 +3090,8 @@
       document.getElementById('reportServers').innerHTML = servers.length === 0 ? '' : `
         <div class="report-heading">MCP servers</div>
         <div class="report-table-wrap"><table class="report-table">
-          <thead><tr><th>Server</th>${COUNT_HEADERS}</tr></thead>
-          <tbody>${servers.map(r => `<tr><td>${escapeHtml(r.key)}</td>${countCells(r)}</tr>`).join('')}</tbody>
+          <thead><tr><th>Server</th>${COUNT_HEADERS}<th></th></tr></thead>
+          <tbody>${servers.map(r => `<tr><td>${escapeHtml(r.key)}</td>${countCells(r)}<td>${whyButton(r.key)}</td></tr>`).join('')}</tbody>
         </table></div>`;
 
       const sessions = report.sessions_detail || [];
@@ -3081,6 +3109,136 @@
               ${countCells(r)}
             </tr>`).join('')}</tbody>
         </table></div>`;
+      renderDormant(report);
+    }
+
+    // Mirrors cli.ReasonLabel / report.ReasonTitle
+    const REASON_LABELS = {
+      connection_failing: 'server fails to connect', pending_signin: 'waiting for sign-in', auth_unresolved: 'auth failed, not fixed',
+      denied: 'denied', replaced: 'replaced by a substitute', failing: 'failing', unused: 'offered, never called',
+      healthy: 'healthy', substitute_preferred: 'a substitute is preferred', no_demand: 'no task needed it', not_found: 'not found'
+    };
+    const reasonLabel = (r) => REASON_LABELS[r] || r || '';
+    const kindLabel = (k) => k === 'mcp_server' ? 'MCP' : (k === 'skill' ? 'Skill' : k);
+    const whyButton = (name) => `<button type="button" class="btn btn-why" data-why="${escapeHtml(name)}" title="Why is ${escapeHtml(name)} not used?">Why?</button>`;
+
+    // Mirrors textutil.FormatAge
+    function formatAge(ms) {
+      const m = ms / 60000, h = m / 60, d = h / 24;
+      if (m < 1) return '<1m';
+      if (h < 1) return `${Math.floor(m)}m`;
+      if (h < 48) return `${Math.floor(h)}h`;
+      if (d < 21) return `${Math.floor(d)}d`;
+      return `${Math.floor(d / 7)}w`;
+    }
+
+    // Skills and MCP servers that are not working as of their last use (report.tool_health)
+    function renderDormant(report) {
+      const health = report.tool_health || [];
+      const dormant = health.filter(h => h.reason && h.reason !== 'unused');
+      const unused = health.filter(h => h.reason === 'unused');
+      const now = Date.now();
+      let html = '';
+      if (dormant.length > 0) {
+        html += `
+        <div class="report-heading">⚠️ Dormant Skills &amp; MCP servers (not working as of their last use)</div>
+        <div class="report-table-wrap"><table class="report-table" id="dormantTable">
+          <thead><tr><th>Name</th><th>Kind</th><th>Last success</th><th>Silent for</th><th>Reason</th><th>Last error</th><th></th></tr></thead>
+          <tbody>${dormant.map(h => {
+            const ok = isSetTime(h.last_success);
+            const silent = ok ? `${formatAge(now - new Date(h.last_success).getTime())}, ${h.sessions_since_last_success} sessions` : `${h.sessions_since_last_success} sessions`;
+            const err = h.reason === 'connection_failing' ? h.last_connect_error : h.last_error;
+            return `<tr>
+              <td>${escapeHtml(h.key)}</td><td>${escapeHtml(kindLabel(h.kind))}</td>
+              <td>${ok ? escapeHtml(formatTime(h.last_success)) : 'never'}</td><td>${escapeHtml(silent)}</td>
+              <td class="why-reason">${escapeHtml(reasonLabel(h.reason))}</td><td class="why-error">${escapeHtml(err || '')}</td>
+              <td>${whyButton(h.key)}</td></tr>`;
+          }).join('')}</tbody>
+        </table></div>`;
+      }
+      for (const [kind, label] of [['mcp_server', 'MCP servers'], ['skill', 'Skills']]) {
+        const names = unused.filter(h => h.kind === kind).map(h => h.key);
+        if (names.length === 0) continue;
+        const shown = names.slice(0, 8).map(n => `<span class="why-unused" data-why="${escapeHtml(n)}" role="button" tabindex="0">${escapeHtml(n)}</span>`).join(', ');
+        const more = names.length > 8 ? `, … ${names.length - 8} more` : '';
+        html += `<div class="report-status" style="margin-top:0.5rem">${label} offered but never called (${names.length}): ${shown}${more}</div>`;
+      }
+      document.getElementById('reportDormant').innerHTML = html;
+    }
+
+    // `agentlens why <name>` for the dashboard's period and project
+    let whyRequest = 0;
+    async function openWhy(name) {
+      const panel = document.getElementById('whyPanel');
+      const request = ++whyRequest;
+      document.getElementById('whyTitle').textContent = `Why is ${name} not used?`;
+      document.getElementById('whyBody').innerHTML = '<div class="report-status">Analyzing…</div>';
+      document.getElementById('whyPrompt').value = '';
+      document.getElementById('whyCopyStatus').textContent = '';
+      panel.style.display = 'flex';
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const params = new URLSearchParams(reportQuery());
+      params.set('tool', name);
+      let ex;
+      try {
+        ex = await fetchJSON(`api/why?${params.toString()}`);
+      } catch (e) {
+        if (request === whyRequest) document.getElementById('whyBody').innerHTML = `<div class="report-status">Could not analyze ${escapeHtml(name)}: ${escapeHtml(e.message)}</div>`;
+        return;
+      }
+      if (request !== whyRequest) return;
+      renderWhy(ex);
+    }
+
+    function renderWhy(ex) {
+      const d = ex.diagnosis || {};
+      const tool = ex.tool || {};
+      const title = tool.key ? `Why is ${kindLabel(tool.kind)} ${tool.key} not used?` : `Why is ${ex.query} not used?`;
+      document.getElementById('whyTitle').textContent = title;
+      const color = d.reason === 'healthy' ? 'green' : (['connection_failing', 'auth_unresolved'].includes(d.reason) ? 'red' : (['not_found', 'no_demand'].includes(d.reason) ? '' : 'yellow'));
+      const sessions = (ex.sessions || []).slice(-8);
+      const outcome = (s) => s.connect_failed ? 'server failed to connect' : s.pending ? 'waiting for sign-in'
+        : s.calls === 0 ? (s.offered ? 'offered, not called' : 'absent')
+        : [s.success ? `${s.success} ok` : '', s.failed ? `${s.failed} failed` : '', s.denied ? `${s.denied} denied` : ''].filter(Boolean).join(', ');
+      let html = `<div class="why-diagnosis ${color}">${escapeHtml(reasonLabel(d.reason))}</div><div>${escapeHtml(d.summary || '')}</div>`;
+      if ((d.evidence || []).length > 0) {
+        html += `<div class="report-heading" style="margin-top:0.5rem">Evidence</div><ul class="why-list">${d.evidence.map(e => `<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
+      }
+      if (sessions.length > 0) {
+        html += `<div class="report-heading" style="margin-top:0.5rem">Sessions${(ex.sessions || []).length > 8 ? ` (last 8 of ${ex.sessions.length})` : ''}</div>
+          <div class="report-table-wrap"><table class="report-table" id="whySessions">
+            <thead><tr><th>When</th><th>Session</th><th>Project</th><th>Outcome</th><th>Detail</th></tr></thead>
+            <tbody>${sessions.map(s => {
+              let detail = s.connect_error || s.first_error || '';
+              if ((s.fallback_to || []).length > 0) detail = `${detail} → fell back to ${s.fallback_to.join(', ')}`.trim();
+              if (s.substitute_calls > 0 && s.calls === 0) detail = `${detail} ${s.substitute_calls} substitute calls`.trim();
+              return `<tr class="session-row" tabindex="0" role="button" data-session="${escapeHtml(s.session_id)}" data-project="${escapeHtml(s.project || '')}" title="Open this session">
+                <td>${escapeHtml(formatTime(s.start))}</td><td class="mono">${escapeHtml(String(s.session_id).slice(0, 8))}</td>
+                <td title="${escapeHtml(s.project || '')}">${escapeHtml(tail(s.project, 24))}</td><td>${escapeHtml(outcome(s))}</td><td class="why-error">${escapeHtml(detail)}</td></tr>`;
+            }).join('')}</tbody>
+          </table></div>`;
+      }
+      if ((ex.substitutes || []).length > 0) {
+        html += `<div class="report-heading" style="margin-top:0.5rem">Reached ${escapeHtml(ex.service || 'the same service')} another way</div><ul class="why-list">${ex.substitutes.map(s =>
+          `<li>${escapeHtml(s.tool)} in ${s.sessions} sessions (${s.sessions_while_failing} while ${escapeHtml(tool.key || ex.query)} was failing or down, ${s.sessions_while_healthy} while it worked, ${s.sessions_while_absent} while it was not called)${s.example ? `: <span class="mono">${escapeHtml(s.example)}</span>` : ''}</li>`).join('')}</ul>`;
+      }
+      html += `<div style="margin-top:0.5rem"><strong>Recommendation:</strong> ${escapeHtml(d.recommendation || '')}</div>`;
+      document.getElementById('whyBody').innerHTML = html;
+      document.getElementById('whyPrompt').value = ex.prompt || '';
+    }
+
+    async function copyWhyPrompt() {
+      const text = document.getElementById('whyPrompt').value;
+      const status = document.getElementById('whyCopyStatus');
+      try {
+        await navigator.clipboard.writeText(text);
+        status.textContent = 'Copied. Paste it into a Claude Code session on this machine.';
+      } catch (e) {
+        const area = document.getElementById('whyPrompt');
+        area.focus();
+        area.select();
+        status.textContent = 'Press Ctrl/Cmd+C to copy the selected prompt.';
+      }
     }
 
     let openingSession = '';
@@ -3116,6 +3274,17 @@
       const row = e.target.closest('tr.session-row');
       if (row) openLocalSession(row.dataset.session, row.dataset.project, false);
     });
+    document.getElementById('localSection').addEventListener('click', (e) => {
+      const why = e.target.closest('[data-why]');
+      if (why) { openWhy(why.dataset.why); return; }
+      const row = e.target.closest('#whySessions tr.session-row');
+      if (row) openLocalSession(row.dataset.session, row.dataset.project, false);
+    });
+    document.getElementById('localSection').addEventListener('keydown', (e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.why-unused[data-why]')) { e.preventDefault(); openWhy(e.target.dataset.why); }
+    });
+    document.getElementById('whyClose').addEventListener('click', () => { document.getElementById('whyPanel').style.display = 'none'; });
+    document.getElementById('whyCopy').addEventListener('click', copyWhyPrompt);
     detectLocalServer();
 
     function loadSampleTrace(fromHistory = false) {
