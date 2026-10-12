@@ -98,3 +98,45 @@ func TestFindSessionPrefersExactAndRejectsAmbiguousPrefix(t *testing.T) {
 		t.Errorf("No match must return nil, got %+v, %v", s, err)
 	}
 }
+
+// A slash command writes its output as a second message in the user role, `!` shell
+// commands write their stdout the same way, and an interrupted response leaves a marker.
+// None of them is a prompt (turns.skip_regex): the calls that follow stay in the turn of
+// the command the user actually issued.
+func TestOutputOnlyMessagesAndInterruptionsAreNotTurns(t *testing.T) {
+	user := func(content, ts string) string {
+		return `{"type":"user","timestamp":"` + ts + `","message":{"content":` + content + `}}`
+	}
+	call := func(id, ts string) string {
+		return `{"type":"assistant","timestamp":"` + ts + `","message":{"content":[{"type":"tool_use","id":"` + id + `","name":"Bash","input":{"command":"true"}}]}}`
+	}
+	input := strings.Join([]string{
+		user(`"<command-message>review</command-message>\n<command-name>/review</command-name>\n<command-args>42</command-args>"`, "2026-10-07T10:00:00Z"),
+		user(`"<local-command-stdout>Loaded 3 files</local-command-stdout>"`, "2026-10-07T10:00:00.200Z"),
+		call("c1", "2026-10-07T10:00:01Z"),
+		user(`"<bash-input>ls</bash-input>"`, "2026-10-07T10:01:00Z"),
+		user(`"<bash-stdout>README.md</bash-stdout><bash-stderr></bash-stderr>"`, "2026-10-07T10:01:00.300Z"),
+		call("c2", "2026-10-07T10:01:01Z"),
+		user(`"<local-command-stdout></local-command-stdout>"`, "2026-10-07T10:01:30Z"),
+		user(`[{"type":"text","text":"[Request interrupted by user]"}]`, "2026-10-07T10:02:00Z"),
+		user(`"continue"`, "2026-10-07T10:02:30Z"),
+		call("c3", "2026-10-07T10:02:31Z"),
+	}, "\n")
+
+	data, err := NewCollector(claudeProvider(t)).IngestSessionReader(strings.NewReader(input), "s.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, turn := range data.Turns {
+		var ids []string
+		for _, n := range turn.Nodes {
+			ids = append(ids, n.ID)
+		}
+		got = append(got, turn.Prompt+":"+strings.Join(ids, ","))
+	}
+	want := []string{"/review:c1", "[bash-input] ls:c2", "continue:c3"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("Turns = %v, want %v", got, want)
+	}
+}

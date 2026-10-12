@@ -220,7 +220,7 @@ func readLine(br *bufio.Reader, max int) ([]byte, error) {
 }
 
 // extractTurn reports whether payload starts a new user turn and returns its prompt and timestamp.
-func extractTurn(cfg models.TurnExtraction, payload map[string]interface{}) (string, time.Time, bool) {
+func extractTurn(cfg models.TurnExtraction, skip []*regexp.Regexp, payload map[string]interface{}) (string, time.Time, bool) {
 	if cfg.Filter == "" || !providers.MatchesFilter(payload, cfg.Filter) {
 		return "", time.Time{}, false
 	}
@@ -232,8 +232,16 @@ func extractTurn(cfg models.TurnExtraction, payload map[string]interface{}) (str
 			return "", time.Time{}, false
 		}
 	}
+	prompt := cleanPrompt(text, cfg.PromptTag)
+	// Messages the provider marks as not written by the user: a local command's output,
+	// an interruption marker (turns.skip_regex)
+	for _, re := range skip {
+		if re.MatchString(prompt) {
+			return "", time.Time{}, false
+		}
+	}
 	ts, _ := providers.ParseTimestampValue(providers.ResolveField(payload, cfg.TimestampField))
-	return cleanPrompt(text, cfg.PromptTag), ts, true
+	return prompt, ts, true
 }
 
 // resultItems returns the individual result records contained in a result event.

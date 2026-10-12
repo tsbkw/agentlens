@@ -49,6 +49,13 @@ extraction:
     timestamp_field: "timestamp"
     # Slash commands are recorded as <command-name>/cmd</command-name>...
     prompt_tag: "command-name"
+    # Messages in the user role that the user did not write: the output of a slash command
+    # or of a `!` shell command (the <bash-input> itself is kept as a turn), the caveat
+    # before them, and the marker left when the user interrupts a response.
+    skip_regex:
+      - "^\\[local-command-(stdout|caveat)\\]"
+      - "^\\[bash-std(out|err)\\]"
+      - "^\\[Request interrupted by user"
 
   results:
     correlation: "call_id"

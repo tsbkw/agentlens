@@ -107,7 +107,8 @@
             "filter": { "type": "string", "description": "Filter identifying prompt events (e.g. \"type == 'USER_INPUT'\")." },
             "prompt_field": { "type": "string", "description": "Dot-path of the prompt. Arrays of content blocks are reduced to their text." },
             "timestamp_field": { "type": "string", "description": "Dot-path of the prompt timestamp (RFC 3339)." },
-            "prompt_tag": { "type": "string", "description": "Optional wrapper tag whose inner text is used as the prompt (e.g. 'USER_REQUEST')." }
+            "prompt_tag": { "type": "string", "description": "Optional wrapper tag whose inner text is used as the prompt (e.g. 'USER_REQUEST')." },
+            "skip_regex": { "type": "array", "items": { "type": "string" }, "description": "Patterns matched against the extracted prompt label. A message that matches is not a turn and its calls stay in the current turn: the output of a local command, an interruption marker. A message made only of <tag> blocks is labelled '[tag] first line', so '^\\[local-command-stdout\\]' matches such output." }
           }
         },
         "results": {
