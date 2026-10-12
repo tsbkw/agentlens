@@ -196,10 +196,12 @@
     }
     .invocation-chip:hover { border-color: var(--primary); color: #fff; }
     .invocation-chip.active { border-color: var(--primary); background: rgba(88, 166, 255, 0.18); color: #fff; font-weight: 600; }
-    .invocation-chip.chip-failed { color: var(--danger); border-color: rgba(248, 81, 73, 0.45); }
-    .invocation-chip.chip-failed.active { background: rgba(248, 81, 73, 0.25); border-color: var(--danger); }
-    .invocation-chip.chip-success { color: var(--success); }
-    .invocation-chip.chip-warning { color: var(--warning); }
+    .invocation-chip.chip-failed, .invocation-chip.failed { color: var(--danger); border-color: rgba(248, 81, 73, 0.45); }
+    .invocation-chip.chip-failed.active, .invocation-chip.failed.active { background: rgba(248, 81, 73, 0.25); border-color: var(--danger); color: #fff; }
+    .invocation-chip.chip-success, .invocation-chip.success { color: var(--success); border-color: rgba(63, 185, 80, 0.45); }
+    .invocation-chip.chip-success.active, .invocation-chip.success.active { background: rgba(63, 185, 80, 0.22); border-color: var(--success); color: #fff; }
+    .invocation-chip.chip-warning, .invocation-chip.denied, .invocation-chip.timeout { color: var(--warning); border-color: rgba(210, 153, 34, 0.45); }
+    .invocation-chip.chip-warning.active, .invocation-chip.denied.active, .invocation-chip.timeout.active { background: rgba(210, 153, 34, 0.22); border-color: var(--warning); color: #fff; }
     
     /* Layout */
     .app-container {
@@ -640,7 +642,21 @@
             <button class="tab-btn" id="tabTraceBtn">Turn Execution Trace</button>
           </div>
           <input type="text" id="searchInput" class="search-input" placeholder="Search tool name, MCP server, arguments..." aria-label="Search calls">
-          <select id="filterSelect" class="filter-select" aria-label="Filter calls">
+          <select id="typeFilterSelect" class="filter-select" aria-label="Filter calls by type">
+            <option value="all">Type: All</option>
+            <option value="mcp_tool">MCP Tools</option>
+            <option value="skill">Skills</option>
+            <option value="system_tool">System Tools</option>
+            <option value="subagent">Subagents</option>
+          </select>
+          <select id="statusFilterSelect" class="filter-select" aria-label="Filter calls by status">
+            <option value="all">Status: All</option>
+            <option value="failed">Failed / Timeout (✗)</option>
+            <option value="success">Success (✓)</option>
+            <option value="denied">Denied (⊘)</option>
+            <option value="anomalies">With Anomalies (⚠️)</option>
+          </select>
+          <select id="filterSelect" class="filter-select" style="display:none;" aria-label="Legacy filter compatibility">
             <option value="all">All Tools</option>
             <option value="mcp">MCP Only</option>
             <option value="skill">Skills Only</option>
@@ -669,6 +685,21 @@
         <div class="invocations-bar">
           <span class="invocations-title">Invocations (<span id="drawerInvocationsCount">0</span>)</span>
           <button class="btn btn-sm" id="drawerFilterTraceBtn" style="font-size:0.75rem; padding:0.15rem 0.5rem;" title="View all calls in execution trace">View in Trace</button>
+        </div>
+        <div class="invocations-filter-bar" style="display:flex; gap:0.4rem; margin:0.35rem 0 0.5rem 0; flex-wrap:wrap; align-items:center;">
+          <select id="drawerFilterStatus" class="filter-select" style="font-size:0.75rem; padding:0.15rem 0.4rem; height:24px;" aria-label="Filter invocations by status">
+            <option value="all">Status: All</option>
+            <option value="failed">Failed / Timeout (✗)</option>
+            <option value="success">Success (✓)</option>
+            <option value="denied">Denied (⊘)</option>
+          </select>
+          <select id="drawerFilterType" class="filter-select" style="font-size:0.75rem; padding:0.15rem 0.4rem; height:24px;" aria-label="Filter invocations by type">
+            <option value="all">Type: All</option>
+            <option value="mcp_tool">MCP</option>
+            <option value="skill">Skill</option>
+            <option value="system_tool">System</option>
+            <option value="subagent">Subagent</option>
+          </select>
         </div>
         <div id="drawerInvocationsList" class="invocation-chips"></div>
       </div>
@@ -760,6 +791,8 @@
     const loadClaudeSampleBtn = document.getElementById('loadClaudeSampleBtn');
     const resetBtn = document.getElementById('resetBtn');
     const searchInput = document.getElementById('searchInput');
+    const typeFilterSelect = document.getElementById('typeFilterSelect');
+    const statusFilterSelect = document.getElementById('statusFilterSelect');
     const filterSelect = document.getElementById('filterSelect');
     const tabDepsBtn = document.getElementById('tabDepsBtn');
     const tabTraceBtn = document.getElementById('tabTraceBtn');
@@ -799,7 +832,75 @@
     resetBtn.addEventListener('click', () => resetToDashboard(false));
     closeDrawerBtn.addEventListener('click', () => closeDrawer(false));
     searchInput.addEventListener('input', () => refreshViews());
-    filterSelect.addEventListener('change', () => refreshViews());
+    let lastLegacyFilterVal = 'all';
+
+    function syncFromLegacyFilter() {
+      if (!filterSelect || !typeFilterSelect || !statusFilterSelect) return;
+      const val = filterSelect.value;
+      lastLegacyFilterVal = val;
+      if (val === 'mcp') {
+        typeFilterSelect.value = 'mcp_tool';
+        statusFilterSelect.value = 'all';
+      } else if (val === 'skill') {
+        typeFilterSelect.value = 'skill';
+        statusFilterSelect.value = 'all';
+      } else if (val === 'failed') {
+        typeFilterSelect.value = 'all';
+        statusFilterSelect.value = 'failed';
+      } else if (val === 'anomalies') {
+        typeFilterSelect.value = 'all';
+        statusFilterSelect.value = 'anomalies';
+      } else if (val === 'all') {
+        typeFilterSelect.value = 'all';
+        statusFilterSelect.value = 'all';
+      }
+    }
+
+    function syncToLegacyFilter() {
+      if (!filterSelect || !typeFilterSelect || !statusFilterSelect) return;
+      const t = typeFilterSelect.value;
+      const s = statusFilterSelect.value;
+      let legacy = 'all';
+      if (t === 'mcp_tool' && s === 'all') legacy = 'mcp';
+      else if (t === 'skill' && s === 'all') legacy = 'skill';
+      else if (t === 'all' && s === 'failed') legacy = 'failed';
+      else if (t === 'all' && s === 'anomalies') legacy = 'anomalies';
+      filterSelect.value = legacy;
+      lastLegacyFilterVal = legacy;
+    }
+
+    function getEffectiveFilters() {
+      const currentLegacy = filterSelect ? filterSelect.value : 'all';
+      let t = typeFilterSelect ? typeFilterSelect.value : 'all';
+      let s = statusFilterSelect ? statusFilterSelect.value : 'all';
+
+      if (currentLegacy !== lastLegacyFilterVal) {
+        lastLegacyFilterVal = currentLegacy;
+        syncFromLegacyFilter();
+        t = typeFilterSelect ? typeFilterSelect.value : 'all';
+        s = statusFilterSelect ? statusFilterSelect.value : 'all';
+      }
+      return { typeFilter: t, statusFilter: s };
+    }
+
+    if (typeFilterSelect) {
+      typeFilterSelect.addEventListener('change', () => {
+        syncToLegacyFilter();
+        refreshViews();
+      });
+    }
+    if (statusFilterSelect) {
+      statusFilterSelect.addEventListener('change', () => {
+        syncToLegacyFilter();
+        refreshViews();
+      });
+    }
+    if (filterSelect) {
+      filterSelect.addEventListener('change', () => {
+        syncFromLegacyFilter();
+        refreshViews();
+      });
+    }
 
     function switchTab(tab) {
       currentView = tab;
@@ -1478,8 +1579,16 @@
 
       // A new session starts with a clean view
       searchInput.value = '';
+      if (typeFilterSelect) typeFilterSelect.value = 'all';
+      if (statusFilterSelect) statusFilterSelect.value = 'all';
       filterSelect.value = 'all';
+      lastLegacyFilterVal = 'all';
       selectedNodeId = null;
+      currentDrawerNodeKey = '';
+      const drawerFilterStatus = document.getElementById('drawerFilterStatus');
+      const drawerFilterType = document.getElementById('drawerFilterType');
+      if (drawerFilterStatus) drawerFilterStatus.value = 'all';
+      if (drawerFilterType) drawerFilterType.value = 'all';
       drawer.classList.remove('open');
 
       currentProvider = best ? best.provider : null;
@@ -1835,13 +1944,13 @@
 
       // Make stat cards clickable filters
       const statFilters = [
-        { id: 'statFailedCalls', filter: 'failed' },
-        { id: 'statMcpCalls', filter: 'mcp' },
-        { id: 'statSkillCalls', filter: 'skill' },
-        { id: 'statAnomalies', filter: 'anomalies' },
-        { id: 'statTotalNodes', filter: 'all' }
+        { id: 'statFailedCalls', type: 'all', status: 'failed', filter: 'failed' },
+        { id: 'statMcpCalls', type: 'mcp_tool', status: 'all', filter: 'mcp' },
+        { id: 'statSkillCalls', type: 'skill', status: 'all', filter: 'skill' },
+        { id: 'statAnomalies', type: 'all', status: 'anomalies', filter: 'anomalies' },
+        { id: 'statTotalNodes', type: 'all', status: 'all', filter: 'all' }
       ];
-      statFilters.forEach(({ id, filter }) => {
+      statFilters.forEach(({ id, type, status, filter }) => {
         const el = document.getElementById(id);
         const card = el ? el.closest('.stat-card') : null;
         if (card && !card.dataset.hasClickListener) {
@@ -1849,7 +1958,9 @@
           card.style.cursor = 'pointer';
           card.title = `Click to filter: ${filter}`;
           card.addEventListener('click', () => {
-            filterSelect.value = filter;
+            if (typeFilterSelect) typeFilterSelect.value = type;
+            if (statusFilterSelect) statusFilterSelect.value = status;
+            if (filterSelect) filterSelect.value = filter;
             refreshViews();
           });
         }
@@ -1973,30 +2084,45 @@
       `;
     }
 
-    function depMatches(dep, query, filter) {
+    function normalizeFilters(typeFilter, statusFilter) {
+      let t = typeFilter || 'all';
+      let s = statusFilter || 'all';
+      if (typeof t === 'string' && s === 'all') {
+        if (t === 'mcp') { t = 'mcp_tool'; }
+        else if (t === 'failed') { t = 'all'; s = 'failed'; }
+        else if (t === 'anomalies') { t = 'all'; s = 'anomalies'; }
+      }
+      return { t, s };
+    }
+
+    function depMatches(dep, query, typeFilter = 'all', statusFilter = 'all') {
+      const { t, s } = normalizeFilters(typeFilter, statusFilter);
       if (query && !dep.callee.toLowerCase().includes(query) && !dep.caller.toLowerCase().includes(query) &&
           !(dep.mcp_server || '').toLowerCase().includes(query) && !(dep.search_text || '').includes(query)) return false;
-      if (filter === 'mcp' && dep.callee_type !== 'mcp_tool') return false;
-      if (filter === 'skill' && dep.callee_type !== 'skill') return false;
-      if (filter === 'failed' && dep.fail_count === 0) return false;
-      if (filter === 'anomalies' && !(dep.anomaly_count > 0 || dep.is_fallback)) return false;
+      if (t !== 'all' && dep.callee_type !== t) return false;
+      if (s === 'failed' && dep.fail_count === 0) return false;
+      if (s === 'success' && dep.success_count === 0) return false;
+      if (s === 'denied' && dep.denied_count === 0) return false;
+      if (s === 'anomalies' && !(dep.anomaly_count > 0 || dep.is_fallback)) return false;
       return true;
     }
 
     // The dependency with the children that match (or have matching descendants), or null
-    function pruneDep(dep, query, filter) {
-      const children = (dep.children || []).map(c => pruneDep(c, query, filter)).filter(Boolean);
-      if (!depMatches(dep, query, filter) && children.length === 0) return null;
+    function pruneDep(dep, query, typeFilter = 'all', statusFilter = 'all') {
+      const children = (dep.children || []).map(c => pruneDep(c, query, typeFilter, statusFilter)).filter(Boolean);
+      if (!depMatches(dep, query, typeFilter, statusFilter) && children.length === 0) return null;
       return { ...dep, children };
     }
 
-    function nodeMatches(node, query, filter) {
+    function nodeMatches(node, query, typeFilter = 'all', statusFilter = 'all') {
+      const { t, s } = normalizeFilters(typeFilter, statusFilter);
       if (query && !node.name.toLowerCase().includes(query) && !(node.mcp_server || '').toLowerCase().includes(query) &&
           !(node.caller_scope || '').toLowerCase().includes(query) && !argStrings(node.arguments).join(' ').toLowerCase().includes(query)) return false;
-      if (filter === 'mcp' && node.type !== 'mcp_tool') return false;
-      if (filter === 'skill' && node.type !== 'skill') return false;
-      if (filter === 'failed' && node.status !== 'failed' && node.status !== 'timeout') return false;
-      if (filter === 'anomalies' && node.anomalies.length === 0) return false;
+      if (t !== 'all' && node.type !== t) return false;
+      if (s === 'failed' && node.status !== 'failed' && node.status !== 'timeout') return false;
+      if (s === 'success' && node.status !== 'success') return false;
+      if (s === 'denied' && node.status !== 'denied') return false;
+      if (s === 'anomalies' && node.anomalies.length === 0) return false;
       return true;
     }
 
@@ -2004,12 +2130,12 @@
       depsViewContainer.innerHTML = '';
       depRegistry = {};
       const query = searchInput.value.toLowerCase();
-      const filter = filterSelect.value;
+      const { typeFilter, statusFilter } = getEffectiveFilters();
 
       // Group dependencies by caller; a row stays when it or any nested row matches
       const groups = {};
       currentDependencies.forEach((dep) => {
-        const kept = pruneDep(dep, query, filter);
+        const kept = pruneDep(dep, query, typeFilter, statusFilter);
         if (!kept) return;
         if (!groups[kept.caller]) groups[kept.caller] = [];
         groups[kept.caller].push(kept);
@@ -2059,8 +2185,8 @@
     function renderTraceView() {
       traceViewContainer.innerHTML = '';
       const query = searchInput.value.toLowerCase();
-      const filter = filterSelect.value;
-      const visible = nodes => nodes.filter(n => nodeMatches(n, query, filter));
+      const { typeFilter, statusFilter } = getEffectiveFilters();
+      const visible = nodes => nodes.filter(n => nodeMatches(n, query, typeFilter, statusFilter));
       if (currentTurns.length === 0) {
         // Fallback flat list
         const card = document.createElement('div');
@@ -2073,7 +2199,7 @@
       let shown = 0;
       currentTurns.forEach((turn) => {
         const nodes = visible(turn.nodes);
-        if (nodes.length === 0 && (query || filter !== 'all')) return;
+        if (nodes.length === 0 && (query || typeFilter !== 'all' || statusFilter !== 'all')) return;
         shown++;
         const card = document.createElement('div');
         card.className = 'turn-card';
@@ -2177,7 +2303,7 @@
         }
       }
       if (targetNode) {
-        openDrawer(targetNode, fromHistory, dep);
+        openDrawer(targetNode, fromHistory, dep, which);
       } else {
         openDrawerForScope(dep, fromHistory);
       }
@@ -2193,6 +2319,7 @@
         updateUrlState({ session: currentSessionId, call: scopeDep.callee });
       }
 
+      currentDrawerNodeKey = scopeDep.callee;
       document.getElementById('drawerInvocationsSection').style.display = 'none';
 
       let badgeClass = 'badge-system';
@@ -2222,7 +2349,9 @@
       document.getElementById('drawerAnomaliesSection').style.display = 'none';
     }
 
-    function openDrawer(node, fromHistory = false, dep = null) {
+    let currentDrawerNodeKey = '';
+
+    function openDrawer(node, fromHistory = false, dep = null, filterStatusHint = null) {
       selectedNodeId = node.id;
       document.querySelectorAll('.node-row').forEach(r => r.classList.toggle('selected', r.dataset.nodeId === node.id));
       drawer.classList.add('open');
@@ -2237,30 +2366,72 @@
       const invocationsCount = document.getElementById('drawerInvocationsCount');
       const invocationsList = document.getElementById('drawerInvocationsList');
       const filterTraceBtn = document.getElementById('drawerFilterTraceBtn');
+      const drawerFilterStatus = document.getElementById('drawerFilterStatus');
+      const drawerFilterType = document.getElementById('drawerFilterType');
 
       const invocations = (dep && dep.nodes && dep.nodes.length > 0)
         ? dep.nodes
         : currentNodes.filter(n => n.name === node.name && (n.mcp_server || '') === (node.mcp_server || ''));
 
+      const nodeKey = `${node.name}::${node.mcp_server || ''}`;
+      const isSameTool = currentDrawerNodeKey === nodeKey;
+      currentDrawerNodeKey = nodeKey;
+
       if (invocations.length > 1) {
         invocationsSec.style.display = 'block';
-        invocationsCount.textContent = invocations.length;
         filterTraceBtn.onclick = () => filterTraceToCall(node.name);
-        invocationsList.innerHTML = '';
-        invocations.forEach((inv, idx) => {
-          const chip = document.createElement('button');
-          chip.type = 'button';
-          const isCurrent = inv.id === node.id;
-          const statusCls = (inv.status === 'failed' || inv.status === 'timeout') ? 'failed' : (inv.status === 'denied' ? 'denied' : 'success');
-          chip.className = `invocation-chip ${statusCls} ${isCurrent ? 'active' : ''}`;
-          chip.textContent = `#${idx + 1} ${statusMark(inv.status)}`;
-          chip.title = `Call #${idx + 1} (${inv.status}) - Turn ${inv.turn_index}`;
-          chip.onclick = (e) => {
-            e.stopPropagation();
-            openDrawer(inv, false, dep);
-          };
-          invocationsList.appendChild(chip);
-        });
+
+        if (filterStatusHint && filterStatusHint !== 'auto') {
+          if (drawerFilterStatus) drawerFilterStatus.value = filterStatusHint;
+        } else if (!isSameTool) {
+          if (drawerFilterStatus) drawerFilterStatus.value = 'all';
+          if (drawerFilterType) drawerFilterType.value = 'all';
+        }
+
+        const renderChips = () => {
+          const sFilter = drawerFilterStatus ? drawerFilterStatus.value : 'all';
+          const tFilter = drawerFilterType ? drawerFilterType.value : 'all';
+
+          const filtered = invocations.map((inv, idx) => ({ inv, idx })).filter(({ inv }) => {
+            if (sFilter === 'failed' && inv.status !== 'failed' && inv.status !== 'timeout') return false;
+            if (sFilter === 'success' && inv.status !== 'success') return false;
+            if (sFilter === 'denied' && inv.status !== 'denied') return false;
+            if (tFilter !== 'all' && inv.type !== tFilter) return false;
+            return true;
+          });
+
+          invocationsCount.textContent = (sFilter !== 'all' || tFilter !== 'all')
+            ? `${filtered.length}/${invocations.length}`
+            : `${invocations.length}`;
+
+          invocationsList.innerHTML = '';
+          if (filtered.length === 0) {
+            invocationsList.innerHTML = `<span style="font-size:0.75rem; color:var(--text-muted); padding:0.2rem;">No matching invocations</span>`;
+            return;
+          }
+
+          filtered.forEach(({ inv, idx }) => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            const isCurrent = inv.id === node.id;
+            const statusCls = (inv.status === 'failed' || inv.status === 'timeout') ? 'failed' : (inv.status === 'denied' ? 'denied' : 'success');
+            chip.className = `invocation-chip ${statusCls} ${isCurrent ? 'active' : ''}`;
+            chip.textContent = `#${idx + 1} ${statusMark(inv.status)}`;
+            const durStr = inv.duration_ms > 0 ? `, ${formatDuration(inv.duration_ms)}` : '';
+            const typeStr = inv.type ? `, ${inv.type.replace('_', ' ')}` : '';
+            chip.title = `Call #${idx + 1} (${inv.status}${typeStr}, Turn ${inv.turn_index}${durStr})`;
+            chip.onclick = (e) => {
+              e.stopPropagation();
+              openDrawer(inv, false, dep);
+            };
+            invocationsList.appendChild(chip);
+          });
+        };
+
+        if (drawerFilterStatus) drawerFilterStatus.onchange = renderChips;
+        if (drawerFilterType) drawerFilterType.onchange = renderChips;
+
+        renderChips();
       } else {
         invocationsSec.style.display = 'none';
       }
@@ -2305,6 +2476,7 @@
     function closeDrawer(fromHistory = false) {
       drawer.classList.remove('open');
       selectedNodeId = null;
+      currentDrawerNodeKey = '';
       document.querySelectorAll('.node-row').forEach(r => r.classList.remove('selected'));
       if (!fromHistory) {
         updateUrlState({ session: currentSessionId, call: null });
@@ -2317,6 +2489,16 @@
       drawer.classList.remove('open');
       selectedNodeId = null;
       currentSessionId = '';
+      currentDrawerNodeKey = '';
+      if (typeFilterSelect) typeFilterSelect.value = 'all';
+      if (statusFilterSelect) statusFilterSelect.value = 'all';
+      if (filterSelect) filterSelect.value = 'all';
+      lastLegacyFilterVal = 'all';
+      if (searchInput) searchInput.value = '';
+      const drawerFilterStatus = document.getElementById('drawerFilterStatus');
+      const drawerFilterType = document.getElementById('drawerFilterType');
+      if (drawerFilterStatus) drawerFilterStatus.value = 'all';
+      if (drawerFilterType) drawerFilterType.value = 'all';
       if (!fromHistory) {
         updateUrlState({ session: null, call: null });
       }
