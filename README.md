@@ -104,7 +104,8 @@ agentlens ui
 # Live-watch an ongoing AI session in real-time (latest session when omitted)
 agentlens watch [session-id]
 
-# Aggregate calls and anomalies of every session over a period (default: last 7 days)
+# Aggregate calls and anomalies of every session over a period (default: last 7 days),
+# and list the Skills and MCP servers that stopped working (dormant tools)
 agentlens report --since 2026-10-01 --until 2026-10-10 [--project <name>] [--top 10] [--json]
 ```
 

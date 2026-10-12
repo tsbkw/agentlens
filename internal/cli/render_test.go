@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -172,5 +173,42 @@ func TestRenderReport(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("Expected %q in report output:\n%s", want, out)
 		}
+	}
+}
+
+func TestRenderReportListsDormantTools(t *testing.T) {
+	now := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	reportNow = func() time.Time { return now }
+	defer func() { reportNow = time.Now }()
+
+	r := &report.Report{Sessions: 3, Total: report.Counts{Calls: 5}}
+	r.BySession = []report.Row{{Key: "s1", Counts: report.Counts{Calls: 5}}}
+	r.ToolHealth = []report.ToolHealth{
+		{Key: "github", Kind: report.KindMCPServer, Reason: report.ReasonAuthUnresolved, LastSuccess: now.Add(-3 * 24 * time.Hour), SessionsSinceLastSuccess: 4, LastError: "Authentication Failed: Bad credentials"},
+		{Key: "jira", Kind: report.KindMCPServer, Reason: report.ReasonConnectionFailing, SessionsSinceLastSuccess: 6, LastConnectError: "HTTP 401: session is not valid"},
+		{Key: "deploy", Kind: report.KindSkill, Reason: report.ReasonDenied, LastSuccess: now.Add(-5 * time.Hour), SessionsSinceLastSuccess: 1},
+		{Key: "slack", Kind: report.KindMCPServer, Reason: report.ReasonUnused},
+	}
+	for i := 0; i < 10; i++ {
+		r.ToolHealth = append(r.ToolHealth, report.ToolHealth{Key: fmt.Sprintf("skill-%02d", i), Kind: report.KindSkill, Reason: report.ReasonUnused})
+	}
+	var buf bytes.Buffer
+	RenderReport(&buf, r, 2)
+	out := buf.String()
+	for _, want := range []string{
+		"Dormant Skills & MCP servers",
+		"github", "MCP", "2026-10-09", "3d, 4 sessions", "auth failed, not fixed", "Authentication Failed: Bad credentials",
+		"jira", "never", "6 sessions", "server fails to connect", "HTTP 401: session is not valid",
+		"… 1 more (use --top or --json)",
+		"agentlens why <name>",
+		"MCP servers offered but never called (1): slack",
+		"Skills offered but never called (10): skill-00, skill-01, skill-02, skill-03, skill-04, skill-05, skill-06, skill-07, … 2 more (use --json)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("Report output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "deploy") {
+		t.Errorf("--top 2 must hide the third dormant row:\n%s", out)
 	}
 }

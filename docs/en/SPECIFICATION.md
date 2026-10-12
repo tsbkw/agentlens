@@ -123,7 +123,7 @@ Each silent fallback carries a `confidence` (`high` when the substitute reaches 
 - **`agentlens trace <session-id | file>`**: Render the turn-by-turn execution tree with status, duration and anomaly badges.
 - **`agentlens inspect <call-id> [session-id]`**: Display full details, arguments, outputs, and anomaly diagnostics for a specific node. Without a session, every discovered session is searched.
 - **`agentlens watch [session-id]`**: Live terminal monitor tailing an active session (the most recent one by default) and its subagents.
-- **`agentlens report`**: Aggregates calls and anomalies of all sessions over a period (`--since`, `--until`, `--project`, `--top`, `--json`), ranked by MCP server, tool and session.
+- **`agentlens report`**: Aggregates calls and anomalies of all sessions over a period (`--since`, `--until`, `--project`, `--top`, `--json`), ranked by MCP server, tool and session. It also follows every Skill and MCP server across those sessions (`tool_health`) and lists the **dormant** ones: not working as of their last use, with the reason (server fails to connect, waiting for sign-in, auth failed and never fixed, denied, replaced by a substitute, failing), how long they have been silent and their last error. Skills and servers that were offered but never called are named separately.
 - `--provider <id | file.yaml>` selects the trace format (auto-detected by default). Colors follow `NO_COLOR` / `FORCE_COLOR` and are off when stdout is not a terminal.
 
 #### 3.5.2 Web UI Dashboard (Embedded & GitHub Pages)

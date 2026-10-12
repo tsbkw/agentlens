@@ -130,7 +130,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 
 ### Phase 12: Dormant Tools (PR #53–)
 - [x] `extraction.availability`: skills, tools, failed and pending MCP servers announced by the harness are collected per session (PR #53)
-- [ ] Report section listing Skills and MCP servers that stopped being called, with the reason class (connection failing, auth left unresolved, denied, unused)
+- [x] Report section listing Skills and MCP servers that stopped working, with the reason (connection failing, waiting for sign-in, auth unresolved, denied, replaced, failing) and the ones offered but never called (PR #54)
 - [ ] Dashboard view of dormant tools
 - [ ] `agentlens why <tool>`: cross-session timeline, diagnosis with evidence, and a Claude Code prompt to investigate on the machine
 

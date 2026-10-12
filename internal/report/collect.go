@@ -111,6 +111,30 @@ func Collect(provs []*providers.LoadedProvider, window Window, project string, s
 		g := graph.NewGraphBuilder().BuildWithTurns(s.SessionID, provider.Definition.Provider.ID, data.Turns, data.Nodes)
 		detector.NewDetector(provider).Analyze(g)
 		b.Add(s.SessionID, name, data.Nodes, g)
+		b.AddAvailability(s.SessionID, sessionStart(data, s.ModTime), data.Availability)
 	}
 	return b.Report(), nil
+}
+
+// sessionStart is the time a session began: its first prompt, else its first call, else the
+// first announced connection failure, else the trace's modification time.
+func sessionStart(data *collector.SessionData, modTime time.Time) time.Time {
+	for _, t := range data.Turns {
+		if !t.Timestamp.IsZero() {
+			return t.Timestamp
+		}
+	}
+	for _, n := range data.Nodes {
+		if !n.Timestamp.IsZero() {
+			return n.Timestamp
+		}
+	}
+	if data.Availability != nil {
+		for _, f := range data.Availability.FailedServers {
+			if !f.Timestamp.IsZero() {
+				return f.Timestamp
+			}
+		}
+	}
+	return modTime
 }
