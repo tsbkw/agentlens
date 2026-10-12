@@ -1,0 +1,114 @@
+{
+  "provider": "antigravity",
+  "turn_count": 2,
+  "node_count": 9,
+  "turns": [
+    {
+      "index": 1,
+      "prompt_first_line": "Multi-line task request:",
+      "turn_node_name": "Turn 1: Multi-line task request:"
+    },
+    {
+      "index": 2,
+      "prompt_first_line": "Execute recovery procedure",
+      "turn_node_name": "Turn 2: Execute recovery procedure"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "call-skill-quoted",
+      "name": "view_file",
+      "type": "skill",
+      "scope_name": "Skill: quota-aware-task-runner",
+      "caller_scope": "Agent",
+      "status": "success",
+      "output": "Skill instructions for quota-aware-task-runner loaded."
+    },
+    {
+      "id": "call-subagent-array",
+      "name": "invoke_subagent",
+      "type": "subagent",
+      "scope_name": "Subagent: Database Specialist",
+      "caller_scope": "Agent",
+      "status": "success",
+      "output": "Subagent Database Specialist started."
+    },
+    {
+      "id": "call-parallel-1",
+      "name": "run_command",
+      "type": "system_tool",
+      "scope_name": "",
+      "caller_scope": "Subagent: Database Specialist",
+      "status": "success",
+      "output": "On branch main\nnothing to commit"
+    },
+    {
+      "id": "call-parallel-2",
+      "name": "run_command",
+      "type": "system_tool",
+      "scope_name": "",
+      "caller_scope": "Subagent: Database Specialist",
+      "status": "success",
+      "output": "diff --git a/test b/test"
+    },
+    {
+      "id": "call-mcp-auth-fail",
+      "name": "mcp_github_create_issue",
+      "type": "mcp_tool",
+      "scope_name": "",
+      "caller_scope": "Agent",
+      "status": "failed",
+      "output": "401 Unauthorized: GitHub OAuth personal access token has expired."
+    },
+    {
+      "id": "call-fallback-shell",
+      "name": "run_command",
+      "type": "system_tool",
+      "scope_name": "",
+      "caller_scope": "Agent",
+      "status": "success",
+      "output": "https://github.com/company/repo/issues/42"
+    },
+    {
+      "id": "call-loop-1",
+      "name": "mcp_postgres_query",
+      "type": "mcp_tool",
+      "scope_name": "",
+      "caller_scope": "Agent",
+      "status": "failed",
+      "output": "connection timeout: server unreachable"
+    },
+    {
+      "id": "call-loop-2",
+      "name": "mcp_postgres_query",
+      "type": "mcp_tool",
+      "scope_name": "",
+      "caller_scope": "Agent",
+      "status": "failed",
+      "output": "connection timeout: server unreachable"
+    },
+    {
+      "id": "call-loop-3",
+      "name": "mcp_postgres_query",
+      "type": "mcp_tool",
+      "scope_name": "",
+      "caller_scope": "Agent",
+      "status": "failed",
+      "output": "connection timeout: server unreachable"
+    }
+  ],
+  "anomalies": [
+    {
+      "type": "auth_expired",
+      "node_id": "call-mcp-auth-fail"
+    },
+    {
+      "type": "silent_fallback",
+      "node_id": "call-fallback-shell"
+    },
+    {
+      "type": "retry_loop",
+      "node_id": "call-loop-3"
+    }
+  ]
+}
