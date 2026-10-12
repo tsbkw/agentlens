@@ -895,6 +895,147 @@ async function runTestSuite() {
   await page3.close();
 
   // -------------------------------------------------------------
+  // Test 13: Invocation Status & Type Filters (Drawer and Controls Bar)
+  // -------------------------------------------------------------
+  console.log('\nTest 13: Invocation Status & Type Filtering...');
+  await page.click('#resetBtn');
+  await page.evaluate(() => {
+    const trace = [
+      { step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', content: 'test filtering' },
+      { step_index: 1, source: 'MODEL', type: 'PLANNER_RESPONSE', tool_calls: [{ id: 'call-mix-1', name: 'mcp_test_tool', args: { num: 1 } }] },
+      { step_index: 2, source: 'SYSTEM', type: 'GENERIC', status: 'DONE', content: 'success' },
+      { step_index: 3, source: 'MODEL', type: 'PLANNER_RESPONSE', tool_calls: [{ id: 'call-mix-2', name: 'mcp_test_tool', args: { num: 2 } }] },
+      { step_index: 4, source: 'SYSTEM', type: 'GENERIC', status: 'ERROR', content: 'error 500' },
+      { step_index: 5, source: 'MODEL', type: 'PLANNER_RESPONSE', tool_calls: [{ id: 'call-sys-1', name: 'run_command', args: { CommandLine: 'ls' } }] },
+      { step_index: 6, source: 'SYSTEM', type: 'GENERIC', status: 'DONE', content: 'file.txt' }
+    ].map(JSON.stringify).join('\n');
+    processTraceText(trace);
+  });
+  await page.waitForSelector('.callee-row');
+
+  // 1. Drawer Invocations List filtering
+  await page.evaluate(() => {
+    // Click mcp_test_tool row which has both failures and successes
+    const rows = [...document.querySelectorAll('.callee-row')];
+    const target = rows.find(r => r.querySelector('.callee-name') && r.querySelector('.callee-name').textContent.includes('mcp_test_tool'));
+    if (target) target.click();
+  });
+  await page.waitForSelector('#drawer.open');
+
+  const drawerFilterTest = await page.evaluate(() => {
+    const sec = document.getElementById('drawerInvocationsSection');
+    const sSelect = document.getElementById('drawerFilterStatus');
+    const tSelect = document.getElementById('drawerFilterType');
+    const countEl = document.getElementById('drawerInvocationsCount');
+    const listEl = document.getElementById('drawerInvocationsList');
+
+    if (!sec || sec.style.display === 'none') {
+      return { error: 'Drawer invocations section not visible' };
+    }
+
+    const totalChips = listEl.querySelectorAll('.invocation-chip').length;
+
+    // Filter by failed
+    sSelect.value = 'failed';
+    sSelect.dispatchEvent(new Event('change'));
+    const failedChips = listEl.querySelectorAll('.invocation-chip');
+    const failedClasses = [...failedChips].map(c => c.className);
+    const failedCountText = countEl.textContent;
+
+    // Filter by success
+    sSelect.value = 'success';
+    sSelect.dispatchEvent(new Event('change'));
+    const successChips = listEl.querySelectorAll('.invocation-chip');
+    const successClasses = [...successChips].map(c => c.className);
+
+    // Filter by all
+    sSelect.value = 'all';
+    sSelect.dispatchEvent(new Event('change'));
+    const allChips = listEl.querySelectorAll('.invocation-chip').length;
+
+    // Filter by type: system_tool (postgres is mcp_tool, so system_tool should yield 0)
+    tSelect.value = 'system_tool';
+    tSelect.dispatchEvent(new Event('change'));
+    const zeroChips = listEl.querySelectorAll('.invocation-chip').length;
+    const zeroMsg = listEl.textContent.trim();
+
+    // Reset type: mcp_tool
+    tSelect.value = 'mcp_tool';
+    tSelect.dispatchEvent(new Event('change'));
+    const mcpChips = listEl.querySelectorAll('.invocation-chip').length;
+
+    return {
+      totalChips,
+      failedChipCount: failedChips.length,
+      failedClasses,
+      failedCountText,
+      successChipCount: successChips.length,
+      successClasses,
+      allChips,
+      zeroChips,
+      zeroMsg,
+      mcpChips
+    };
+  });
+
+  if (drawerFilterTest.error) throw new Error(drawerFilterTest.error);
+  if (drawerFilterTest.totalChips < 2) throw new Error(`Expected at least 2 invocation chips, got ${drawerFilterTest.totalChips}`);
+  if (drawerFilterTest.failedChipCount < 1 || drawerFilterTest.failedClasses.some(c => !c.includes('failed'))) {
+    throw new Error(`Failed filter must only display failed chips: ${JSON.stringify(drawerFilterTest)}`);
+  }
+  if (!drawerFilterTest.failedCountText.includes('/')) {
+    throw new Error(`Expected count to show fraction when filtered, got: ${drawerFilterTest.failedCountText}`);
+  }
+  if (drawerFilterTest.successChipCount < 1 || drawerFilterTest.successClasses.some(c => !c.includes('success'))) {
+    throw new Error(`Success filter must only display success chips: ${JSON.stringify(drawerFilterTest)}`);
+  }
+  if (drawerFilterTest.allChips !== drawerFilterTest.totalChips) {
+    throw new Error(`Resetting status to all must restore chips: ${drawerFilterTest.allChips} vs ${drawerFilterTest.totalChips}`);
+  }
+  if (drawerFilterTest.zeroChips !== 0 || !drawerFilterTest.zeroMsg.includes('No matching')) {
+    throw new Error(`Non-matching type filter must show zero chips with empty message: ${JSON.stringify(drawerFilterTest)}`);
+  }
+  if (drawerFilterTest.mcpChips !== drawerFilterTest.totalChips) {
+    throw new Error(`Matching type filter must restore chips: ${drawerFilterTest.mcpChips}`);
+  }
+  console.log('  ✓ Drawer invocations list correctly filtered by Status and Type');
+
+  // 2. Main View Controls Bar filtering (Type & Status)
+  await page.click('#closeDrawerBtn');
+
+  const mainFilterTest = await page.evaluate(() => {
+    const tSelect = document.getElementById('typeFilterSelect');
+    const sSelect = document.getElementById('statusFilterSelect');
+
+    // Filter Type: MCP Tools
+    tSelect.value = 'mcp_tool';
+    tSelect.dispatchEvent(new Event('change'));
+    const mcpRows = document.querySelectorAll('.callee-row').length;
+
+    // Filter Status: Failed
+    sSelect.value = 'failed';
+    sSelect.dispatchEvent(new Event('change'));
+    const failedMcpRows = document.querySelectorAll('.callee-row').length;
+
+    // Reset Type: All, Status: All
+    tSelect.value = 'all';
+    tSelect.dispatchEvent(new Event('change'));
+    sSelect.value = 'all';
+    sSelect.dispatchEvent(new Event('change'));
+    const allRows = document.querySelectorAll('.callee-row').length;
+
+    return { mcpRows, failedMcpRows, allRows };
+  });
+
+  if (mainFilterTest.mcpRows < 1 || mainFilterTest.mcpRows >= mainFilterTest.allRows) {
+    throw new Error(`Main type filter failed: mcp=${mainFilterTest.mcpRows}, all=${mainFilterTest.allRows}`);
+  }
+  if (mainFilterTest.failedMcpRows < 1 || mainFilterTest.failedMcpRows > mainFilterTest.mcpRows) {
+    throw new Error(`Main combined filter failed: failedMcp=${mainFilterTest.failedMcpRows}, mcp=${mainFilterTest.mcpRows}`);
+  }
+  console.log('  ✓ Main Call Graph correctly filtered by Type and Status dropdowns');
+
+  // -------------------------------------------------------------
   // Test 7: Console & Runtime Errors
   // -------------------------------------------------------------
   console.log('\nTest 7: Uncaught Errors Check...');
