@@ -272,6 +272,35 @@
     .alert-title { font-weight: 600; margin-bottom: 0.25rem; }
     .alert-desc { font-size: 0.85rem; color: var(--text); }
     .alert-rec { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; }
+    .recommendations-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+    .recommendation-card {
+      background: rgba(88, 166, 255, 0.06);
+      border: 1px solid rgba(88, 166, 255, 0.3);
+      border-radius: 8px;
+      padding: 0.85rem 1.1rem;
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+    .recommendation-card.card-danger {
+      background: rgba(248, 81, 73, 0.08);
+      border-color: rgba(248, 81, 73, 0.35);
+    }
+    .recommendation-title { font-weight: 600; color: #fff; margin-bottom: 0.25rem; font-size: 0.92rem; }
+    .recommendation-desc { font-size: 0.85rem; color: var(--text); margin-bottom: 0.35rem; }
+    .recommendation-fix { font-size: 0.82rem; color: var(--primary); }
+    .drawer-failure-card {
+      background: rgba(248, 81, 73, 0.08);
+      border: 1px solid rgba(248, 81, 73, 0.35);
+      border-radius: 6px;
+      padding: 0.85rem;
+      margin-bottom: 1.25rem;
+    }
 
     /* Controls Bar & View Tabs */
     .controls-bar {
@@ -635,6 +664,9 @@
         <!-- Alert Banner -->
         <div class="alerts-container" id="alertsContainer"></div>
 
+        <!-- Session Recommendations Banner -->
+        <div class="recommendations-container" id="recommendationsContainer" style="display:none;"></div>
+
         <!-- Controls Bar with View Tabs -->
         <div class="controls-bar">
           <div class="view-tabs">
@@ -706,6 +738,24 @@
       <div>
         <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">TYPE & STATUS</div>
         <div id="drawerBadges" style="display:flex; gap:0.5rem; flex-wrap:wrap;"></div>
+      </div>
+      <!-- Failure Diagnosis Card -->
+      <div id="drawerFailureSection" style="display:none; margin-top:0.75rem;">
+        <div style="font-size:0.8rem; color:var(--danger); font-weight:600; margin-bottom:0.35rem; display:flex; align-items:center; gap:0.35rem;">
+          <span id="drawerFailureIcon">🚨</span>
+          <span id="drawerFailureCategory">FAILURE DIAGNOSIS & ACTIONABLE FIX</span>
+        </div>
+        <div class="drawer-failure-card" style="margin-bottom:0;">
+          <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+            <strong style="color:var(--danger); font-size:0.9rem;" id="drawerFailureReasonTitle"></strong>
+          </div>
+          <div style="font-size:0.82rem; margin-bottom:0.5rem; color:var(--text-main); font-family:'JetBrains Mono', monospace; background:rgba(0,0,0,0.3); padding:0.4rem 0.6rem; border-radius:4px; word-break:break-all;">
+            <span style="color:var(--text-muted);">Root Cause:</span> <span id="drawerFailureRootCause"></span>
+          </div>
+          <div style="font-size:0.83rem; color:var(--primary); line-height:1.4;">
+            💡 <strong>Recommended Fix:</strong> <span id="drawerFailureRecommendation"></span>
+          </div>
+        </div>
       </div>
       <div>
         <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">CALL ID & TIMESTAMP</div>
@@ -1967,6 +2017,7 @@
       });
 
       renderAlerts(false);
+      renderRecommendations();
 
       refreshViews();
     }
@@ -2006,6 +2057,314 @@
         more.addEventListener('click', () => renderAlerts(true));
         alertsContainer.appendChild(more);
       }
+    }
+
+    function extractFailureDiagnosis(node) {
+      if (!node) return null;
+      const isFail = node.status === 'failed' || node.status === 'timeout' || node.status === 'denied' || (node.errorMessage && node.status !== 'success');
+      if (!isFail && (!node.anomalies || node.anomalies.length === 0)) return null;
+
+      const errParts = [];
+      if (node.errorMessage) errParts.push(String(node.errorMessage));
+      if (node.output != null) {
+        if (typeof node.output === 'string') {
+          errParts.push(node.output);
+        } else if (typeof node.output === 'object') {
+          if (node.output.error) errParts.push(textContent(node.output.error));
+          if (node.output.stderr) errParts.push(textContent(node.output.stderr));
+          if (node.output.message) errParts.push(textContent(node.output.message));
+          if (node.output.output) errParts.push(textContent(node.output.output));
+          if (node.output.exit_code !== undefined && node.output.exit_code !== 0) {
+            errParts.push(`exited with code ${node.output.exit_code}`);
+          }
+        }
+      }
+      const fullRaw = errParts.join('\n').trim();
+
+      // Clean wrapper boilerplate from frameworks (e.g. cortex/antigravity tool error wrappers)
+      let cleanCause = fullRaw;
+      const wrapperRegex = /^(?:declaring permissions:\s*|cortex tool [^:]+:\s*|convert tool call for permissions:\s*|model output error:\s*|invalid tool call error \([^)]+\)\s*|failed to read file:\s*|tool execution error:\s*)+/i;
+      if (wrapperRegex.test(cleanCause)) {
+        cleanCause = cleanCause.replace(wrapperRegex, '').trim();
+      }
+      const lines = cleanCause.split('\n').map(l => l.trim()).filter(Boolean);
+      let primaryLine = lines[0] || 'Unknown error occurred';
+      for (const line of lines) {
+        if (/(?:stat\s|no such file|exit code|exit status|not found|denied|unauthorized|failed|error)/i.test(line)) {
+          primaryLine = line;
+          break;
+        }
+      }
+
+      const fullLower = fullRaw.toLowerCase();
+      const toolLower = (node.name || '').toLowerCase();
+      const isCmdTool = toolLower === 'run_command' || toolLower === 'bash' || toolLower === 'sh' || toolLower === 'shell' || toolLower === 'cmd';
+
+      // 1. Command Not Found
+      if (
+        /(?:command not found|not recognized as an internal or external command|executable file not found in \$path|cannot find command)/i.test(fullLower)
+      ) {
+        return {
+          category: 'command_not_found',
+          categoryName: 'Command Not Found',
+          icon: '🚫',
+          shortTag: '🚫 Command Not Found',
+          title: 'Command Not Found in PATH',
+          rootCause: primaryLine,
+          recommendation: 'Ensure the required binary or CLI tool is installed and present in $PATH, or specify its absolute executable path.'
+        };
+      }
+
+      // 2. Command Exit Error (Non-zero exit code or CLI error from a command tool)
+      if (
+        (isCmdTool && (/(?:exit status \d+|exited with code \d+|failed with exit code \d+|command failed|npm err!)/i.test(fullLower) ||
+         (node.output && typeof node.output === 'object' && node.output.exit_code && node.output.exit_code !== 0))) ||
+        /(?:exit status [1-9]\d*|exited with code [1-9]\d*|failed with exit code [1-9]\d*)/i.test(fullLower)
+      ) {
+        let exitCode = '';
+        const m = /(?:exit status|exited with code|exit code)\s+(\d+)/i.exec(fullLower);
+        if (m) exitCode = ` (code ${m[1]})`;
+        return {
+          category: 'command_exit_error',
+          categoryName: 'Command Exit Error',
+          icon: '💻',
+          shortTag: `💻 Exit Error${exitCode}`,
+          title: `Command Execution Failed${exitCode}`,
+          rootCause: primaryLine,
+          recommendation: 'Inspect command stderr logs and exit status. Verify flags, arguments, and required environment variables before retrying.'
+        };
+      }
+
+      // 3. Task State / Conflict
+      if (
+        /(?:task not found|task .* is not running|already finished|already completed|task conflict|task does not exist)/i.test(fullLower) ||
+        (toolLower === 'manage_task' && /(?:not running|already|done|killed|finished)/i.test(fullLower))
+      ) {
+        return {
+          category: 'task_conflict',
+          categoryName: 'Task State Conflict',
+          icon: '⚙️',
+          shortTag: '⚙️ Task Conflict',
+          title: 'Background Task Already Terminated or Missing',
+          rootCause: primaryLine,
+          recommendation: 'The background task may have already exited. Run manage_task list to check active tasks before sending inputs or terminating.'
+        };
+      }
+
+      // 4. File Not Found
+      if (
+        /(?:no such file or directory|enoent|file does not exist|cannot find the path specified|notadirectoryerror|filenotfounderror)/i.test(fullLower) ||
+        (/(?:stat\s|read file|open file)/i.test(fullLower) && /no such/i.test(fullLower))
+      ) {
+        let target = '';
+        const m = /(?:stat|open|read|access|file)\s+([^\s:]+)/i.exec(primaryLine);
+        if (m) target = m[1];
+        else if (node.arguments && (node.arguments.TargetFile || node.arguments.path || node.arguments.file_path)) {
+          target = node.arguments.TargetFile || node.arguments.path || node.arguments.file_path;
+        }
+        return {
+          category: 'file_not_found',
+          categoryName: 'File Not Found',
+          icon: '📁',
+          shortTag: '📁 File Not Found',
+          title: target ? `File Not Found: ${tail(target, 40)}` : 'File or Directory Not Found',
+          rootCause: primaryLine,
+          recommendation: 'Verify the file path exists before accessing. Use directory listing or search tools (e.g., list_dir, find) to locate the file.'
+        };
+      }
+
+      // 5. Auth Expired / Unauthorized
+      if (
+        /(?:401 unauthorized|unauthorized|auth expired|bad credentials|invalid token|authentication failed|api key missing|token has expired)/i.test(fullLower) ||
+        (node.anomalies && node.anomalies.some(a => a.type === 'auth_expired'))
+      ) {
+        return {
+          category: 'auth_expired',
+          categoryName: 'Authentication Expired',
+          icon: '🔒',
+          shortTag: '🔒 Auth Expired',
+          title: 'Authentication Credentials Expired or Invalid',
+          rootCause: primaryLine,
+          recommendation: 'Refresh authentication credentials, renew OAuth tokens, or re-authenticate CLI tools (e.g. gh auth login).'
+        };
+      }
+
+      // 6. Timeout
+      if (
+        node.status === 'timeout' ||
+        /(?:timeout|timed out|deadline exceeded|context deadline exceeded|etimedout)/i.test(fullLower)
+      ) {
+        return {
+          category: 'timeout',
+          categoryName: 'Execution Timeout',
+          icon: '⏱️',
+          shortTag: '⏱️ Timeout',
+          title: 'Tool or Command Timed Out',
+          rootCause: primaryLine,
+          recommendation: 'Increase the timeout threshold (e.g. WaitMsBeforeAsync or server config) or break operations into smaller chunks.'
+        };
+      }
+
+      // 7. Rate Limit / Quota Exceeded
+      if (
+        /(?:429|rate limit|too many requests|quota exceeded|resource exhausted)/i.test(fullLower)
+      ) {
+        return {
+          category: 'rate_limit',
+          categoryName: 'Rate Limit Exceeded',
+          icon: '⏳',
+          shortTag: '⏳ Rate Limit',
+          title: 'API Rate Limit or Quota Exceeded',
+          rootCause: primaryLine,
+          recommendation: 'Implement exponential backoff or wait before retrying. Consider adding rate-limiting delays or requesting quota increases.'
+        };
+      }
+
+      // 8. Permission Denied
+      if (
+        /(?:permission denied|eacces|access is denied|operation not permitted|403 forbidden)/i.test(fullLower)
+      ) {
+        return {
+          category: 'permission_denied',
+          categoryName: 'Permission Denied',
+          icon: '🛑',
+          shortTag: '🛑 Permission Denied',
+          title: 'Filesystem or Resource Permission Denied',
+          rootCause: primaryLine,
+          recommendation: 'Check file or resource permissions (chmod/chown) or verify your current user privileges.'
+        };
+      }
+
+      // 9. Network Connection Error
+      if (
+        /(?:econnrefused|connection refused|network unreachable|failed to connect|getaddrinfo enotfound|connection reset)/i.test(fullLower)
+      ) {
+        return {
+          category: 'connection_error',
+          categoryName: 'Connection Error',
+          icon: '🔌',
+          shortTag: '🔌 Connection Error',
+          title: 'Network Host or Server Unreachable',
+          rootCause: primaryLine,
+          recommendation: 'Verify that target service daemon is running and listening on the designated port and address.'
+        };
+      }
+
+      // 10. Denied by User Policy
+      if (node.status === 'denied' || /(?:denied by user|permission rejected|refused)/i.test(fullLower)) {
+        return {
+          category: 'denied',
+          categoryName: 'Action Denied',
+          icon: '⊘',
+          shortTag: '⊘ Denied',
+          title: 'Tool Invocation Denied by User or Policy',
+          rootCause: primaryLine || 'Invocation rejected by permission check',
+          recommendation: 'Confirm necessary permissions with the user before attempting this action.'
+        };
+      }
+
+      // 11. Invalid Arguments / Validation
+      if (
+        /(?:invalid argument|invalid_args|missing required|validation error|syntax error|unexpected argument)/i.test(fullLower)
+      ) {
+        return {
+          category: 'invalid_args',
+          categoryName: 'Invalid Arguments',
+          icon: '⚠️',
+          shortTag: '⚠️ Invalid Args',
+          title: 'Tool Parameter or Schema Validation Error',
+          rootCause: primaryLine,
+          recommendation: 'Review the tool definition parameters and ensure arguments match expected types and schemas.'
+        };
+      }
+
+      // 12. General failure
+      return {
+        category: 'general_failure',
+        categoryName: 'Execution Failure',
+        icon: '❌',
+        shortTag: '❌ Failed',
+        title: `Execution Failed: ${node.name}`,
+        rootCause: primaryLine || 'Tool call returned an error status',
+        recommendation: 'Check tool arguments and standard error outputs to resolve the underlying failure.'
+      };
+    }
+
+    function renderRecommendations() {
+      const container = document.getElementById('recommendationsContainer');
+      if (!container) return;
+      container.innerHTML = '';
+
+      const failedNodes = currentNodes.filter(n => n.status === 'failed' || n.status === 'timeout' || n.status === 'denied' || (n.errorMessage && n.status !== 'success'));
+      if (failedNodes.length === 0) {
+        container.style.display = 'none';
+        return;
+      }
+
+      container.style.display = 'flex';
+
+      const groups = {};
+      failedNodes.forEach(node => {
+        const diag = extractFailureDiagnosis(node) || {
+          category: 'general_failure',
+          categoryName: 'Execution Failure',
+          icon: '❌',
+          title: `Execution Failed: ${node.name}`,
+          rootCause: node.errorMessage || 'Unknown error',
+          recommendation: 'Inspect arguments and stderr logs to diagnose failure.'
+        };
+        const groupKey = `${diag.category}::${node.name}`;
+        if (!groups[groupKey]) {
+          groups[groupKey] = {
+            diag,
+            toolName: node.name,
+            nodes: [],
+            causes: new Set()
+          };
+        }
+        groups[groupKey].nodes.push(node);
+        if (diag.rootCause) groups[groupKey].causes.add(diag.rootCause);
+      });
+
+      Object.values(groups).forEach(g => {
+        const card = document.createElement('div');
+        card.className = 'recommendation-card card-danger';
+        const count = g.nodes.length;
+        const turns = [...new Set(g.nodes.map(n => `Turn ${n.turn_index}`))].slice(0, 5).join(', ');
+        const sampleCause = Array.from(g.causes)[0] || 'Unknown error';
+
+        card.innerHTML = `
+          <div style="font-size:1.5rem; line-height:1;">${g.diag.icon}</div>
+          <div style="flex:1;">
+            <div class="recommendation-title" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+              <span>${escapeHtml(g.toolName)}: ${count} ${escapeHtml(g.diag.categoryName)} Failure${count > 1 ? 's' : ''}</span>
+              <button class="btn btn-sm rec-jump-btn" type="button" style="font-size:0.75rem; padding:0.2rem 0.6rem; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:#fff; border-radius:4px; cursor:pointer;">
+                🔍 View in Trace
+              </button>
+            </div>
+            <div class="recommendation-desc">
+              Occurred ${count} time(s) (${escapeHtml(turns)}).
+              <div style="margin-top:0.25rem; font-family:'JetBrains Mono', monospace; font-size:0.8rem; color:var(--text-muted); background:rgba(0,0,0,0.25); padding:0.25rem 0.5rem; border-radius:4px; word-break:break-all;">
+                ${escapeHtml(sampleCause)}
+              </div>
+            </div>
+            <div class="recommendation-fix">
+              💡 <strong>Actionable Fix:</strong> ${escapeHtml(g.diag.recommendation)}
+            </div>
+          </div>
+        `;
+
+        card.querySelector('.rec-jump-btn').addEventListener('click', () => {
+          filterTraceToCall(g.toolName);
+          if (statusFilterSelect) {
+            statusFilterSelect.value = 'failed';
+            syncToLegacyFilter();
+            refreshViews();
+          }
+        });
+
+        container.appendChild(card);
+      });
     }
 
     function refreshViews() {
@@ -2059,6 +2418,19 @@
         `;
       }
 
+      let failDiagBadge = '';
+      if (d.fail_count > 0) {
+        const failedNode = (d.failed_nodes && d.failed_nodes.length > 0)
+          ? d.failed_nodes[0]
+          : (d.nodes ? d.nodes.find(n => n.status === 'failed' || n.status === 'timeout') : d.example_node);
+        if (failedNode) {
+          const diag = extractFailureDiagnosis(failedNode);
+          if (diag) {
+            failDiagBadge = `<span class="badge badge-danger" style="margin-left:0.4rem; font-size:0.75rem;" title="${escapeHtml(diag.rootCause)}">${escapeHtml(diag.shortTag)}</span>`;
+          }
+        }
+      }
+
       let childrenHTML = '';
       if (hasChildren) {
         childrenHTML = d.children.map(child => renderDepRowHTML(child, depth + 1)).join('');
@@ -2071,6 +2443,7 @@
           </td>
           <td class="callee-cell callee-name" style="font-weight:600; color:#fff;">
             ${escapeHtml(d.callee)}
+            ${failDiagBadge}
             ${d.inferred ? `<span class="badge badge-warning" title="No record names the spawning call; placed by time">inferred</span>` : ''}
             ${d.mcp_server ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem;">(server: ${escapeHtml(d.mcp_server)})</span>` : ''}
             ${hasChildren ? `<span style="font-weight:normal; color:var(--text-muted); font-size:0.75rem; margin-left:0.5rem;">[${d.children.length} nested call(s)]</span>` : ''}
@@ -2253,11 +2626,20 @@
         anomBadges += `<span class="badge ${a.severity === 'critical' ? 'badge-danger' : 'badge-warning'}">${a.type.replace('_', ' ')}</span>`;
       });
 
+      let failBadge = '';
+      if (node.status === 'failed' || node.status === 'timeout' || node.status === 'denied') {
+        const diag = extractFailureDiagnosis(node);
+        if (diag) {
+          failBadge = `<span class="badge badge-danger" title="${escapeHtml(diag.rootCause)}">${escapeHtml(diag.shortTag)}</span>`;
+        }
+      }
+
       return `
         <div class="node-row ${node.id === selectedNodeId ? 'selected' : ''}" data-node-id="${escapeHtml(node.id)}" tabindex="0" role="button" onclick='openDrawerById(${escapeHtml(JSON.stringify(node.id))})'>
           <span style="color:${statusColor(node.status)}" title="${node.status}">${statusMark(node.status)}</span>
           <span class="badge ${typeBadgeClass}">${node.type.replace('_', ' ')}</span>
           <span class="node-title">${escapeHtml(node.parent_link === 'inferred' && !node.parent_id ? node.scope_name : node.name)}</span>
+          ${failBadge}
           ${node.parent_link === 'inferred' ? `<span class="badge badge-warning" title="No record names the spawning call; placed by time">inferred</span>` : ''}
           ${node.mcp_server ? `<span style="color:var(--text-muted); font-size:0.75rem;">(${escapeHtml(node.mcp_server)})</span>` : ''}
           ${anomBadges}
@@ -2347,6 +2729,8 @@
       }
       document.getElementById('drawerOutput').textContent = outputText;
       document.getElementById('drawerAnomaliesSection').style.display = 'none';
+      const failureSec = document.getElementById('drawerFailureSection');
+      if (failureSec) failureSec.style.display = 'none';
     }
 
     let currentDrawerNodeKey = '';
@@ -2443,6 +2827,21 @@
         ${node.scope_name ? `<span class="badge badge-skill">${escapeHtml(node.scope_name)}</span>` : ''}
         ${node.caller_scope && node.caller_scope !== node.scope_name ? `<span class="badge badge-skill">${escapeHtml(node.caller_scope)}</span>` : ''}
       `;
+
+      // Populate Failure Diagnosis Section if node has failed or error
+      const failureSec = document.getElementById('drawerFailureSection');
+      const diag = extractFailureDiagnosis(node);
+      if (diag && (node.status === 'failed' || node.status === 'timeout' || node.status === 'denied' || node.errorMessage)) {
+        if (failureSec) failureSec.style.display = 'block';
+        document.getElementById('drawerFailureIcon').textContent = diag.icon;
+        document.getElementById('drawerFailureCategory').textContent = `${diag.categoryName.toUpperCase()} DIAGNOSIS & ACTIONABLE FIX`;
+        document.getElementById('drawerFailureReasonTitle').textContent = diag.title;
+        document.getElementById('drawerFailureRootCause').textContent = diag.rootCause;
+        document.getElementById('drawerFailureRecommendation').textContent = diag.recommendation;
+      } else {
+        if (failureSec) failureSec.style.display = 'none';
+      }
+
       const linkText = {
         sidecar: 'sidecar (the subagent\'s metadata names the spawning call)',
         result: 'result (the spawning call\'s result names the subagent)',
@@ -2478,6 +2877,8 @@
       selectedNodeId = null;
       currentDrawerNodeKey = '';
       document.querySelectorAll('.node-row').forEach(r => r.classList.remove('selected'));
+      const failureSec = document.getElementById('drawerFailureSection');
+      if (failureSec) failureSec.style.display = 'none';
       if (!fromHistory) {
         updateUrlState({ session: currentSessionId, call: null });
       }
@@ -2490,6 +2891,13 @@
       selectedNodeId = null;
       currentSessionId = '';
       currentDrawerNodeKey = '';
+      const recContainer = document.getElementById('recommendationsContainer');
+      if (recContainer) {
+        recContainer.innerHTML = '';
+        recContainer.style.display = 'none';
+      }
+      const failureSec = document.getElementById('drawerFailureSection');
+      if (failureSec) failureSec.style.display = 'none';
       if (typeFilterSelect) typeFilterSelect.value = 'all';
       if (statusFilterSelect) statusFilterSelect.value = 'all';
       if (filterSelect) filterSelect.value = 'all';
