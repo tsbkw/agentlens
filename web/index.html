@@ -97,6 +97,109 @@
     .badge-skill { background: rgba(63, 185, 80, 0.15); color: var(--skill); }
     .badge-subagent { background: rgba(210, 168, 255, 0.15); color: var(--subagent); }
     .badge-system { background: rgba(88, 166, 255, 0.15); color: var(--system); }
+
+    /* Client-Side Privacy Tooltip */
+    .privacy-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      position: relative;
+      cursor: help;
+      user-select: none;
+    }
+    .privacy-info-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: rgba(63, 185, 80, 0.25);
+      color: var(--success);
+      font-size: 0.7rem;
+      font-weight: 700;
+      font-style: normal;
+      line-height: 1;
+    }
+    .privacy-tooltip {
+      visibility: hidden;
+      opacity: 0;
+      position: absolute;
+      top: 135%;
+      right: 0;
+      width: 290px;
+      padding: 0.75rem 0.9rem;
+      background-color: #1c2128;
+      color: var(--text-main);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      font-size: 0.75rem;
+      font-weight: normal;
+      text-transform: none;
+      line-height: 1.45;
+      z-index: 1000;
+      pointer-events: none;
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+    }
+    .privacy-badge:hover .privacy-tooltip,
+    .privacy-badge:focus-within .privacy-tooltip {
+      visibility: visible;
+      opacity: 1;
+    }
+
+    /* Callee table counts and Invocations */
+    .dep-count-badge {
+      display: inline-block;
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .dep-count-badge:hover {
+      background: rgba(255, 255, 255, 0.1);
+      text-decoration: underline;
+    }
+
+    .drawer-invocations {
+      background: rgba(22, 27, 34, 0.8);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.6rem 0.75rem;
+    }
+    .invocations-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.45rem;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .invocations-title { font-weight: 600; color: var(--text-main); }
+    .invocation-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+    .invocation-chip {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 0.2rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-family: 'JetBrains Mono', monospace;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .invocation-chip:hover { border-color: var(--primary); color: #fff; }
+    .invocation-chip.active { border-color: var(--primary); background: rgba(88, 166, 255, 0.18); color: #fff; font-weight: 600; }
+    .invocation-chip.chip-failed { color: var(--danger); border-color: rgba(248, 81, 73, 0.45); }
+    .invocation-chip.chip-failed.active { background: rgba(248, 81, 73, 0.25); border-color: var(--danger); }
+    .invocation-chip.chip-success { color: var(--success); }
+    .invocation-chip.chip-warning { color: var(--warning); }
     
     /* Layout */
     .app-container {
@@ -431,7 +534,15 @@
   <header>
     <div class="logo">🔍 AgentLens</div>
     <div class="nav-links">
-      <span class="badge badge-success">Client-Side Privacy</span>
+      <div class="badge badge-success privacy-badge" tabindex="0" role="region" aria-label="Privacy information">
+        Client-Side Privacy
+        <span class="privacy-info-icon" aria-hidden="true">ℹ</span>
+        <div class="privacy-tooltip" role="tooltip">
+          <strong>100% Client-Side Processing</strong><br>
+          All trace parsing, graph construction, and anomaly detection execute entirely within your local browser sandbox.<br>
+          Your conversation logs, prompts, and source code are never uploaded or sent to any external server.
+        </div>
+      </div>
       <button class="btn" id="loadSampleBtn">Load Antigravity Sample</button>
       <button class="btn" id="loadClaudeSampleBtn">Load Claude Code Sample</button>
       <a href="https://github.com/tsbkw/agentlens" class="btn" target="_blank">GitHub</a>
@@ -553,6 +664,14 @@
         <h3 id="drawerTitle">Node Details</h3>
         <button class="btn" id="closeDrawerBtn">✕</button>
       </div>
+      <!-- Invocations switcher when multiple calls exist for this tool -->
+      <div class="drawer-invocations" id="drawerInvocationsSection" style="display:none">
+        <div class="invocations-bar">
+          <span class="invocations-title">Invocations (<span id="drawerInvocationsCount">0</span>)</span>
+          <button class="btn btn-sm" id="drawerFilterTraceBtn" style="font-size:0.75rem; padding:0.15rem 0.5rem;" title="View all calls in execution trace">View in Trace</button>
+        </div>
+        <div id="drawerInvocationsList" class="invocation-chips"></div>
+      </div>
       <div>
         <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem;">TYPE & STATUS</div>
         <div id="drawerBadges" style="display:flex; gap:0.5rem; flex-wrap:wrap;"></div>
@@ -585,6 +704,50 @@
     let currentAnomalies = [];
     let selectedNodeId = null;
     let currentView = 'deps'; // 'deps' or 'trace'
+    let currentSessionId = '';
+
+    function getUrlParams() {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.has('session') && window.location.hash.startsWith('#')) {
+        const hashParams = new URLSearchParams(window.location.hash.slice(1));
+        if (hashParams.has('session')) return hashParams;
+      }
+      return params;
+    }
+
+    function updateUrlState({ session = null, call = null }, replace = false) {
+      try {
+        const url = new URL(window.location.href);
+        if (session) {
+          url.searchParams.set('session', session);
+        } else {
+          url.searchParams.delete('session');
+          url.searchParams.delete('call');
+        }
+        if (call) {
+          url.searchParams.set('call', call);
+        } else {
+          url.searchParams.delete('call');
+        }
+
+        const newSearch = url.searchParams.toString();
+        const newUrl = newSearch ? (url.pathname + '?' + newSearch) : url.pathname;
+        const curParams = new URLSearchParams(window.location.search);
+        if (curParams.get('session') === (session || null) && curParams.get('call') === (call || null)) return;
+
+        const state = { session, call };
+        if (replace) {
+          window.history.replaceState(state, '', newUrl);
+        } else {
+          window.history.pushState(state, '', newUrl);
+        }
+      } catch (e) {
+        try {
+          const hashStr = session ? `#session=${encodeURIComponent(session)}${call ? `&call=${encodeURIComponent(call)}` : ''}` : '';
+          if (window.location.hash !== hashStr) window.location.hash = hashStr;
+        } catch (_) {}
+      }
+    }
 
     // Elements
     const dropzone = document.getElementById('dropzone');
@@ -624,39 +787,43 @@
     document.getElementById('pickFolderBtn').addEventListener('click', (e) => { e.stopPropagation(); dirInput.click(); });
     // Keyboard: Escape closes the drawer; Enter or Space activates clickable rows
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && drawer.classList.contains('open')) { drawer.classList.remove('open'); return; }
+      if (e.key === 'Escape' && drawer.classList.contains('open')) { closeDrawer(false); return; }
       if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.getAttribute && e.target.getAttribute('role') === 'button' && e.target.tagName !== 'BUTTON') {
         e.preventDefault();
         e.target.click();
       }
     });
 
-    loadSampleBtn.addEventListener('click', () => loadSampleTrace());
-    loadClaudeSampleBtn.addEventListener('click', () => loadClaudeSampleTrace());
-    resetBtn.addEventListener('click', () => {
-      graphSection.style.display = 'none';
-      dropzoneSection.style.display = 'block';
-      drawer.classList.remove('open');
-    });
-    closeDrawerBtn.addEventListener('click', () => drawer.classList.remove('open'));
+    loadSampleBtn.addEventListener('click', () => loadSampleTrace(false));
+    loadClaudeSampleBtn.addEventListener('click', () => loadClaudeSampleTrace(false));
+    resetBtn.addEventListener('click', () => resetToDashboard(false));
+    closeDrawerBtn.addEventListener('click', () => closeDrawer(false));
     searchInput.addEventListener('input', () => refreshViews());
     filterSelect.addEventListener('change', () => refreshViews());
 
-    tabDepsBtn.addEventListener('click', () => {
-      currentView = 'deps';
-      tabDepsBtn.classList.add('active');
-      tabTraceBtn.classList.remove('active');
-      depsViewContainer.style.display = 'flex';
-      traceViewContainer.style.display = 'none';
-    });
+    function switchTab(tab) {
+      currentView = tab;
+      if (tab === 'deps') {
+        tabDepsBtn.classList.add('active');
+        tabTraceBtn.classList.remove('active');
+        depsViewContainer.style.display = 'flex';
+        traceViewContainer.style.display = 'none';
+      } else {
+        tabTraceBtn.classList.add('active');
+        tabDepsBtn.classList.remove('active');
+        depsViewContainer.style.display = 'none';
+        traceViewContainer.style.display = 'flex';
+      }
+    }
 
-    tabTraceBtn.addEventListener('click', () => {
-      currentView = 'trace';
-      tabTraceBtn.classList.add('active');
-      tabDepsBtn.classList.remove('active');
-      depsViewContainer.style.display = 'none';
-      traceViewContainer.style.display = 'flex';
-    });
+    function filterTraceToCall(toolName) {
+      switchTab('trace');
+      searchInput.value = toolName;
+      refreshViews();
+    }
+
+    tabDepsBtn.addEventListener('click', () => switchTab('deps'));
+    tabTraceBtn.addEventListener('click', () => switchTab('trace'));
 
     function normalizePath(path) {
       return '/' + String(path).replace(/\\/g, '/').replace(/^\/+/, '');
@@ -1106,8 +1273,8 @@
       return events;
     }
 
-    function processTraceText(text) {
-      processTraceFiles([{ path: '/trace.jsonl', text }]);
+    function processTraceText(text, sessionId = '') {
+      processTraceFiles([{ path: '/trace.jsonl', text }], '', sessionId);
     }
 
     function globToRegExp(glob) {
@@ -1269,7 +1436,8 @@
     }
 
     // label names where the files came from, such as a local session
-    function processTraceFiles(files, label = '') {
+    function processTraceFiles(files, label = '', sessionId = '') {
+      if (sessionId) currentSessionId = sessionId;
       files = files.map(f => ({ path: normalizePath(f.path), text: f.text }));
 
       // Files that are another file's child trace (or sidecar) are not session candidates
@@ -1541,16 +1709,26 @@
             is_fallback: false,
             fallback_to: "",
             example_node: node,
+            nodes: [],
+            failed_nodes: [],
             children: []
           };
         }
 
         const dep = depMap[key];
+        dep.nodes.push(node);
         if (node.parent_link === 'inferred' && !node.parent_id) dep.inferred = true;
         dep.call_count++;
         if (node.status === 'success') dep.success_count++;
-        else if (node.status === 'failed' || node.status === 'timeout') dep.fail_count++;
-        else if (node.status === 'denied') dep.denied_count++;
+        else if (node.status === 'failed' || node.status === 'timeout') {
+          dep.fail_count++;
+          dep.failed_nodes.push(node);
+          dep.example_node = dep.failed_nodes[0];
+        } else if (node.status === 'denied') {
+          dep.denied_count++;
+          dep.failed_nodes.push(node);
+          dep.example_node = dep.failed_nodes[0];
+        }
         dep.anomaly_count += node.anomalies.length;
         if (dep.search_text.length < 4000) dep.search_text += ' ' + argStrings(node.arguments).join(' ').toLowerCase();
 
@@ -1655,6 +1833,28 @@
       document.getElementById('statDeniedCalls').textContent = currentNodes.filter(n => n.status === 'denied').length;
       document.getElementById('statAnomalies').textContent = currentAnomalies.length;
 
+      // Make stat cards clickable filters
+      const statFilters = [
+        { id: 'statFailedCalls', filter: 'failed' },
+        { id: 'statMcpCalls', filter: 'mcp' },
+        { id: 'statSkillCalls', filter: 'skill' },
+        { id: 'statAnomalies', filter: 'anomalies' },
+        { id: 'statTotalNodes', filter: 'all' }
+      ];
+      statFilters.forEach(({ id, filter }) => {
+        const el = document.getElementById(id);
+        const card = el ? el.closest('.stat-card') : null;
+        if (card && !card.dataset.hasClickListener) {
+          card.dataset.hasClickListener = 'true';
+          card.style.cursor = 'pointer';
+          card.title = `Click to filter: ${filter}`;
+          card.addEventListener('click', () => {
+            filterSelect.value = filter;
+            refreshViews();
+          });
+        }
+      });
+
       renderAlerts(false);
 
       refreshViews();
@@ -1717,9 +1917,19 @@
       else if (d.callee_type === 'skill') calleeTypeBadge = 'badge-skill';
       else if (d.callee_type === 'subagent') calleeTypeBadge = 'badge-subagent';
 
-      const counts = [`<span style="color:var(--success)">✓ ${d.success_count}</span>`];
-      if (d.fail_count > 0) counts.push(`<span style="color:var(--danger)">✗ ${d.fail_count}</span>`);
-      if (d.denied_count > 0) counts.push(`<span style="color:var(--warning)">⊘ ${d.denied_count}</span>`);
+      const counts = [];
+      if (d.success_count > 0) {
+        counts.push(`<span class="dep-count-badge" style="color:var(--success)" title="Click to view success call" onclick="event.stopPropagation(); openDrawerByDep('${depId}', 'success')">✓ ${d.success_count}</span>`);
+      }
+      if (d.fail_count > 0) {
+        counts.push(`<span class="dep-count-badge" style="color:var(--danger)" title="Click to inspect failed call" onclick="event.stopPropagation(); openDrawerByDep('${depId}', 'failed')">✗ ${d.fail_count}</span>`);
+      }
+      if (d.denied_count > 0) {
+        counts.push(`<span class="dep-count-badge" style="color:var(--warning)" title="Click to inspect denied call" onclick="event.stopPropagation(); openDrawerByDep('${depId}', 'denied')">⊘ ${d.denied_count}</span>`);
+      }
+      if (counts.length === 0) {
+        counts.push(`<span class="dep-count-badge" style="color:var(--text-muted)">✓ 0</span>`);
+      }
       const statusText = `${d.call_count} calls (${counts.join(' | ')})`;
 
       const hasChildren = d.children && d.children.length > 0;
@@ -1744,7 +1954,7 @@
       }
 
       return `
-        <tr class="callee-row" tabindex="0" role="button" onclick='openDrawerByDep("${depId}")'>
+        <tr class="callee-row" tabindex="0" role="button" onclick='openDrawerByDep("${depId}", "auto")'>
           <td class="callee-cell callee-type" style="width: 160px; padding-left: ${1.25 + depth * 1.25}rem;">
             ${indentGuide}<span class="badge ${calleeTypeBadge}">${d.callee_type.replace('_', ' ')}</span>
           </td>
@@ -1940,26 +2150,50 @@
       return status === 'failed' ? 'badge-danger' : (status === 'timeout' || status === 'denied') ? 'badge-warning' : 'badge-success';
     }
 
-    function openDrawerById(nodeId) {
+    function openDrawerById(nodeId, fromHistory = false) {
       const node = currentNodes.find(n => n.id === nodeId);
-      if (node) openDrawer(node);
+      if (node) openDrawer(node, fromHistory);
     }
 
-    function openDrawerByDep(depId) {
+    function openDrawerByDep(depId, which = 'auto', fromHistory = false) {
       const dep = depRegistry[depId];
       if (!dep) return;
-      if (dep.example_node) {
-        openDrawer(dep.example_node);
+      let targetNode = dep.example_node;
+      if (dep.nodes && dep.nodes.length > 0) {
+        if (which === 'failed') {
+          targetNode = (dep.failed_nodes && dep.failed_nodes.length > 0)
+            ? dep.failed_nodes[0]
+            : (dep.nodes.find(n => n.status === 'failed' || n.status === 'timeout') || dep.example_node);
+        } else if (which === 'denied') {
+          targetNode = dep.nodes.find(n => n.status === 'denied') || dep.example_node;
+        } else if (which === 'success') {
+          targetNode = dep.nodes.find(n => n.status === 'success') || dep.example_node;
+        } else {
+          if (dep.failed_nodes && dep.failed_nodes.length > 0) {
+            targetNode = dep.failed_nodes[0];
+          } else {
+            targetNode = dep.nodes[0] || dep.example_node;
+          }
+        }
+      }
+      if (targetNode) {
+        openDrawer(targetNode, fromHistory, dep);
       } else {
-        openDrawerForScope(dep);
+        openDrawerForScope(dep, fromHistory);
       }
     }
 
-    function openDrawerForScope(scopeDep) {
+    function openDrawerForScope(scopeDep, fromHistory = false) {
       selectedNodeId = null;
       document.querySelectorAll('.node-row').forEach(r => r.classList.remove('selected'));
       drawer.classList.add('open');
       drawer.scrollTop = 0;
+
+      if (!fromHistory) {
+        updateUrlState({ session: currentSessionId, call: scopeDep.callee });
+      }
+
+      document.getElementById('drawerInvocationsSection').style.display = 'none';
 
       let badgeClass = 'badge-system';
       if (scopeDep.callee_type === 'subagent') badgeClass = 'badge-subagent';
@@ -1988,11 +2222,48 @@
       document.getElementById('drawerAnomaliesSection').style.display = 'none';
     }
 
-    function openDrawer(node) {
+    function openDrawer(node, fromHistory = false, dep = null) {
       selectedNodeId = node.id;
       document.querySelectorAll('.node-row').forEach(r => r.classList.toggle('selected', r.dataset.nodeId === node.id));
       drawer.classList.add('open');
       drawer.scrollTop = 0;
+
+      if (!fromHistory) {
+        updateUrlState({ session: currentSessionId, call: node.id });
+      }
+
+      // Populate Invocations switcher if multiple calls exist
+      const invocationsSec = document.getElementById('drawerInvocationsSection');
+      const invocationsCount = document.getElementById('drawerInvocationsCount');
+      const invocationsList = document.getElementById('drawerInvocationsList');
+      const filterTraceBtn = document.getElementById('drawerFilterTraceBtn');
+
+      const invocations = (dep && dep.nodes && dep.nodes.length > 0)
+        ? dep.nodes
+        : currentNodes.filter(n => n.name === node.name && (n.mcp_server || '') === (node.mcp_server || ''));
+
+      if (invocations.length > 1) {
+        invocationsSec.style.display = 'block';
+        invocationsCount.textContent = invocations.length;
+        filterTraceBtn.onclick = () => filterTraceToCall(node.name);
+        invocationsList.innerHTML = '';
+        invocations.forEach((inv, idx) => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          const isCurrent = inv.id === node.id;
+          const statusCls = (inv.status === 'failed' || inv.status === 'timeout') ? 'failed' : (inv.status === 'denied' ? 'denied' : 'success');
+          chip.className = `invocation-chip ${statusCls} ${isCurrent ? 'active' : ''}`;
+          chip.textContent = `#${idx + 1} ${statusMark(inv.status)}`;
+          chip.title = `Call #${idx + 1} (${inv.status}) - Turn ${inv.turn_index}`;
+          chip.onclick = (e) => {
+            e.stopPropagation();
+            openDrawer(inv, false, dep);
+          };
+          invocationsList.appendChild(chip);
+        });
+      } else {
+        invocationsSec.style.display = 'none';
+      }
 
       document.getElementById('drawerTitle').textContent = node.name;
       document.getElementById('drawerBadges').innerHTML = `
@@ -2028,6 +2299,48 @@
         `).join('');
       } else {
         anomSection.style.display = 'none';
+      }
+    }
+
+    function closeDrawer(fromHistory = false) {
+      drawer.classList.remove('open');
+      selectedNodeId = null;
+      document.querySelectorAll('.node-row').forEach(r => r.classList.remove('selected'));
+      if (!fromHistory) {
+        updateUrlState({ session: currentSessionId, call: null });
+      }
+    }
+
+    function resetToDashboard(fromHistory = false) {
+      graphSection.style.display = 'none';
+      dropzoneSection.style.display = 'block';
+      drawer.classList.remove('open');
+      selectedNodeId = null;
+      currentSessionId = '';
+      if (!fromHistory) {
+        updateUrlState({ session: null, call: null });
+      }
+    }
+
+    function openDrawerByIdOrName(target, fromHistory = false) {
+      if (!target) return;
+      let node = currentNodes.find(n => n.id === target);
+      if (!node) {
+        const matches = currentNodes.filter(n => n.name === target);
+        if (matches.length > 0) {
+          node = matches.find(n => n.status === 'failed' || n.status === 'timeout') || matches[0];
+        }
+      }
+      if (node) {
+        openDrawer(node, fromHistory);
+        return;
+      }
+      for (const id in depRegistry) {
+        const dep = depRegistry[id];
+        if (dep.callee === target) {
+          openDrawerByDep(id, 'auto', fromHistory);
+          return;
+        }
       }
     }
 
@@ -2079,16 +2392,39 @@
       }
     }
 
+    async function handleUrlOnLoad() {
+      const params = getUrlParams();
+      const sessionId = params.get('session');
+      const call = params.get('call');
+      if (!sessionId) return;
+
+      if (sessionId === 'sample' || sessionId === 'sample-gemini') {
+        loadSampleTrace(true);
+      } else if (sessionId === 'sample-claude') {
+        loadClaudeSampleTrace(true);
+      } else if (/^https?:$/.test(location.protocol)) {
+        await openLocalSession(sessionId, '', true);
+      }
+      if (call) {
+        openDrawerByIdOrName(call, true);
+      }
+    }
+
     async function detectLocalServer() {
-      if (!/^https?:$/.test(location.protocol)) return;
+      if (!/^https?:$/.test(location.protocol)) {
+        await handleUrlOnLoad();
+        return;
+      }
       let report;
       try {
         report = await fetchJSON('api/report?' + reportQuery());
       } catch (e) {
+        await handleUrlOnLoad();
         return; // a static host without the API
       }
       localSection.style.display = 'flex';
       renderLocalReport(report);
+      await handleUrlOnLoad();
     }
 
     // Go encodes an open window bound as the zero time
@@ -2153,7 +2489,7 @@
     }
 
     let openingSession = '';
-    async function openLocalSession(id, project) {
+    async function openLocalSession(id, project = '', fromHistory = false) {
       if (openingSession) return; // one at a time: a second click while loading is ignored
       openingSession = id;
       reportStatus.textContent = `Loading session ${id.slice(0, 8)}…`;
@@ -2167,7 +2503,11 @@
       }
       openingSession = '';
       reportStatus.textContent = reportWindowLabel;
-      processTraceFiles(files, `Session ${id}${project ? ` · ${project}` : ''}`);
+      currentSessionId = id;
+      if (!fromHistory) {
+        updateUrlState({ session: id, call: null });
+      }
+      processTraceFiles(files, `Session ${id}${project ? ` · ${project}` : ''}`, id);
     }
 
     reportPeriod.addEventListener('change', () => {
@@ -2179,11 +2519,15 @@
     });
     document.getElementById('reportSessions').addEventListener('click', (e) => {
       const row = e.target.closest('tr.session-row');
-      if (row) openLocalSession(row.dataset.session, row.dataset.project);
+      if (row) openLocalSession(row.dataset.session, row.dataset.project, false);
     });
     detectLocalServer();
 
-    function loadSampleTrace() {
+    function loadSampleTrace(fromHistory = false) {
+      currentSessionId = 'sample-gemini';
+      if (!fromHistory) {
+        updateUrlState({ session: currentSessionId, call: null });
+      }
       const sample = [
         {"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","created_at":"2026-10-07T14:00:00Z","content":"<USER_REQUEST>Investigate database latency spike on production and analyze slow queries</USER_REQUEST>"},
         {"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:00:02Z","tool_calls":[{"id":"call-view-skill","name":"view_file","args":{"AbsolutePath":"/home/tsbkw0/.gemini/antigravity-cli/skills/quota-aware-task-runner/SKILL.md"}}]},
@@ -2227,10 +2571,14 @@
         {"step_index":39,"source":"MODEL","type":"PLANNER_RESPONSE","created_at":"2026-10-07T14:02:28Z","tool_calls":[{"id":"call-schedule","name":"schedule","args":{"DurationSeconds":1800,"Prompt":"Perform 30-minute post-incident latency health check"}}]},
         {"step_index":40,"source":"SYSTEM","type":"GENERIC","status":"DONE","created_at":"2026-10-07T14:02:29Z","content":"Scheduled task task-992 for 1800s."}
       ].map(JSON.stringify).join('\n');
-      processTraceText(sample);
+      processTraceText(sample, 'sample-gemini');
     }
 
-    function loadClaudeSampleTrace() {
+    function loadClaudeSampleTrace(fromHistory = false) {
+      currentSessionId = 'sample-claude';
+      if (!fromHistory) {
+        updateUrlState({ session: currentSessionId, call: null });
+      }
       // Main transcript of examples/traces/sample_claude_code_session.jsonl
       const sample = [
         {"type":"permission-mode","permissionMode":"default","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
@@ -2246,11 +2594,11 @@
         {"parentUuid":"u-005","isSidechain":false,"type":"user","message":{"role":"user","content":"Looks right. Go ahead and file the issue and post to Slack."},"uuid":"u-006","timestamp":"2026-10-07T14:01:00.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
         {"parentUuid":"u-006","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_mcp_gh_01","name":"mcp__github__create_issue","input":{"owner":"example","repo":"backend-api","title":"deploy-prod fails: migration 0042 lock timeout"}}]},"uuid":"a-004","timestamp":"2026-10-07T14:01:02.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
         {"parentUuid":"a-004","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_mcp_gh_01","content":"Error: 401 Unauthorized - Bad credentials (token expired)","is_error":true}]},"toolUseResult":"Error: 401 Unauthorized - Bad credentials (token expired)","uuid":"u-007","timestamp":"2026-10-07T14:01:03.200Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
-        {"parentUuid":"u-007","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_bash_02","name":"Bash","input":{"command":"gh issue create --repo example/backend-api --title 'deploy-prod fails: migration 0042 lock timeout'","description":"Create issue via gh CLI"}}]},"uuid":"a-005","timestamp":"2026-10-07T14:01:05.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
+        {"parentUuid":"a-007","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_bash_02","name":"Bash","input":{"command":"gh issue create --repo example/backend-api --title 'deploy-prod fails: migration 0042 lock timeout'","description":"Create issue via gh CLI"}}]},"uuid":"a-005","timestamp":"2026-10-07T14:01:05.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
         {"parentUuid":"a-005","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_bash_02","content":"https://github.com/example/backend-api/issues/321","is_error":false}]},"toolUseResult":{"stdout":"https://github.com/example/backend-api/issues/321","stderr":""},"uuid":"u-008","timestamp":"2026-10-07T14:01:07.100Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
         {"parentUuid":"u-008","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_mcp_slack_01","name":"mcp__slack__slack_send_message","input":{"channel_id":"C0DEPLOYS","message":"deploy-prod is failing, tracked in backend-api#321"}}]},"uuid":"a-006","timestamp":"2026-10-07T14:01:09.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
         {"parentUuid":"a-006","isSidechain":false,"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_mcp_slack_01","content":[{"type":"text","text":"{\"ok\":true,\"ts\":\"1759845669.000100\"}"}]}]},"toolUseResult":[{"type":"text","text":"{\"ok\":true,\"ts\":\"1759845669.000100\"}"}],"uuid":"u-009","timestamp":"2026-10-07T14:01:09.900Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"},
-        {"parentUuid":"u-009","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Filed backend-api#321 (via gh CLI because the GitHub MCP token expired) and posted to #deploys."}]},"uuid":"a-007","timestamp":"2026-10-07T14:01:11.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"}
+        {"parentUuid":"a-009","isSidechain":false,"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Filed backend-api#321 (via gh CLI because the GitHub MCP token expired) and posted to #deploys."}]},"uuid":"a-007","timestamp":"2026-10-07T14:01:11.000Z","sessionId":"5b0c8f2e-6a4d-4e7b-9c1a-2f3e4d5c6b7a"}
       ].map(JSON.stringify).join('\n');
       // Its subagent transcript: sample_claude_code_session/subagents/agent-a1b2c3d4e5f60718.jsonl
       const subagent = [
@@ -2265,8 +2613,38 @@
         { path: '/sample_claude_code_session.jsonl', text: sample },
         { path: '/sample_claude_code_session/subagents/agent-a1b2c3d4e5f60718.jsonl', text: subagent },
         { path: '/sample_claude_code_session/subagents/agent-a1b2c3d4e5f60718.meta.json', text: JSON.stringify({"agentType":"Explore","description":"Inspect deploy logs","toolUseId":"toolu_agent_01","spawnDepth":1}) }
-      ]);
+      ], '', 'sample-claude');
     }
+
+    window.addEventListener('popstate', async (e) => {
+      const state = e.state || {};
+      const params = getUrlParams();
+      const targetSession = state.session !== undefined ? state.session : params.get('session');
+      const targetCall = state.call !== undefined ? state.call : params.get('call');
+
+      if (!targetSession) {
+        if (graphSection.style.display !== 'none') {
+          resetToDashboard(true);
+        }
+        return;
+      }
+
+      if (targetSession !== currentSessionId) {
+        if (targetSession === 'sample' || targetSession === 'sample-gemini') {
+          loadSampleTrace(true);
+        } else if (targetSession === 'sample-claude') {
+          loadClaudeSampleTrace(true);
+        } else if (/^https?:$/.test(location.protocol)) {
+          await openLocalSession(targetSession, '', true);
+        }
+      }
+
+      if (targetCall) {
+        openDrawerByIdOrName(targetCall, true);
+      } else {
+        closeDrawer(true);
+      }
+    });
   </script>
 </body>
 </html>
