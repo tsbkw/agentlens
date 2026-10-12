@@ -161,9 +161,11 @@ agentlens --provider claude-code watch      # 最新の Claude Code セッショ
    # 1. ブランチの作成
    git checkout -b feat/my-feature
 
-   # 2. 変更の実装とテスト実行
-   go test ./...
-   go vet ./...
+   # 2. 変更の実装と検証（gofmt、vet、ビルド、go test -race）
+   make check
+
+   # 任意（クローンごとに一度）: コミット時とプッシュ時に同じ検査を自動実行
+   make hooks
 
    # 3. コミットとプッシュ
    git commit -m "feat: add support for new feature"

@@ -23,24 +23,27 @@ All development is strictly **Pull Request (PR) driven**. Direct pushes to `main
 - `test/<test-scope>`: Test additions or enhancements
 
 ### 1.3 PR Process
-1. Create a dedicated branch off `main`:
+1. Once per clone, enable the git hooks. They run gofmt, `go vet` and a build before each commit, and the full Go test suite before each push, so a red commit never reaches GitHub:
+   ```bash
+   make hooks
+   ```
+2. Create a dedicated branch off `main`:
    ```bash
    git checkout -b feat/core-models
    ```
-2. Implement changes, write tests, and verify code:
+3. Implement changes, write tests, and verify code. `make check` runs what the hooks and CI run for Go (gofmt, vet, build, `go test -race`); the browser tests need Chrome:
    ```bash
-   go test ./...
-   go vet ./...
-   cd tests/e2e && npm test && cd ../..
+   make check
+   CHROME_BIN=/path/to/chrome make e2e
    ```
-3. Update progress checkboxes in [`docs/en/ROADMAP.md`](../../docs/en/ROADMAP.md) and [`docs/ja/ROADMAP.md`](../../docs/ja/ROADMAP.md).
-4. Commit changes with clear, descriptive commit messages.
-5. Push your branch and open a PR:
+4. Update progress checkboxes in [`docs/en/ROADMAP.md`](../../docs/en/ROADMAP.md) and [`docs/ja/ROADMAP.md`](../../docs/ja/ROADMAP.md).
+5. Commit changes with clear, descriptive commit messages.
+6. Push your branch and open a PR:
    ```bash
    gh pr create --fill
    ```
-6. Fill out all sections of [`.github/pull_request_template.md`](../../.github/pull_request_template.md).
-7. Request review from maintainers. Once approved, the PR can be merged into `main`.
+7. Fill out all sections of [`.github/pull_request_template.md`](../../.github/pull_request_template.md).
+8. Request review from maintainers. Once approved, the PR can be merged into `main`.
 
 ---
 

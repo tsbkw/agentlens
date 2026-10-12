@@ -124,4 +124,3 @@ func cleanScopeSource(s string) string {
 	}
 	return s
 }
-

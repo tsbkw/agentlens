@@ -123,6 +123,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [x] Web viewer: phone layout, filters in the trace view, grouped alerts, denied stat, clean state per session, unknown files reported (PR #42)
 - [x] A user's next prompt is no longer taken as the previous step's tool result (PR #43)
 - [x] `agentlens ui` stops and replaces an agentlens ui already running on its port; other programs are left alone (PR #45)
+- [x] gofmt applied repo-wide and enforced in CI; `Makefile` with `make check`; git hooks for commit (gofmt, vet, build) and push (Go tests) via `make hooks` (PR #50)
 
 ### Phase 12: Deeper Analysis (Planned)
 - [ ] Indirect proxy routing detection (tool A reached through tool B)

@@ -67,7 +67,8 @@ flowchart TD
 | **Provider Examples** | Declarative YAML | `examples/providers/` |
 | **Web UI** | HTML5 / CSS / Vanilla TS or lightweight SPA | `web/` |
 | **GitHub Pages** | GitHub Actions (`actions/deploy-pages@v4`) | `.github/workflows/deploy-pages.yml` |
-| **CI Automation** | GitHub Actions (`go test`, `go vet`, build) | `.github/workflows/ci.yml` |
+| **CI Automation** | GitHub Actions (gofmt, `go vet`, `go test`, build, E2E) | `.github/workflows/ci.yml` |
+| **Dev Commands & Hooks** | `Makefile` (`make check`, `make hooks`), `.githooks/` | `Makefile`, `.githooks/` |
 
 ---
 
@@ -83,10 +84,13 @@ git checkout -b feat/<descriptive-name>
 ```
 
 ### Step 2: Implementation & Quality Verification
-Before finishing your turn or opening a PR:
-- Run Go tests: `go test -v -race ./...`
-- Run static checks: `go vet ./...`
-- Verify binary compiles: `go build ./cmd/agentlens`
+Before finishing your turn or opening a PR, run `make check`. It runs, in order:
+- `gofmt -l .` (every Go file must be formatted; `make fmt` fixes them)
+- `go vet ./...`
+- `go build ./...` and the `agentlens` binary
+- `go test -race ./...`
+
+The git hooks in `.githooks/` run the same checks on commit (gofmt, vet, build) and on push (all of the above). Enable them once per clone with `make hooks`. CI also fails on unformatted Go code.
 
 ### Step 3: Roadmap Progress Update
 Every PR that advances a milestone **must** update the task checkboxes in both:

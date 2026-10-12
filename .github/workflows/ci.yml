@@ -20,7 +20,10 @@ jobs:
           cache: true
 
       - name: Verify dependencies
-        run: go mod tidy && git diff --exit-code go.mod
+        run: go mod tidy && git diff --exit-code go.mod go.sum
+
+      - name: Check gofmt
+        run: make fmt-check
 
       - name: Run go vet
         run: go vet ./...
