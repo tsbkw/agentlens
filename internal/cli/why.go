@@ -94,6 +94,10 @@ func (a *App) CmdWhy(args []string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(ex)
 	case opts.Prompt:
+		if ex.Prompt == "" {
+			fmt.Fprintf(os.Stderr, "%s is healthy (%s); there is nothing to investigate, so no prompt was written.\n", opts.Name, ex.Diagnosis.Summary)
+			return nil
+		}
 		fmt.Fprint(os.Stdout, ex.Prompt)
 		return nil
 	}
@@ -176,7 +180,7 @@ func RenderExplanation(w io.Writer, ex *report.Explanation, now time.Time) {
 	}
 
 	fmt.Fprintf(w, "\n%sRecommendation:%s %s\n", ansi.Bold, ansi.Reset, d.Recommendation)
-	if d.Reason != report.DiagnosisHealthy {
+	if ex.Prompt != "" {
 		fmt.Fprintf(w, "\n%s💬 To find the cause on this machine, paste this into a Claude Code session here (or run `agentlens why %s --prompt | pbcopy`):%s\n", ansi.Cyan, ex.Query, ansi.Reset)
 		fmt.Fprintln(w, strings.Repeat("┄", 65))
 		fmt.Fprint(w, ex.Prompt)

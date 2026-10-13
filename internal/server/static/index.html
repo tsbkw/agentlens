@@ -632,12 +632,14 @@
               <button type="button" class="btn btn-why" id="whyClose" aria-label="Close">✕</button>
             </div>
             <div id="whyBody"></div>
-            <div class="why-prompt-head">
-              <span>Prompt for Claude Code on this machine</span>
-              <button type="button" class="btn btn-primary btn-why" id="whyCopy">Copy prompt</button>
-              <span class="report-status" id="whyCopyStatus"></span>
+            <div id="whyPromptSection">
+              <div class="why-prompt-head">
+                <span>Prompt for Claude Code on this machine</span>
+                <button type="button" class="btn btn-primary btn-why" id="whyCopy">Copy prompt</button>
+                <span class="report-status" id="whyCopyStatus"></span>
+              </div>
+              <textarea id="whyPrompt" class="why-prompt" readonly spellcheck="false" aria-label="Prompt for Claude Code"></textarea>
             </div>
-            <textarea id="whyPrompt" class="why-prompt" readonly spellcheck="false" aria-label="Prompt for Claude Code"></textarea>
           </div>
           <div id="reportSessions"></div>
         </div>
@@ -3174,6 +3176,7 @@
       document.getElementById('whyTitle').textContent = `Why is ${name} not used?`;
       document.getElementById('whyBody').innerHTML = '<div class="report-status">Analyzing…</div>';
       document.getElementById('whyPrompt').value = '';
+      document.getElementById('whyPromptSection').style.display = 'none';
       document.getElementById('whyCopyStatus').textContent = '';
       panel.style.display = 'flex';
       panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3224,7 +3227,9 @@
       }
       html += `<div style="margin-top:0.5rem"><strong>Recommendation:</strong> ${escapeHtml(d.recommendation || '')}</div>`;
       document.getElementById('whyBody').innerHTML = html;
+      // A healthy tool has nothing to investigate: no prompt
       document.getElementById('whyPrompt').value = ex.prompt || '';
+      document.getElementById('whyPromptSection').style.display = ex.prompt ? '' : 'none';
     }
 
     async function copyWhyPrompt() {

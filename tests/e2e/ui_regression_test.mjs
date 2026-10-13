@@ -566,7 +566,7 @@ async function runTestSuite() {
     window: { since: '2026-10-01T00:00:00+09:00', until: '0001-01-01T00:00:00Z' },
     sessions: 1,
     total: counts,
-    mcp_servers: [{ key: 'github', ...counts, calls: 1 }, { key: '<b id=pwned-server>slack</b>', calls: 1 }],
+    mcp_servers: [{ key: 'github', ...counts, calls: 1 }, { key: '<b id=pwned-server>pwned</b>', calls: 1 }, { key: 'slack', calls: 1 }],
     tools: [],
     sessions_detail: [{ key: 'sample_claude_code_session', project: '-home-dev-backend-api', provider: 'claude-code', last_call: '2026-10-07T14:01:09.900Z', ...counts }],
     tool_health: [
@@ -599,7 +599,13 @@ async function runTestSuite() {
       return req.respond({ contentType: 'application/json', body: JSON.stringify(sessionFiles) });
     }
     if (url.pathname === '/api/why') {
-      return req.respond({ contentType: 'application/json', body: JSON.stringify({ ...whyJSON, query: url.searchParams.get('tool') }) });
+      const tool = url.searchParams.get('tool');
+      if (tool === 'slack') {
+        const healthy = { ...whyJSON, query: tool, tool: reportJSON.tool_health[2], sessions: [], substitutes: [], prompt: undefined,
+          diagnosis: { reason: 'healthy', summary: 'MCP server slack works: last success 2026-10-07 14:01 UTC.', evidence: [], recommendation: 'Nothing to fix.' } };
+        return req.respond({ contentType: 'application/json', body: JSON.stringify(healthy) });
+      }
+      return req.respond({ contentType: 'application/json', body: JSON.stringify({ ...whyJSON, query: tool }) });
     }
     return req.respond({ contentType: 'text/html; charset=utf-8', body: fs.readFileSync(htmlPath, 'utf8') });
   });
@@ -612,7 +618,7 @@ async function runTestSuite() {
     injected: document.querySelectorAll('#pwned-server').length,
     status: document.getElementById('reportStatus').textContent
   }));
-  if (dash.sessions !== 1 || dash.servers !== 2 || !dash.stats.includes('Auth Expired1') || dash.injected > 0 || !dash.status.includes('→ now')) {
+  if (dash.sessions !== 1 || dash.servers !== 3 || !dash.stats.includes('Auth Expired1') || dash.injected > 0 || !dash.status.includes('→ now')) {
     throw new Error(`Unexpected dashboard ${JSON.stringify(dash)}`);
   }
   if (!requests.includes('/api/report?since=7d')) throw new Error(`Expected the last 7 days by default, got ${requests}`);
@@ -626,7 +632,7 @@ async function runTestSuite() {
     panelHidden: getComputedStyle(document.getElementById('whyPanel')).display === 'none'
   }));
   if (dormant.rows.length !== 2 || !dormant.rows[0].startsWith('github | MCP | never | 1 sessions | auth failed, not fixed | Error: 401 Unauthorized') || !dormant.rows[1].includes('| server fails to connect | HTTP 401: session is not valid |')
-    || !dormant.unused || dormant.injected > 0 || dormant.whyButtons !== 2 || !dormant.panelHidden) {
+    || !dormant.unused || dormant.injected > 0 || dormant.whyButtons !== 3 || !dormant.panelHidden) {
     throw new Error(`Unexpected dormant table ${JSON.stringify(dormant)}`);
   }
   await local.evaluate(() => { navigator.clipboard.writeText = (t) => { window.__copied = t; return Promise.resolve(); }; });
@@ -650,6 +656,15 @@ async function runTestSuite() {
   if (!requests.some(r => r.startsWith('/api/why?') && r.includes('since=7d') && r.includes('tool=github'))) throw new Error(`Expected a why request for the dashboard period, got ${requests}`);
   await local.click('#whyClose');
   if (!(await local.$eval('#whyPanel', el => getComputedStyle(el).display === 'none'))) throw new Error('Expected the why panel to close');
+  // A healthy tool: diagnosis shown, no prompt to copy
+  await local.click('#reportServers [data-why="slack"]');
+  await local.waitForFunction(() => document.getElementById('whyBody').textContent.includes('Nothing to fix'));
+  const healthyPanel = await local.evaluate(() => ({
+    diagnosis: document.querySelector('#whyBody .why-diagnosis').textContent,
+    promptHidden: getComputedStyle(document.getElementById('whyPromptSection')).display === 'none'
+  }));
+  if (healthyPanel.diagnosis !== 'healthy' || !healthyPanel.promptHidden) throw new Error(`A healthy tool must show no prompt: ${JSON.stringify(healthyPanel)}`);
+  await local.click('#whyClose');
 
   await local.select('#reportPeriod', '30d');
   await local.type('#reportProject', 'backend');

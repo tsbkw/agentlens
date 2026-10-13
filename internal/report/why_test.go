@@ -69,6 +69,21 @@ func TestBuildPromptNamesTheToolAndTheChecks(t *testing.T) {
 	}
 }
 
+// A healthy tool has nothing to investigate, so it gets no prompt.
+func TestPromptForSkipsHealthyTools(t *testing.T) {
+	day := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	healthy := &Explanation{Query: "slack", Tool: ToolHealth{Key: "slack", Kind: KindMCPServer, Counts: Counts{Calls: 3}, LastSuccess: day}}
+	healthy.Diagnosis = Diagnose(healthy)
+	if p := PromptFor(healthy); p != "" {
+		t.Errorf("Expected no prompt for a healthy tool, got:\n%s", p)
+	}
+	sick := &Explanation{Query: "jira", Tool: ToolHealth{Key: "jira", Kind: KindMCPServer, Reason: ReasonConnectionFailing, SessionsFailedConnect: 2}}
+	sick.Diagnosis = Diagnose(sick)
+	if p := PromptFor(sick); !strings.Contains(p, "MCP server `jira`") {
+		t.Errorf("Expected a prompt for a failing tool, got:\n%s", p)
+	}
+}
+
 func TestSessionOutcomeText(t *testing.T) {
 	cases := map[string]SessionOutcome{
 		"server failed to connect": {ConnectFailed: true},
