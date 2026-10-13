@@ -61,6 +61,7 @@ agentlens/
 │   ├── graph/                     # グラフ構築、依存関係、メトリクス
 │   ├── models/                    # コアデータモデル（ノード、エッジ、異常、プロバイダ設定）
 │   ├── providers/                 # プロバイダ YAML の読み込み、フィールド式、スコープ追跡
+│   ├── mcp/                       # MCP サーバー (`agentlens mcp`): 分析結果を AI アシスタント向けツールとして提供
 │   ├── report/                    # `report` と `/api/report` が共有する期間集計
 │   ├── server/                    # ローカル HTTP API。static/index.html が内蔵 UI
 │   ├── textutil/                  # 省略・整形のヘルパー

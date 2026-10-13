@@ -135,6 +135,19 @@ agentlens --provider claude-code watch      # follow the most recent Claude Code
 
 ---
 
+## 🤖 Ask Claude Code about it (MCP server)
+
+AgentLens can serve its analyses to Claude Code over the Model Context Protocol, so you can ask in a session "which MCP servers stopped working?" or "why isn't the github MCP being used?" and Claude investigates on the spot: it calls AgentLens, reads the diagnosis and the checks, then looks at the configuration, credentials and permissions on your machine.
+
+```bash
+go install github.com/tsbkw/agentlens/cmd/agentlens@latest   # puts agentlens on your PATH
+claude mcp add --scope user agentlens -- agentlens mcp          # register for every project (--scope project for one)
+```
+
+Tools exposed: `report` (period overview with the dormant tools), `why` (one Skill or MCP server: per-session outcomes, substitutes, diagnosis, evidence and the checks to run), `list_sessions`, `session` (metrics, anomalies, dependencies, or the turn-by-turn trace), `inspect_call`. The server reads the same local session logs as the CLI and never sends them anywhere; it speaks JSON-RPC on stdio with no external dependency. Claude's own calls to it are recorded like any MCP call and are treated as bookkeeping (never as a substitute for another tool).
+
+---
+
 ## 📋 How to Open an Issue
 
 We welcome feedback, bug reports, and provider requests! Before opening an issue, please check existing issues to avoid duplicates.

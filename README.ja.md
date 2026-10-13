@@ -132,6 +132,19 @@ agentlens --provider claude-code watch      # 最新の Claude Code セッショ
 
 ---
 
+## 🤖 Claude Code から問い合わせる（MCP サーバー）
+
+AgentLens は分析結果を Model Context Protocol で Claude Code に提供できます。セッション内で「使えなくなっている MCP サーバーはある？」「なぜ github MCP が呼ばれていない？」と聞くだけで、Claude が AgentLens に問い合わせ、診断と確認手順を読み、その場で端末上の設定・認証情報・権限を調べます。
+
+```bash
+go install github.com/tsbkw/agentlens/cmd/agentlens@latest   # agentlens を PATH に入れる
+claude mcp add --scope user agentlens -- agentlens mcp          # 全プロジェクトで登録（1 プロジェクトだけなら --scope project）
+```
+
+提供するツール: `report`（期間の概要と休眠ツール）、`why`（1 つの Skill / MCP サーバーについて、セッションごとの結果、代替ツール、診断、根拠、確認手順）、`list_sessions`、`session`（メトリクス・異常・依存関係、またはターンごとのトレース）、`inspect_call`。サーバーは CLI と同じローカルのセッションログを読み、外部には一切送信しません。stdio 上の JSON-RPC で動き、外部依存はありません。Claude 自身からの呼び出しも他の MCP 呼び出しと同様に記録されますが、補助ツールとして扱われ、他ツールの代替とは判定されません。
+
+---
+
 ## 📋 Issueの立て方 (How to Open an Issue)
 
 機能改善やバグ報告、新しい生成AIの対応要望を歓迎します！重複を防ぐため、事前に既存のIssueを検索してください。

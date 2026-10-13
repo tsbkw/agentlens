@@ -43,9 +43,10 @@ type Explanation struct {
 	// Substitutes aggregates the other tools that reached the same service.
 	Substitutes []SubstituteUse `json:"substitutes,omitempty"`
 	Diagnosis   Diagnosis       `json:"diagnosis"`
-	// Prompt asks an AI assistant on this machine to find the cause (see BuildPrompt); it is
-	// empty when the tool is healthy and there is nothing to investigate.
-	Prompt string `json:"prompt,omitempty"`
+	// Investigation is what an assistant on this machine should check to find the cause; nil
+	// when the tool is healthy. Prompt is the same content as text, ready to paste.
+	Investigation *Investigation `json:"investigation,omitempty"`
+	Prompt        string         `json:"prompt,omitempty"`
 	// Suggestions are names resembling the query when nothing matched.
 	Suggestions []string `json:"suggestions,omitempty"`
 }
@@ -306,12 +307,51 @@ func Explain(provs []*providers.LoadedProvider, window Window, project, query st
 }
 
 // PromptFor returns the investigation prompt for ex, or "" when there is nothing to
-// investigate (the tool is healthy).
+// investigate (the tool is healthy). It also fills ex.Investigation.
 func PromptFor(ex *Explanation) string {
 	if ex.Diagnosis.Reason == DiagnosisHealthy {
+		ex.Investigation = nil
 		return ""
 	}
-	return BuildPrompt(ex)
+	inv := Investigate(ex)
+	ex.Investigation = &inv
+	return inv.Render()
+}
+
+// Investigation is the structured form of the prompt: what agentlens found, the recent
+// sessions, what to check on this machine, what to deliver and the rules to follow.
+type Investigation struct {
+	Intro          string   `json:"intro"`
+	Findings       []string `json:"findings"`
+	RecentSessions []string `json:"recent_sessions,omitempty"`
+	Checks         []string `json:"checks"`
+	Deliverable    []string `json:"deliverable"`
+	Constraints    []string `json:"constraints"`
+}
+
+// Render writes the investigation as the prompt text.
+func (inv Investigation) Render() string {
+	var b strings.Builder
+	section := func(title string, items []string, numbered bool) {
+		if len(items) == 0 {
+			return
+		}
+		b.WriteString("\n## " + title + "\n")
+		for i, item := range items {
+			if numbered {
+				fmt.Fprintf(&b, "%d. %s\n", i+1, item)
+			} else {
+				b.WriteString("- " + item + "\n")
+			}
+		}
+	}
+	b.WriteString(inv.Intro + "\n")
+	section("What agentlens found", inv.Findings, false)
+	section("Recent sessions (oldest first)", inv.RecentSessions, false)
+	section("What to check on this machine", inv.Checks, true)
+	section("Deliverable", inv.Deliverable, false)
+	section("Constraints", inv.Constraints, false)
+	return b.String()
 }
 
 // toolKeyOf returns the normalized health key of a call: its MCP server, or the skill it
@@ -467,11 +507,13 @@ func Diagnose(ex *Explanation) Diagnosis {
 // to find why the tool is not used, with agentlens's findings as the starting evidence and a
 // checklist of what to inspect locally.
 func BuildPrompt(ex *Explanation) string {
+	return Investigate(ex).Render()
+}
+
+// Investigate builds the structured investigation for ex (see Investigation).
+func Investigate(ex *Explanation) Investigation {
 	h := ex.Tool
 	d := ex.Diagnosis
-	var b strings.Builder
-	w := func(format string, args ...interface{}) { fmt.Fprintf(&b, format, args...); b.WriteString("\n") }
-
 	kind := "tool"
 	switch h.Kind {
 	case KindMCPServer:
@@ -488,69 +530,73 @@ func BuildPrompt(ex *Explanation) string {
 		since = "since " + ex.Window.Since.UTC().Format("2006-01-02")
 	}
 
-	w("I am using agentlens, a local analyzer of this machine's AI agent session logs. It reports that the %s `%s` is not being used as expected. Investigate the cause on this machine and propose a fix.", kind, name)
-	w("")
-	w("## What agentlens found (%s)", since)
-	w("- Diagnosis: %s. %s", ReasonTitle(d.Reason), d.Summary)
-	for _, e := range d.Evidence {
-		w("- %s", e)
+	inv := Investigation{
+		Intro: fmt.Sprintf("I am using agentlens, a local analyzer of this machine's AI agent session logs. It reports that the %s `%s` is not being used as expected. Investigate the cause on this machine and propose a fix.", kind, name),
 	}
-	if len(ex.Sessions) > 0 {
-		w("")
-		w("## Recent sessions (oldest first)")
-		start := 0
-		if len(ex.Sessions) > 8 {
-			start = len(ex.Sessions) - 8
+	inv.Findings = append(inv.Findings, fmt.Sprintf("Period: %s.", since), fmt.Sprintf("Diagnosis: %s. %s", ReasonTitle(d.Reason), d.Summary))
+	inv.Findings = append(inv.Findings, d.Evidence...)
+
+	start := 0
+	if len(ex.Sessions) > 8 {
+		start = len(ex.Sessions) - 8
+	}
+	for _, s := range ex.Sessions[start:] {
+		line := fmt.Sprintf("%s · session %s · %s", stamp(s.Start), shortID(s.SessionID), s.Outcome())
+		if s.ConnectError != "" {
+			line += " · " + s.ConnectError
+		} else if s.FirstError != "" {
+			line += " · " + s.FirstError
 		}
-		for _, s := range ex.Sessions[start:] {
-			line := fmt.Sprintf("- %s · session %s · %s", stamp(s.Start), shortID(s.SessionID), s.Outcome())
-			if s.ConnectError != "" {
-				line += " · " + s.ConnectError
-			} else if s.FirstError != "" {
-				line += " · " + s.FirstError
-			}
-			if len(s.FallbackTo) > 0 {
-				line += " · fell back to " + strings.Join(s.FallbackTo, ", ")
-			}
-			if s.SubstituteCalls > 0 {
-				line += fmt.Sprintf(" · %d substitute calls", s.SubstituteCalls)
-			}
-			w("%s", line)
+		if len(s.FallbackTo) > 0 {
+			line += " · fell back to " + strings.Join(s.FallbackTo, ", ")
 		}
+		if s.SubstituteCalls > 0 {
+			line += fmt.Sprintf(" · %d substitute calls", s.SubstituteCalls)
+		}
+		inv.RecentSessions = append(inv.RecentSessions, line)
 	}
-	w("")
-	w("## What to check on this machine")
-	if h.Kind == "" {
-		w("The name matched nothing in the analyzed logs, so first confirm what it is: a Skill (`~/.claude/skills/`, a plugin's `skills/`, the project's `.claude/skills/`) or an MCP server (`claude mcp list`). Then follow the matching checklist below.")
-		w("")
-	}
+
 	switch h.Kind {
 	case KindSkill:
-		w("1. Find the skill's definition: `~/.claude/skills/%s/SKILL.md`, a plugin's `skills/` directory, or the project's `.claude/skills/`. Confirm the file exists and parses (frontmatter with `name` and `description`).", name)
-		w("2. Read its `description`: the agent chooses a skill from it. Does it say when to use the skill, with the words a user would use? Would a task in the sessions above have matched it?")
-		w("3. Check the settings that gate it: `permissions` in `~/.claude/settings.json`, `.claude/settings.json` and `.claude/settings.local.json` (deny or ask rules for `Skill`), and any hooks that block tool use.")
-		w("4. If the skill is provided by a plugin, confirm the plugin is enabled and up to date.")
-		w("5. If calls were denied, find out who denied them (the user, a permission rule, the auto mode classifier) and whether that was intended.")
+		inv.Checks = skillChecks(name)
 	case KindMCPServer:
-		writeMCPChecks(w, name)
+		inv.Checks = mcpChecks(name)
 	default:
-		w("For a Skill:")
-		w("1. Find its definition (`SKILL.md` with `name` and `description` frontmatter) and read the description: does it say when to use the skill, with the words a user would use?")
-		w("2. Check `permissions` in the settings files and hooks that could block `Skill`, and that its plugin is enabled.")
-		w("")
-		w("For an MCP server:")
-		writeMCPChecks(w, name)
+		inv.Checks = append([]string{"The name matched nothing in the analyzed logs, so first confirm what it is: a Skill (`~/.claude/skills/`, a plugin's `skills/`, the project's `.claude/skills/`) or an MCP server (`claude mcp list`). Then follow the matching checks."},
+			append(skillChecks(name), mcpChecks(name)...)...)
 	}
-	w("")
-	w("## Deliverable")
-	w("- The root cause, with the file, setting or credential that confirms it.")
-	w("- The concrete steps to fix it (commands or edits), and what to do if the cause is outside this machine.")
-	w("- How to verify: start a new session, use the tool once, then run `agentlens why %s --since 1d` and confirm the diagnosis becomes \"healthy\".", name)
-	w("")
-	w("## Constraints")
-	w("- Read-only investigation first; ask before changing settings, credentials or configuration files.")
-	w("- Never print secrets (tokens, keys, passwords); report their location and expiry only.")
-	return b.String()
+	inv.Deliverable = []string{
+		"The root cause, with the file, setting or credential that confirms it.",
+		"The concrete steps to fix it (commands or edits), and what to do if the cause is outside this machine.",
+		fmt.Sprintf("How to verify: start a new session, use the tool once, then run `agentlens why %s --since 1d` and confirm the diagnosis becomes \"healthy\".", name),
+	}
+	inv.Constraints = []string{
+		"Read-only investigation first; ask before changing settings, credentials or configuration files.",
+		"Never print secrets (tokens, keys, passwords); report their location and expiry only.",
+	}
+	return inv
+}
+
+// skillChecks lists what to inspect for a Skill.
+func skillChecks(name string) []string {
+	return []string{
+		fmt.Sprintf("Find the skill's definition: `~/.claude/skills/%s/SKILL.md`, a plugin's `skills/` directory, or the project's `.claude/skills/`. Confirm the file exists and parses (frontmatter with `name` and `description`).", name),
+		"Read its `description`: the agent chooses a skill from it. Does it say when to use the skill, with the words a user would use? Would a task in the sessions above have matched it?",
+		"Check the settings that gate it: `permissions` in `~/.claude/settings.json`, `.claude/settings.json` and `.claude/settings.local.json` (deny or ask rules for `Skill`), and any hooks that block tool use.",
+		"If the skill is provided by a plugin, confirm the plugin is enabled and up to date.",
+		"If calls were denied, find out who denied them (the user, a permission rule, the auto mode classifier) and whether that was intended.",
+	}
+}
+
+// mcpChecks lists what to inspect for an MCP server.
+func mcpChecks(name string) []string {
+	return []string{
+		fmt.Sprintf("List the configured MCP servers and their state: run `claude mcp list` and `claude mcp get %s`. Compare with `~/.claude.json` (user and project scopes) and the project's `.mcp.json`.", name),
+		"If the server fails to connect or needs a sign-in: run the server's command by hand and read its stderr; for HTTP/OAuth servers, re-authenticate (the `/mcp` command inside Claude Code lists servers and offers to sign in). Check whether a token, registration or session has expired, and whether required environment variables are set.",
+		"If calls fail on credentials: find where the server reads its token (env var, keychain, config file), check its expiry and scopes, and renew it.",
+		"If the agent prefers another tool: compare the permission settings (`permissions.allow` / `deny` / `ask` in the settings files) for this server's tools and for the substitute (e.g. a CLI allowed in `Bash`). Read the instructions files (`CLAUDE.md`, `AGENTS.md`, memory) for rules that steer toward or away from this server.",
+		"Check the server's tool descriptions and whether the tools are deferred (loaded only through ToolSearch); a server whose tools never appear in the list cannot be called.",
+	}
 }
 
 // ReasonTitle is a short title for a dormancy reason or diagnosis.
@@ -593,13 +639,4 @@ func shortID(id string) string {
 		return id[:8]
 	}
 	return id
-}
-
-// writeMCPChecks lists what to inspect for an MCP server.
-func writeMCPChecks(w func(format string, args ...interface{}), name string) {
-	w("1. List the configured MCP servers and their state: run `claude mcp list` and `claude mcp get %s`. Compare with `~/.claude.json` (user and project scopes) and the project's `.mcp.json`.", name)
-	w("2. If the server fails to connect or needs a sign-in: run the server's command by hand and read its stderr; for HTTP/OAuth servers, re-authenticate (the `/mcp` command inside Claude Code lists servers and offers to sign in). Check whether a token, registration or session has expired, and whether required environment variables are set.")
-	w("3. If calls fail on credentials: find where the server reads its token (env var, keychain, config file), check its expiry and scopes, and renew it.")
-	w("4. If the agent prefers another tool: compare the permission settings (`permissions.allow` / `deny` / `ask` in the settings files) for this server's tools and for the substitute (e.g. a CLI allowed in `Bash`). Read the instructions files (`CLAUDE.md`, `AGENTS.md`, memory) for rules that steer toward or away from this server.")
-	w("5. Check the server's tool descriptions and whether the tools are deferred (loaded only through ToolSearch); a server whose tools never appear in the list cannot be called.")
 }

@@ -61,6 +61,7 @@ agentlens/
 │   ├── graph/                     # Graph builder, dependencies, metrics
 │   ├── models/                    # Core data models (nodes, edges, anomalies, provider config)
 │   ├── providers/                 # Provider YAML loading, field expressions, scope tracking
+│   ├── mcp/                       # MCP server (`agentlens mcp`): the analyses as tools for an AI assistant
 │   ├── report/                    # Period aggregation shared by `report` and `/api/report`
 │   ├── server/                    # Local HTTP API; static/index.html is the embedded UI
 │   ├── textutil/                  # Truncation and formatting helpers
