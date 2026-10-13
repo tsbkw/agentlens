@@ -80,6 +80,8 @@ extraction:
   # Bookkeeping tools: tool discovery, task tracking, planning, questions, scheduling and
   # agent messaging. They never do the user's task themselves.
   auxiliary_tools:
+    # AgentLens's own MCP server (`agentlens mcp`): asking it about tools is bookkeeping
+    - "mcp__agentlens__*"
     - "ToolSearch"
     - "TodoWrite"
     - "TaskCreate"

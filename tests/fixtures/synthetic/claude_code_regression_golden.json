@@ -981,7 +981,7 @@
           ],
           "recommendation": "Renew the token or re-authenticate the server, then retry a call; until then the agent keeps falling back to other tools."
         },
-        "prompt_lines": 29
+        "prompt_lines": 30
       },
       {
         "query": "jira",
@@ -1011,7 +1011,7 @@
           ],
           "recommendation": "Fix the server connection: check its credentials, registration or endpoint, then start a new session and confirm it connects."
         },
-        "prompt_lines": 25
+        "prompt_lines": 26
       },
       {
         "query": "postgres",
@@ -1087,7 +1087,7 @@
           ],
           "recommendation": "Likely no task needed it in this period. Widen the period with --since, or check that its description tells the agent when to use it."
         },
-        "prompt_lines": 25
+        "prompt_lines": 26
       },
       {
         "query": "pr-review",

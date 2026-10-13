@@ -24,6 +24,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 | **Phase 11** | Review Follow-ups (docs match the code, CLI output, detection fixes, robustness, UI polish) | In progress | PR #35– |
 | **Phase 12** | Dormant Tools (availability events, tools that stopped being called, `why` analysis with a diagnostic prompt) | Done | PR #53–#56 |
 | **Phase 13** | Deeper Analysis (proxy routing, latency spikes, canvas and timeline views) | Planned | — |
+| **Phase 14** | Assistant Integration (`agentlens mcp`, a Skill that reaches for it) | In progress | PR #59– |
 
 ---
 
@@ -139,3 +140,7 @@ This document tracks all features, phases, and pull requests for AgentLens. In A
 - [ ] Latency spike detection against per-tool baselines
 - [ ] Node-edge canvas and timeline (waterfall) views in the web UI
 - [ ] Apply a custom `--provider` YAML in the browser's analysis
+
+### Phase 14: Assistant Integration (PR #59–)
+- [x] `agentlens mcp`: MCP server on stdio (standard library only) with `report`, `why` (structured investigation), `list_sessions`, `session`, `inspect_call`; the assistant's calls to it are auxiliary (PR #59)
+- [ ] A Claude Code Skill that turns to AgentLens when a tool seems unused, failing or replaced

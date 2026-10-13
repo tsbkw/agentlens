@@ -13,6 +13,7 @@ import (
 	"github.com/tsbkw/agentlens/internal/collector"
 	"github.com/tsbkw/agentlens/internal/detector"
 	"github.com/tsbkw/agentlens/internal/graph"
+	"github.com/tsbkw/agentlens/internal/mcp"
 	"github.com/tsbkw/agentlens/internal/models"
 	"github.com/tsbkw/agentlens/internal/providers"
 	"github.com/tsbkw/agentlens/internal/server"
@@ -20,6 +21,9 @@ import (
 )
 
 // App coordinates CLI commands.
+// Version is the agentlens release, shown by `version` and reported to MCP clients.
+const Version = "0.1.0"
+
 type App struct {
 	// Builtins are the provider definitions embedded in the binary, default first.
 	Builtins []*providers.LoadedProvider
@@ -85,7 +89,7 @@ func (a *App) Run(args []string) error {
 	command := args[1]
 	switch command {
 	case "version", "--version", "-v":
-		fmt.Println("agentlens version 0.1.0")
+		fmt.Println("agentlens version " + Version)
 		return nil
 	case "help", "--help", "-h":
 		a.PrintHelp()
@@ -136,6 +140,8 @@ func (a *App) Run(args []string) error {
 		return a.CmdReport(args[2:])
 	case "why":
 		return a.CmdWhy(args[2:])
+	case "mcp":
+		return mcp.NewServer(Version, a.candidates()...).Serve(context.Background(), os.Stdin, os.Stdout)
 	case "ui":
 		port, err := parsePortFlag(args[2:])
 		if err != nil {
@@ -381,6 +387,9 @@ Available Commands:
                        every session of the period, what replaced it, a diagnosis, and a
                        prompt for Claude Code to find the cause on this machine
                        --since (default 30d) --until --project --json --prompt
+  mcp                  Serve the analyses to an AI assistant over MCP (stdio), so it can ask
+                       which tools stopped working and why. Register with Claude Code:
+                       claude mcp add --scope user agentlens -- agentlens mcp
   ui [--port <n>]      Launch the local Web UI dashboard on 127.0.0.1 (default port 8000);
                        an agentlens ui already running on that port is stopped and replaced
   version              Print version of agentlens
