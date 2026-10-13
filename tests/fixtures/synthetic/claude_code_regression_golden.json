@@ -1060,7 +1060,7 @@
           ],
           "recommendation": "Nothing to fix."
         },
-        "prompt_lines": 29
+        "prompt_lines": 0
       },
       {
         "query": "db-migrate",
@@ -1115,7 +1115,7 @@
           ],
           "recommendation": "Nothing to fix."
         },
-        "prompt_lines": 26
+        "prompt_lines": 0
       },
       {
         "query": "nosuchtool",

@@ -256,7 +256,7 @@ func TestRenderExplanation(t *testing.T) {
 	}
 	healthy := &report.Explanation{Query: "slack", Tool: report.ToolHealth{Key: "slack", Kind: report.KindMCPServer, Counts: report.Counts{Calls: 2}, LastSuccess: now}}
 	healthy.Diagnosis = report.Diagnose(healthy)
-	healthy.Prompt = report.BuildPrompt(healthy)
+	healthy.Prompt = report.PromptFor(healthy)
 	buf.Reset()
 	RenderExplanation(&buf, healthy, now)
 	if strings.Contains(buf.String(), "paste this into") {

@@ -43,8 +43,9 @@ type Explanation struct {
 	// Substitutes aggregates the other tools that reached the same service.
 	Substitutes []SubstituteUse `json:"substitutes,omitempty"`
 	Diagnosis   Diagnosis       `json:"diagnosis"`
-	// Prompt asks an AI assistant on this machine to find the cause (see BuildPrompt).
-	Prompt string `json:"prompt"`
+	// Prompt asks an AI assistant on this machine to find the cause (see BuildPrompt); it is
+	// empty when the tool is healthy and there is nothing to investigate.
+	Prompt string `json:"prompt,omitempty"`
 	// Suggestions are names resembling the query when nothing matched.
 	Suggestions []string `json:"suggestions,omitempty"`
 }
@@ -300,8 +301,17 @@ func Explain(provs []*providers.LoadedProvider, window Window, project, query st
 	})
 
 	ex.Diagnosis = Diagnose(ex)
-	ex.Prompt = BuildPrompt(ex)
+	ex.Prompt = PromptFor(ex)
 	return ex, nil
+}
+
+// PromptFor returns the investigation prompt for ex, or "" when there is nothing to
+// investigate (the tool is healthy).
+func PromptFor(ex *Explanation) string {
+	if ex.Diagnosis.Reason == DiagnosisHealthy {
+		return ""
+	}
+	return BuildPrompt(ex)
 }
 
 // toolKeyOf returns the normalized health key of a call: its MCP server, or the skill it
