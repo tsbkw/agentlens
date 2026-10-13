@@ -141,6 +141,12 @@ go install github.com/tsbkw/agentlens/cmd/agentlens@latest   # agentlens を PAT
 claude mcp add --scope user agentlens -- agentlens mcp          # 全プロジェクトで登録（1 プロジェクトだけなら --scope project）
 ```
 
+ツールが認証で失敗したとき、MCP ツールの代わりに CLI を使ってしまったとき、「何が使えなくなった？」と聞かれたときに Claude が自分から AgentLens を参照するよう、同梱の Skill を入れておけます。
+
+```bash
+cp -r examples/claude-code/skills/agentlens ~/.claude/skills/agentlens
+```
+
 提供するツール: `report`（期間の概要と休眠ツール）、`why`（1 つの Skill / MCP サーバーについて、セッションごとの結果、代替ツール、診断、根拠、確認手順）、`list_sessions`、`session`（メトリクス・異常・依存関係、またはターンごとのトレース）、`inspect_call`。サーバーは CLI と同じローカルのセッションログを読み、外部には一切送信しません。stdio 上の JSON-RPC で動き、外部依存はありません。Claude 自身からの呼び出しも他の MCP 呼び出しと同様に記録されますが、補助ツールとして扱われ、他ツールの代替とは判定されません。
 
 ---

@@ -144,6 +144,12 @@ go install github.com/tsbkw/agentlens/cmd/agentlens@latest   # puts agentlens on
 claude mcp add --scope user agentlens -- agentlens mcp          # register for every project (--scope project for one)
 ```
 
+To make Claude reach for it on its own (when a tool fails on credentials, when it used a CLI instead of an MCP tool, or when you ask what stopped working), install the bundled skill:
+
+```bash
+cp -r examples/claude-code/skills/agentlens ~/.claude/skills/agentlens
+```
+
 Tools exposed: `report` (period overview with the dormant tools), `why` (one Skill or MCP server: per-session outcomes, substitutes, diagnosis, evidence and the checks to run), `list_sessions`, `session` (metrics, anomalies, dependencies, or the turn-by-turn trace), `inspect_call`. The server reads the same local session logs as the CLI and never sends them anywhere; it speaks JSON-RPC on stdio with no external dependency. Claude's own calls to it are recorded like any MCP call and are treated as bookkeeping (never as a substitute for another tool).
 
 ---

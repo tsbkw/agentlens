@@ -24,7 +24,7 @@
 | **Phase 11** | レビュー対応 (ドキュメントと実装の一致、CLI 出力、検知の修正、堅牢性、UI 改善) | 進行中 | PR #35– |
 | **Phase 12** | 休眠ツール (利用可能性イベント、呼ばれなくなったツールの特定、診断プロンプト付きの `why` 分析) | 完了 | PR #53–#56 |
 | **Phase 13** | 分析の深化 (迂回ルーティング、レイテンシ異常、キャンバス・タイムライン表示) | 計画中 | — |
-| **Phase 14** | アシスタント連携 (`agentlens mcp`、AgentLens を参照する Skill) | 進行中 | PR #59– |
+| **Phase 14** | アシスタント連携 (`agentlens mcp`、AgentLens を参照する Skill) | 完了 | PR #59–#60 |
 
 ---
 
@@ -141,6 +141,6 @@
 - [ ] Web UI のノード・エッジのキャンバス表示とタイムライン (ウォーターフォール) 表示
 - [ ] ブラウザの解析に独自の `--provider` YAML を適用
 
-### Phase 14: アシスタント連携 (PR #59–)
+### Phase 14: アシスタント連携 (PR #59–#60)
 - [x] `agentlens mcp`: stdio の MCP サーバー（標準ライブラリのみ）。`report`、`why`（構造化した調査手順）、`list_sessions`、`session`、`inspect_call` を提供。アシスタントからの呼び出しは補助ツール扱い (PR #59)
-- [ ] ツールが使われない・失敗する・置き換えられたと思われるときに AgentLens を参照する Claude Code Skill
+- [x] ツールが使われない・失敗する・置き換えられたと思われるときに AgentLens を参照する Claude Code Skill (`examples/claude-code/skills/agentlens`) (PR #60)
